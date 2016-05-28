@@ -13,6 +13,7 @@ import gettext
 import email
 import re
 import tempfile
+import mimetypes
 
 
 class StockToolButton(gtk.ToolButton):
@@ -194,6 +195,21 @@ class cyclelist(list):
 	def __str__(self):
 		return str(self[self.idx])
 
+def display_error(e):
+	text = None
+	if isinstance(e, OSError) or isinstance(e, IOError):
+		text = "%s (#%d)\n%s" % (e.strerror, e.errno, e.filename)
+	elif isinstance(e, Exception):
+		text = e.message
+	elif type(e) == type([]):
+		text = ''.join(e)
+	if text is None:
+		text = str(e)
+	dlg = gtk.MessageDialog(main_win, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
+	dlg.set_title(_("Error"))
+	dlg.run()
+	dlg.destroy()
+
 def get_pipe_handlers(npairs):
 	pipes = []
 	for n in range(0, npairs):
@@ -308,7 +324,6 @@ def which(cmd):
 
 def get_filter_by_mime(main, sub):
 	for m, s, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(\S+)\s*(.+)?', splitgroups=[4]):
-		print m, s, cmd, args
 		if (main == '*' or main == m) and (sub == '*' or sub == s):
 			if cmd == '-':
 				return ''
@@ -373,14 +388,56 @@ def act_wrap(i=1):
 def save_to_file(filename):
 	pass
 
+def get_extension_by_mime(mime):
+	e = mimetypes.guess_extension(mime)
+	if e is None: e = '.dat'
+	return e
+
 def act_open():
-#	eml = 
-#	mime = 
-#	tmpf = tempfile.mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
-	save_to_file()
+	eml = get_part_by_itpath()
+	mime = eml.get_content_type()
+	fd, tmppath = tempfile.mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
+	try:
+		save_to_filehandle(eml, fd)
+	except OSError, e:
+		os.unlink(tmppath)
+		e.filename = tmppath
+		display_error(e)
+		return
+	run_async('mimeopen-gui', [tmppath], [os.unlink, tmppath])
 
 def act_save():
 	pass
+
+def run_async(cmd, args, postrun):
+	pid1 = os.fork()
+	if pid1 == 0:
+		os.closerange(0, 255)
+		pid2 = os.fork()
+		if pid2 == 0:
+			pid3 = os.fork()
+			if pid3 == 0:
+				args.insert(0, os.path.basename(cmd))
+				os.execvp(cmd, args)
+				os._exit(127)
+			else:
+				_, status = os.waitpid(pid3, 0)
+				excode = status >> 8
+				postrun[0](*postrun[1:])
+				os._exit(excode)
+		else:
+			os._exit(0)
+	else:
+		os.waitpid(pid1, 0)
+
+def save_to_filehandle(eml, fd):
+	s = eml.get_payload(decode=1)
+	if s is None:
+		s = eml.as_string()
+	written = os.write(fd, s)
+	if written != len(s):
+		raise OSError(5, 'Write Error')
+	os.close(fd)
 
 def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
@@ -560,6 +617,8 @@ panel_parts.set_headers_visible(False)
 panel_parts.connect('button-press-event', on_click_parts)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
+btn_open.connect('clicked', lambda wdg: act_open())
+btn_save.connect('clicked', lambda wdg: act_save())
 panel_content.set_editable(False)
 panel_content.set_wrap_mode(gtk.WRAP_WORD)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
