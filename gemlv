@@ -12,8 +12,10 @@ import pango
 import gettext
 import email
 import re
-import tempfile
-import mimetypes
+from tempfile import mkstemp
+from mimetypes import guess_extension
+from fnmatch import fnmatch
+import argparse
 
 
 ### helper classes, functions ###
@@ -74,33 +76,39 @@ class StockButton(gtk.Button):
 
 class cfgparser:
 	def __init__(self, name, **kvargs):
-		self.fh = None
 		self.var = {'regex': '^\s*([^;#].*)', 'split': [1],}
 		for k in 'regex', 'splitgroups':
 			if not self.var.has_key(k): self.var[k] = None
 			if kvargs.has_key(k): self.var[k] = kvargs[k]
 		suff = '.conf'
-		for t in (name + suff,), (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff):
+		self.filehandlers = []
+		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff), (name + suff,),:
 			n = os.path.join(*t)
 			try:
-				self.fh = open(n, 'r')
-			except:
-				self.fh = None
+				fh = open(n, 'r')
+				self.filehandlers.append(fh)
+			except IOError:
 				pass
-			if self.fh is not None:
-				break
 	
 	def __iter__(self):
 		return self
 	
 	def next(self):
-		if self.fh is None:
+		if len(self.filehandlers) == 0:
 			raise StopIteration
 		else:
+			fh = self.filehandlers[0]
 			while True:
-				ln = self.fh.readline()
+				ln = fh.readline()
 				if ln == '':
-					raise StopIteration
+					fh.close()
+					self.filehandlers.reverse()
+					self.filehandlers.pop()
+					self.filehandlers.reverse()
+					if len(self.filehandlers) == 0:
+						raise StopIteration
+					fh = self.filehandlers[0]
+					continue
 				m = re.match(self.var['regex'], ln)
 				if m:
 					grps = []
@@ -116,10 +124,8 @@ class cfgparser:
 					return grps
 	
 	def __del__(self):
-		try:
-			self.fh.close()
-		except:
-			pass
+		for fh in self.filehandlers:
+			fh.close()
 
 class pipereader:
 	def __init__(self, inputstr, cmd, args=[], exitdict=None):
@@ -213,19 +219,34 @@ def display_error(e):
 		text = ''.join(e)
 	if text is None:
 		text = str(e)
-	dlg = gtk.MessageDialog(main_win, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
+	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
 	dlg.set_title(_("Error"))
 	dlg.run()
 	dlg.destroy()
 
-def choose_save_dialog(action, filename=None):
+def question(msg, stock_yes=None):
+	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO, msg)
+	dlg.set_title(_("Question"))
+	if stock_yes is not None:
+		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
+		btn_yes = StockButton(label=stock_yes[0], stock=stock_yes[1])
+		dlg.add_action_widget(btn_yes, gtk.RESPONSE_YES)
+		btn_yes.show()
+	resp = dlg.run()
+	dlg.destroy()
+	return (resp == gtk.RESPONSE_YES)
+
+def choose_dialog(action, filename=None):
 	global LastFolder
 	selected = None
-
-	dlg = gtk.FileChooserDialog(action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, gtk.STOCK_SAVE, gtk.RESPONSE_ACCEPT))
+	
+	btn_accept_stock = gtk.STOCK_SAVE
+	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
+		btn_accept_stock = gtk.STOCK_OPEN
+	dlg = gtk.FileChooserDialog(action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
 	if LastFolder is not None: dlg.set_current_folder(LastFolder)
 	if filename is not None: dlg.set_current_name(filename)
-	btn_cwd = StockButton(label = _("Working Dir"), stock = gtk.STOCK_JUMP_TO)
+	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
 	while True:
@@ -242,10 +263,13 @@ def choose_save_dialog(action, filename=None):
 	return selected
 
 def choose_save_file(filename=None):
-	return choose_save_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename)
 
 def choose_save_folder():
-	return choose_save_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+
+def choose_open_file():
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN)
 
 def get_pipe_handlers(npairs):
 	pipes = []
@@ -299,16 +323,17 @@ def run_async(cmd, args, postrun):
 
 ### private functions ###
 
-def main_win_show(widget, event):
-	main_win.disconnect(start_evt)
+def win_main_show(widget, event):
+	win_main.disconnect(start_evt)
 	panel_content.set_data('saved-font', get_current_font(panel_content))
-	if len(sys.argv) > 1:
-		load_file(sys.argv[1])
+	if args.FILE: load_file(args.FILE)
 
 def load_file(filename):
-	fp = open(filename, 'r')
-	Email = email.message_from_file(fp)
-	fp.close()
+	fh = open(filename, 'r')
+	Email = email.message_from_file(fh)
+	fh.close()
+	
+	panel_header.set_markup(get_headers_markup(Email))
 	clear_parts(Parts)
 	if Email.is_multipart():
 		pos = panel_body.get_data('saved-position')
@@ -318,7 +343,7 @@ def load_file(filename):
 	else:
 		panel_body.set_data('saved-position', panel_body.get_position())
 		panel_body.set_position(0)
-		
+	
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
 	if Email.is_multipart():
@@ -359,17 +384,38 @@ def clear_content(s=''):
 	panel_content.set_sensitive(False)
 	return bufr
 
+def decode_properly(s, eml):
+	charset = eml.get_content_charset()
+	if charset is None:
+		s = s.decode('utf-8', 'replace')
+	elif charset.lower() not in ['utf-8', 'utf_8', 'utf8']:
+		s = s.decode(charset, 'replace')
+	return s
+
+def get_content_properly(eml):
+	s = eml.get_payload(decode=1)
+	if s is None:
+		s = eml.as_string()
+	return decode_properly(s, eml)
+
+def set_content_text(s, eml=None):
+	if s is None:
+		s = get_content_properly(eml)
+	elif eml is not None:
+		s = decode_properly(s, eml)
+	panel_content.get_buffer().set_text(s)
+	panel_content.set_sensitive(True)
+
 def load_part(eml, filt = None):
 	if eml is None: return
-	bufr = clear_content(_("Loading..."))
+	clear_content(_("Loading is in progress or failed"))
 	panel_content.set_data('view-unfiltered', False)
 	if filt is None:
 		filt = get_filter_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	
 	if filt is None:
 		if type(eml.get_payload()) == type([]) and not(eml.preamble is None and eml.epilogue is None):
-			bufr.set_text(joinNone("\n", '', [eml.preamble, eml.epilogue]))
-			panel_content.set_sensitive(True)
+			set_content_text(joinNone("\n", '', [eml.preamble, eml.epilogue]), eml)
 		else:
 			label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
 			filename = eml.get_filename()
@@ -382,26 +428,57 @@ def load_part(eml, filt = None):
 			spanel_content.hide()
 	elif filt == '':
 		panel_content.set_data('view-unfiltered', True)
-		try:
-			bufr.set_text(eml.get_payload(decode=1))
-		except TypeError:
-			bufr.set_text(eml.as_string())
+		set_content_text(None, eml)
 		panel_btnbox.hide()
 		spanel_content.show()
 		panel_content.set_sensitive(True)
 	else:
+		bufr = panel_content.get_buffer()
 		bufr.set_text('')
 		cmd, args = filt[:]
-		for s in pipereader(eml.get_payload(decode=1), cmd, args):
+		for s in pipereader(get_content_properly(eml), cmd, args):
 			bufr.insert(bufr.get_end_iter(), s)
 		panel_content.set_sensitive(True)
 
+def decode_header(s):
+	chunks = []
+	for chars, encoding in email.Header.decode_header(s):
+		if encoding is None: encoding = 'utf-8'
+		chunks.append(chars.decode(encoding, 'replace'))
+	return ' '.join(chunks)
+
 def get_main_subject():
-	return ''
+	return decode_header(get_part_by_itpath((0,))['Subject'])
+
+def get_headers_markup(eml):
+	lns = []
+	hdrs = [
+		'X-X-Sender',
+		'X-Sender',
+		'Sender',
+		'From',
+		'Organization',
+		'Reply-To',
+		'To',
+		'Cc',
+		'Subject',
+		'Date',
+	]
+	for hname in hdrs:
+		if eml[hname]:
+			hvals = []
+			for hval in eml.get_all(hname):
+				hval = decode_header(hval)
+				if hname == 'Date':
+					#hval = TODO timezone...
+					pass
+				hvals.append(hval)
+			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
+	return "\n".join(lns)
 
 def get_filter_by_mime(main, sub):
 	for m, s, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(\S+)\s*(.+)?', splitgroups=[4]):
-		if (m == '*' or m == main) and (s == '*' or s == sub):
+		if fnmatch(main, m) and fnmatch(sub, s):
 			if cmd == '-':
 				return ''
 			if which(cmd):
@@ -415,6 +492,8 @@ def get_stock_by_mime(main, sub):
 	}
 	assoc_full = {
 		'application/pgp-signature': 'mail-signed',
+		'application/ics': 'x-office-calendar',
+		'text/calendar': 'x-office-calendar',
 	}
 	full = main + '/' + sub
 
@@ -430,7 +509,7 @@ def get_stock_by_mime(main, sub):
 
 	return gtk.STOCK_FILE
 
-def act_bye():
+def act_quit():
 	gtk.main_quit()
 
 def act_button(func):
@@ -453,7 +532,8 @@ def act_reply(recip):
 	print "reply", recip
 
 def act_compose():
-	pass
+	win_comp.show_all()
+	win_comp.set_data('email-saved', True)
 
 def act_wrap(i=1):
 	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=panel_content.get_wrap_mode())
@@ -463,7 +543,7 @@ def get_extension_by_mime(mime):
 	if mime is None:
 		e = None
 	else:
-		e = mimetypes.guess_extension(mime)
+		e = guess_extension(mime)
 	if e is None:
 		e = '.dat'
 	return e
@@ -472,7 +552,7 @@ def act_open():
 	eml = get_part_by_itpath()
 	if eml is None: return
 	mime = eml.get_content_type()
-	fd, tmppath = tempfile.mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
+	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
 	try:
 		save_to_filehandle(eml, fd)
 		os.close(fd)
@@ -508,6 +588,9 @@ def act_save():
 				save_to_file(eml, savefile)
 
 def save_to_file(eml, filename):
+	if os.path.exists(filename):
+		if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
+			return None
 	try:
 		fh = open(filename, 'w')
 		save_to_filehandle(eml, fh.fileno())
@@ -616,27 +699,65 @@ def load_toolitems(toolbar, toolitems):
 				tbi.set_draw(True)
 				tbi.set_expand(False)
 		else:
-			stocklabel = False
-			if label is None:
-				s = gtk.stock_lookup(stock)
-				if s:
-					label = s[1]
-					stocklabel = True
-				else:
-					label = ''
-			else:
+			stocklabel = None
+			s = gtk.stock_lookup(stock)
+			if s:
+				stocklabel = re.sub('_', '', s[1])
+			if label is not None:
 				label = _(label)
-			if tip is None:
-				tip = label
-				if stocklabel:
-					tip = re.sub('_', '', tip)
 			else:
+				label = stocklabel
+			if tip is not None:
 				tip = _(tip)
+			else:
+				if label is not None:
+					tip = label
+				else:
+					tip = stocklabel
 			tbi = StockToolButton(label=label, stock=stock, tooltip=tip)
 			tbi.child.connect('clicked', on_click_button, fnc_left)
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
 		tbi.set_data('stock', stock)
 		toolbar.insert(tbi, -1)
+
+def setup_treeview__icon_label(tv):
+	tvc = gtk.TreeViewColumn()
+	tv.append_column(tvc)
+	cr_pix = gtk.CellRendererPixbuf()
+	cr_txt = gtk.CellRendererText()
+	tvc.pack_start(cr_pix, False)
+	tvc.pack_start(cr_txt, True)
+	tvc.add_attribute(cr_txt, 'markup', 1)
+	tvc.add_attribute(cr_pix, 'icon-name', 2)
+	tvc.add_attribute(cr_pix, 'pixbuf', 3)
+
+
+def act_send():
+	pass
+
+def act_save_edit():
+	pass
+
+def act_attach():
+	filename = choose_open_file()
+	if filename:
+		basename = os.path.basename(filename)
+		stock = get_stock_by_mime('', '')
+		pixb = None
+		Attachments.append(['', basename, stock, pixb])
+
+def act_edit_external():
+	pass
+
+def act_close_edit():
+	if not win_comp.get_data('email-sent') and not win_comp.get_data('email-saved'):
+		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE)):
+			return True
+	if args.compose:
+		act_quit()
+	else:
+		win_comp.hide()
+		return True
 
 
 
@@ -648,30 +769,48 @@ PMU_MIME = '<i><span color="gray30">'
 PMU_MIME_CLOSE = '</span></i>'
 PMU_NAME = '<b>'
 PMU_NAME_CLOSE = '</b>'
+PMU_HEAD = '<b>'
+PMU_HEAD_CLOSE = '</b>'
 Email = None
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
 
-main_win = gtk.Window()
-main_win.set_default_size(720, 450)
-start_evt = main_win.connect('map-event', main_win_show)
-main_win.connect('delete-event', lambda a,b: act_bye())
-add_key_binding(main_win, '<Control>q', lambda a,b,c,d: act_bye())
-add_key_binding(main_win, '<Control>s', lambda a,b,c,d: act_save())
-add_key_binding(main_win, '<Control>o', lambda a,b,c,d: act_open())
-add_key_binding(main_win, '<Control>n', lambda a,b,c,d: act_compose())
-add_key_binding(main_win, '<Control><Shift>r', lambda a,b,c,d: act_reply('one'))
-add_key_binding(main_win, '<Control>r', lambda a,b,c,d: act_reply('all'))
-add_key_binding(main_win, '<Control>f', lambda a,b,c,d: act_reply(''))
-add_key_binding(main_win, '<Control>u', lambda a,b,c,d: act_view_source())
+argparser = argparse.ArgumentParser()
+argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
+argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
+argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
+argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
+argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
+args = argparser.parse_args()
+if args.to is not None: args.to = re.split('\s*,\s*', args.to)
+if not args.compose and not args.FILE:
+	sys.stderr.write(_("Either compose mode or FILE is needed.") + "\n")
+	os._exit(1)
+
+
+### Build GUI ###
+
+win_main = gtk.Window()
+win_main.set_default_size(800, 450)
+start_evt = win_main.connect('map-event', win_main_show)
+win_main.connect('delete-event', lambda a,b: act_quit())
+add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
+add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
+add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
+add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
+add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply('one'))
+add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply('all'))
+add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(''))
+add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
-panel_header = gtk.Label("headers")
+spanel_header = gtk.ScrolledWindow()
+panel_header = gtk.Label()
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
+Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
@@ -684,23 +823,31 @@ spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
 tb_controls = gtk.Toolbar()
 
-main_win.add(box_main)
+win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
-box_main.pack_start(panel_header, False, True)
+box_main.pack_start(spanel_header, False, True)
+spanel_header.add_with_viewport(panel_header)
 box_main.pack_start(panel_body, True, True)
 panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
-spanel_parts.add(panel_parts)
+spanel_parts.add_with_viewport(panel_parts)
 panel_right.pack_start(panel_btnbox, True, False)
 panel_btnbox.pack_start(lbl_right, True, False)
 panel_btnbox.pack_start(btnbox_right, True, False)
 btnbox_right.pack_start(btn_open, False, False)
 btnbox_right.pack_start(btn_save, False, False)
 panel_right.pack_start(spanel_content, True, True)
-spanel_content.add(panel_content)
+spanel_content.add_with_viewport(panel_content)
 panel_right.pack_start(tb_controls, False, True)
 
 toolbar.set_style(gtk.TOOLBAR_BOTH)
+spanel_header.set_size_request(-1, 104)
+spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+panel_header.set_padding(4, 2)
+panel_header.set_alignment(0, 0)
+panel_header.set_justify(gtk.JUSTIFY_LEFT)
+panel_header.set_selectable(True)
+panel_header.set_line_wrap(True)
 panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -719,28 +866,17 @@ tb_controls.set_style(gtk.TOOLBAR_ICONS)
 
 toolbuttons = [
 	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
-	# 'mail-send'
-	# 'mail-mark-junk'
-	# 'mail-mark-notjunk'
-	# 'mail-attachment'
-	# 'x-office-address-book'
 	("Reply", 'mail-reply-sender', None, (act_reply, 'one'), None),
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
+	(None, None, None, 'separator', None),
+	# 'mail-mark-junk'
+	# 'mail-mark-notjunk'
 	(None, None, None, 'space', None),
-	("Quit", gtk.STOCK_QUIT, None, act_bye, None),
+	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
 load_toolitems(toolbar, toolbuttons)
-
-tvc = gtk.TreeViewColumn()
-panel_parts.append_column(tvc)
-cr_pix = gtk.CellRendererPixbuf()
-cr_txt = gtk.CellRendererText()
-tvc.pack_start(cr_pix, False)
-tvc.pack_start(cr_txt, True)
-tvc.add_attribute(cr_txt, 'markup', 1)
-tvc.add_attribute(cr_pix, 'icon-name', 2)
-tvc.add_attribute(cr_pix, 'pixbuf', 3)
+setup_treeview__icon_label(panel_parts)
 
 toolbuttons = [
 	(None, None, None, 'space', None),
@@ -748,7 +884,7 @@ toolbuttons = [
 	(None, gtk.STOCK_SAVE, None, act_save, None),
 	(None, None, None, 'separator', None),
 	("Unfilter", gtk.STOCK_ZOOM_FIT, "Filter / Unfilter", act_view_source, None),
-	("Wrap", gtk.STOCK_JUSTIFY_LEFT, "Soft / Hard / No Wrap", act_wrap, (act_wrap, -1)),
+	("Wrap", gtk.STOCK_JUSTIFY_LEFT, "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap", act_wrap, (act_wrap, -1)),
 	(None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace", act_font, act_font_switch),
 ]
 load_toolitems(tb_controls, toolbuttons)
@@ -760,6 +896,71 @@ for tbi in tb_controls.get_children():
 		btn_save2 = tbi
 
 
-main_win.show_all()
-panel_btnbox.hide()
+win_comp = gtk.Window()
+win_comp.set_default_size(*win_main.get_default_size())
+win_comp.connect('delete-event', lambda a,b: act_close_edit())
+add_key_binding(win_comp, '<Control>'+('q' if args.compose else 'w'), lambda a,b,c,d: act_close_edit())
+add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
+add_key_binding(win_comp, '<Control>o', lambda a,b,c,d: act_attach())
+
+box_compose = gtk.VBox(False, 5)
+tb_compose = gtk.Toolbar()
+panel_compose = gtk.VPaned()
+panel_upper = gtk.HPaned()
+spanel_comp_hdr = gtk.ScrolledWindow()
+panel_comp_hdr = gtk.HBox(False, 2)
+spanel_attachments = gtk.ScrolledWindow()
+Attachments = gtk.ListStore(str, str, str, gtk.gdk.Pixbuf)
+panel_attachments = gtk.TreeView(Attachments)
+frame_edit = gtk.Frame()
+spanel_edit = gtk.ScrolledWindow()
+panel_edit = gtk.TextView()
+tb_comp_controls = gtk.Toolbar()
+
+win_comp.add(box_compose)
+box_compose.pack_start(tb_compose, False, True)
+box_compose.pack_start(panel_compose, True, True)
+panel_compose.pack1(panel_upper, True, True)
+panel_upper.pack1(spanel_comp_hdr, True, True)
+spanel_comp_hdr.add_with_viewport(panel_comp_hdr)
+panel_upper.pack2(spanel_attachments, False, True)
+spanel_attachments.add_with_viewport(panel_attachments)
+panel_attachments.set_headers_visible(False)
+panel_compose.pack2(frame_edit, True, True)
+frame_edit.add(spanel_edit)
+spanel_edit.add(panel_edit)
+box_compose.pack_start(tb_comp_controls, False, True)
+
+tb_compose.set_style(gtk.TOOLBAR_BOTH)
+panel_upper.set_position(win_comp.get_default_size()[0]-150)
+spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_compose.set_position(125)
+spanel_edit.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+frame_edit.set_shadow_type(gtk.SHADOW_IN)
+tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
+tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
+
+toolbuttons = [
+	("Send", 'mail-send', None, act_send, None),
+	(None, gtk.STOCK_SAVE, None, act_save_edit, None),
+	("Attach File", 'mail-attachment', None, act_attach, None),
+	(None, None, None, 'space', None),
+	(None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
+]
+load_toolitems(tb_compose, toolbuttons)
+setup_treeview__icon_label(panel_attachments)
+
+toolbuttons = [
+	(None, None, None, 'space', None),
+	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
+]
+load_toolitems(tb_comp_controls, toolbuttons)
+
+
+if args.compose:
+	act_compose()
+else:
+	win_main.show_all()
+	panel_btnbox.hide()
 gtk.main()
