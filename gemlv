@@ -16,6 +16,8 @@ import tempfile
 import mimetypes
 
 
+### helper classes, functions ###
+
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
 		super(self.__class__, self).__init__()
@@ -195,6 +197,12 @@ class cyclelist(list):
 	def __str__(self):
 		return str(self[self.idx])
 
+def add_key_binding(widget, keyname, callback):
+	accelgroup = gtk.AccelGroup()
+	key, modifier = gtk.accelerator_parse(keyname)
+	accelgroup.connect_group(key, modifier, gtk.ACCEL_VISIBLE, callback)
+	widget.add_accel_group(accelgroup)
+
 def display_error(e):
 	text = None
 	if isinstance(e, OSError) or isinstance(e, IOError):
@@ -210,6 +218,35 @@ def display_error(e):
 	dlg.run()
 	dlg.destroy()
 
+def choose_save_dialog(action, filename=None):
+	global LastFolder
+	selected = None
+
+	dlg = gtk.FileChooserDialog(action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, gtk.STOCK_SAVE, gtk.RESPONSE_ACCEPT))
+	if LastFolder is not None: dlg.set_current_folder(LastFolder)
+	if filename is not None: dlg.set_current_name(filename)
+	btn_cwd = StockButton(label = _("Working Dir"), stock = gtk.STOCK_JUMP_TO)
+	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
+	btn_cwd.show()
+	while True:
+		resp = dlg.run()
+		if resp == gtk.RESPONSE_ACCEPT:
+			selected = dlg.get_filename()
+			break
+		elif resp == gtk.RESPONSE_NO:
+			dlg.set_current_folder(os.getcwd())
+		else:
+			break
+	LastFolder = dlg.get_current_folder()
+	dlg.destroy()
+	return selected
+
+def choose_save_file(filename=None):
+	return choose_save_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename)
+
+def choose_save_folder():
+	return choose_save_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+
 def get_pipe_handlers(npairs):
 	pipes = []
 	for n in range(0, npairs):
@@ -224,8 +261,43 @@ def joinNone(glue, dflt, lst):
 		lst2.append(dflt if e is None else e)
 	return glue.join(lst2)
 
-def bye(*ignore):
-	gtk.main_quit()
+def which(cmd):
+	def is_executable(p):
+		return (os.path.isfile(p) and os.access(p, os.X_OK))
+	
+	ap, bn = os.path.split(cmd)
+	if ap:
+		if is_executable(cmd):
+			return cmd
+	else:
+		for d in os.environ['PATH'].split(os.path.pathsep):
+			p = os.path.join(d, cmd)
+			if is_executable(p):
+				return p
+	return None
+
+def run_async(cmd, args, postrun):
+	pid1 = os.fork()
+	if pid1 == 0:
+		os.closerange(0, 255)
+		pid2 = os.fork()
+		if pid2 == 0:
+			pid3 = os.fork()
+			if pid3 == 0:
+				args.insert(0, os.path.basename(cmd))
+				os.execvp(cmd, args)
+				os._exit(127)
+			else:
+				_, status = os.waitpid(pid3, 0)
+				excode = status >> 8
+				postrun[0](*postrun[1:])
+				os._exit(excode)
+		else:
+			os._exit(0)
+	else:
+		os.waitpid(pid1, 0)
+
+### private functions ###
 
 def main_win_show(widget, event):
 	main_win.disconnect(start_evt)
@@ -239,9 +311,17 @@ def load_file(filename):
 	fp.close()
 	clear_parts(Parts)
 	if Email.is_multipart():
-		spanel_parts.show()
-		load_parts(Email, Parts, Parts.get_iter_root())
-		panel_parts.expand_all()
+		pos = panel_body.get_data('saved-position')
+		if pos is not None:
+			panel_body.set_position(pos)
+			panel_body.set_data('saved-position', None)
+	else:
+		panel_body.set_data('saved-position', panel_body.get_position())
+		panel_body.set_position(0)
+		
+	load_parts(Email, Parts, Parts.get_iter_root())
+	panel_parts.expand_all()
+	if Email.is_multipart():
 		if PartPrimary is not None:
 			selection_parts.select_iter(PartPrimary)
 		elif PartSecondary is not None:
@@ -249,8 +329,7 @@ def load_file(filename):
 		else:
 			load_part(Email)
 	else:
-		spanel_parts.hide()
-		load_part(Email)
+		selection_parts.select_path((0,))
 
 def clear_parts(model):
 	model.clear()
@@ -259,9 +338,9 @@ def load_parts(eml, model, parent):
 	global PartPrimary
 	global PartSecondary
 	
-	label = ''
-	if eml.get_filename(): label += glib.markup_escape_text(eml.get_filename()) + ' '
-	label += '<i><span color="gray30">' + eml.get_content_type() + '</span></i>'
+	label = PMU_MIME + glib.markup_escape_text(eml.get_content_type()) + PMU_MIME_CLOSE
+	filename = eml.get_filename()
+	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
 	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	pixb = None
 	
@@ -292,13 +371,23 @@ def load_part(eml, filt = None):
 			bufr.set_text(joinNone("\n", '', [eml.preamble, eml.epilogue]))
 			panel_content.set_sensitive(True)
 		else:
+			label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
+			filename = eml.get_filename()
+			if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + "\n" + label
+			lbl_right.set_markup(label)
+			
 			panel_btnbox.show()
-			spanel_content.hide()
 			btn_open.show()
 			btn_save.set_label(gtk.stock_lookup(gtk.STOCK_SAVE)[1])
+			spanel_content.hide()
 	elif filt == '':
 		panel_content.set_data('view-unfiltered', True)
-		bufr.set_text(eml.get_payload(decode=1))
+		try:
+			bufr.set_text(eml.get_payload(decode=1))
+		except TypeError:
+			bufr.set_text(eml.as_string())
+		panel_btnbox.hide()
+		spanel_content.show()
 		panel_content.set_sensitive(True)
 	else:
 		bufr.set_text('')
@@ -307,24 +396,12 @@ def load_part(eml, filt = None):
 			bufr.insert(bufr.get_end_iter(), s)
 		panel_content.set_sensitive(True)
 
-def which(cmd):
-	def is_executable(p):
-		return (os.path.isfile(p) and os.access(p, os.X_OK))
-	
-	ap, bn = os.path.split(cmd)
-	if ap:
-		if is_executable(cmd):
-			return cmd
-	else:
-		for d in os.environ['PATH'].split(os.path.pathsep):
-			p = os.path.join(d, cmd)
-			if is_executable(p):
-				return p
-	return None
+def get_main_subject():
+	return ''
 
 def get_filter_by_mime(main, sub):
 	for m, s, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(\S+)\s*(.+)?', splitgroups=[4]):
-		if (main == '*' or main == m) and (sub == '*' or sub == s):
+		if (m == '*' or m == main) and (s == '*' or s == sub):
 			if cmd == '-':
 				return ''
 			if which(cmd):
@@ -353,11 +430,8 @@ def get_stock_by_mime(main, sub):
 
 	return gtk.STOCK_FILE
 
-def add_key_binding(widget, keyname, callback):
-	accelgroup = gtk.AccelGroup()
-	key, modifier = gtk.accelerator_parse(keyname)
-	accelgroup.connect_group(key, modifier, gtk.ACCEL_VISIBLE, callback)
-	widget.add_accel_group(accelgroup)
+def act_bye():
+	gtk.main_quit()
 
 def act_button(func):
 	if type(func) != type(()):
@@ -376,7 +450,7 @@ def on_press_button(btn, evt, func):
 	return False
 
 def act_reply(recip):
-	pass
+	print "reply", recip
 
 def act_compose():
 	pass
@@ -385,20 +459,23 @@ def act_wrap(i=1):
 	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=panel_content.get_wrap_mode())
 	panel_content.set_wrap_mode(modes.turn(i))
 
-def save_to_file(filename):
-	pass
-
 def get_extension_by_mime(mime):
-	e = mimetypes.guess_extension(mime)
-	if e is None: e = '.dat'
+	if mime is None:
+		e = None
+	else:
+		e = mimetypes.guess_extension(mime)
+	if e is None:
+		e = '.dat'
 	return e
 
 def act_open():
 	eml = get_part_by_itpath()
+	if eml is None: return
 	mime = eml.get_content_type()
 	fd, tmppath = tempfile.mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
 	try:
 		save_to_filehandle(eml, fd)
+		os.close(fd)
 	except OSError, e:
 		os.unlink(tmppath)
 		e.filename = tmppath
@@ -406,29 +483,42 @@ def act_open():
 		return
 	run_async('mimeopen-gui', [tmppath], [os.unlink, tmppath])
 
-def act_save():
-	pass
+def calc_attachment_name(part, n=None):
+	name = part.get_filename()
+	if name is None:
+		name = "%s_attachment%s%s" % (get_main_subject(), '' if n is None else '-'+str(n), get_extension_by_mime(part.get_content_type()))
+	return name
 
-def run_async(cmd, args, postrun):
-	pid1 = os.fork()
-	if pid1 == 0:
-		os.closerange(0, 255)
-		pid2 = os.fork()
-		if pid2 == 0:
-			pid3 = os.fork()
-			if pid3 == 0:
-				args.insert(0, os.path.basename(cmd))
-				os.execvp(cmd, args)
-				os._exit(127)
-			else:
-				_, status = os.waitpid(pid3, 0)
-				excode = status >> 8
-				postrun[0](*postrun[1:])
-				os._exit(excode)
-		else:
-			os._exit(0)
-	else:
-		os.waitpid(pid1, 0)
+def act_save():
+	itpaths = selection_parts.get_selected_rows()[1]
+	if len(itpaths) == 1:
+		itpath = itpaths[0]
+		eml = get_part_by_itpath(itpath)
+		savefile = choose_save_file(calc_attachment_name(eml))
+		if savefile is not None:
+			save_to_file(eml, savefile)
+	elif len(itpaths) > 1:
+		savedir = choose_save_folder()
+		if savedir is not None:
+			n = 0
+			for itpath in itpaths:
+				n += 1
+				eml = get_part_by_itpath(itpath)
+				savefile = os.path.join(savedir, calc_attachment_name(eml, n))
+				save_to_file(eml, savefile)
+
+def save_to_file(eml, filename):
+	try:
+		fh = open(filename, 'w')
+		save_to_filehandle(eml, fh.fileno())
+		fh.close()
+		return True
+	except IOError, e:
+		display_error(e)
+	except OSError, e:
+		e.filename = filename
+		display_error(e)
+	return False
 
 def save_to_filehandle(eml, fd):
 	s = eml.get_payload(decode=1)
@@ -437,7 +527,6 @@ def save_to_filehandle(eml, fd):
 	written = os.write(fd, s)
 	if written != len(s):
 		raise OSError(5, 'Write Error')
-	os.close(fd)
 
 def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
@@ -488,9 +577,10 @@ def on_select_parts(selection):
 	itpaths = selection.get_selected_rows()[1]
 	if len(itpaths) > 1:
 		panel_btnbox.show()
-		spanel_content.hide()
+		lbl_right.set_markup(_("Multiple (%s) selected attachments") % (len(itpaths)))
 		btn_open.hide()
 		btn_save.set_label(_("Save All"))
+		spanel_content.hide()
 		btn_open2.set_sensitive(False)
 		btn_save2.set_sensitive(True)
 	else:
@@ -514,19 +604,6 @@ def get_part_by_itpath(itpath = None):
 			return None
 	model = Parts
 	return model.get_value(model.get_iter(itpath), 0)
-
-def on_click_parts(tree, event):
-	if event.button == 3:
-		x = int(event.x)
-		y = int(event.y)
-		pathinfo = tree.get_path_at_pos(x, y)
-		if pathinfo is not None:
-			path, col, cellx, celly = pathinfo
-			tree.grab_focus()
-			tree.set_cursor(path, col, 0)
-#			popup_menu = 
-#			popup_menu.popup(None, None, None, event.button, event.time)
-		return True
 
 def load_toolitems(toolbar, toolitems):
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
@@ -567,31 +644,44 @@ def load_toolitems(toolbar, toolitems):
 
 PROGNAME = 'gemlv'
 _ = gettext.gettext
+PMU_MIME = '<i><span color="gray30">'
+PMU_MIME_CLOSE = '</span></i>'
+PMU_NAME = '<b>'
+PMU_NAME_CLOSE = '</b>'
 Email = None
 Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 PartPrimary = None
 PartSecondary = None
+LastFolder = os.getcwd()
 
 main_win = gtk.Window()
 main_win.set_default_size(720, 450)
-main_win.connect('delete-event', bye)
-add_key_binding(main_win, '<Control>q', bye)
 start_evt = main_win.connect('map-event', main_win_show)
+main_win.connect('delete-event', lambda a,b: act_bye())
+add_key_binding(main_win, '<Control>q', lambda a,b,c,d: act_bye())
+add_key_binding(main_win, '<Control>s', lambda a,b,c,d: act_save())
+add_key_binding(main_win, '<Control>o', lambda a,b,c,d: act_open())
+add_key_binding(main_win, '<Control>n', lambda a,b,c,d: act_compose())
+add_key_binding(main_win, '<Control><Shift>r', lambda a,b,c,d: act_reply('one'))
+add_key_binding(main_win, '<Control>r', lambda a,b,c,d: act_reply('all'))
+add_key_binding(main_win, '<Control>f', lambda a,b,c,d: act_reply(''))
+add_key_binding(main_win, '<Control>u', lambda a,b,c,d: act_view_source())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
 panel_header = gtk.Label("headers")
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-panel_btnbox = gtk.HBox()
-btnbox_right = gtk.VBox(True, 10)
-spanel_content = gtk.ScrolledWindow()
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
-panel_content = gtk.TextView()
+lbl_right = gtk.Label()
+panel_btnbox = gtk.HBox()
+btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
+spanel_content = gtk.ScrolledWindow()
+panel_content = gtk.TextView()
 tb_controls = gtk.Toolbar()
 
 main_win.add(box_main)
@@ -602,6 +692,7 @@ panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
 spanel_parts.add(panel_parts)
 panel_right.pack_start(panel_btnbox, True, False)
+panel_btnbox.pack_start(lbl_right, True, False)
 panel_btnbox.pack_start(btnbox_right, True, False)
 btnbox_right.pack_start(btn_open, False, False)
 btnbox_right.pack_start(btn_save, False, False)
@@ -614,9 +705,10 @@ panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
-panel_parts.connect('button-press-event', on_click_parts)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
+lbl_right.set_alignment(0, 0)
+lbl_right.set_justify(gtk.JUSTIFY_LEFT)
 btn_open.connect('clicked', lambda wdg: act_open())
 btn_save.connect('clicked', lambda wdg: act_save())
 panel_content.set_editable(False)
@@ -636,7 +728,7 @@ toolbuttons = [
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'space', None),
-	("Quit", gtk.STOCK_QUIT, None, bye, None),
+	("Quit", gtk.STOCK_QUIT, None, act_bye, None),
 ]
 load_toolitems(toolbar, toolbuttons)
 
