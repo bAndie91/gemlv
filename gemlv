@@ -130,6 +130,7 @@ class cfgparser:
 class pipereader:
 	def __init__(self, inputstr, cmd, args=[], exitdict=None):
 		self.exitdict = exitdict
+		args = args[:]
 		args.insert(0, os.path.basename(cmd))
 		child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
 		pid = os.fork()
@@ -301,6 +302,8 @@ def which(cmd):
 	return None
 
 def run_async(cmd, args, postrun):
+	args = args[:]
+	args.insert(0, os.path.basename(cmd))
 	pid1 = os.fork()
 	if pid1 == 0:
 		os.closerange(0, 255)
@@ -308,7 +311,6 @@ def run_async(cmd, args, postrun):
 		if pid2 == 0:
 			pid3 = os.fork()
 			if pid3 == 0:
-				args.insert(0, os.path.basename(cmd))
 				os.execvp(cmd, args)
 				os._exit(127)
 			else:
@@ -352,7 +354,7 @@ def load_file(filename):
 		elif PartSecondary is not None:
 			selection_parts.select_iter(PartSecondary)
 		else:
-			load_part(Email)
+			selection_parts.select_path((0,))
 	else:
 		selection_parts.select_path((0,))
 
@@ -406,10 +408,11 @@ def set_content_text(s, eml=None):
 	panel_content.get_buffer().set_text(s)
 	panel_content.set_sensitive(True)
 
-def load_part(eml, filt = None):
+def load_part(eml, filt=None):
 	if eml is None: return
-	clear_content(_("Loading is in progress or failed"))
+	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
+
 	if filt is None:
 		filt = get_filter_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	
@@ -426,19 +429,20 @@ def load_part(eml, filt = None):
 			btn_open.show()
 			btn_save.set_label(gtk.stock_lookup(gtk.STOCK_SAVE)[1])
 			spanel_content.hide()
-	elif filt == '':
-		panel_content.set_data('view-unfiltered', True)
-		set_content_text(None, eml)
-		panel_btnbox.hide()
-		spanel_content.show()
-		panel_content.set_sensitive(True)
 	else:
-		bufr = panel_content.get_buffer()
-		bufr.set_text('')
 		cmd, args = filt[:]
-		for s in pipereader(get_content_properly(eml), cmd, args):
-			bufr.insert(bufr.get_end_iter(), s)
-		panel_content.set_sensitive(True)
+		if cmd == '':
+			panel_content.set_data('view-unfiltered', True)
+			set_content_text(None, eml)
+			panel_btnbox.hide()
+			spanel_content.show()
+			panel_content.set_sensitive(True)
+		else:
+			bufr = panel_content.get_buffer()
+			bufr.set_text('')
+			for s in pipereader(get_content_properly(eml), cmd, args):
+				bufr.insert(bufr.get_end_iter(), s)
+			panel_content.set_sensitive(True)
 
 def decode_header(s):
 	chunks = []
@@ -476,14 +480,26 @@ def get_headers_markup(eml):
 			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
 	return "\n".join(lns)
 
-def get_filter_by_mime(main, sub):
+def get_filters_by_mime(main, sub, all=True):
+	filters = []
 	for m, s, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(\S+)\s*(.+)?', splitgroups=[4]):
 		if fnmatch(main, m) and fnmatch(sub, s):
+			e = None
 			if cmd == '-':
-				return ''
-			if which(cmd):
-				return cmd, args
+				e = ('', None)
+			elif which(cmd):
+				e = (cmd, args)
+			if e is not None:
+				if all:
+					filters.append(e)
+				else:
+					return e
+	if all:
+		return filters
 	return None
+
+def get_filter_by_mime(main, sub):
+	return get_filters_by_mime(main, sub, all=False)
 
 def get_stock_by_mime(main, sub):
 	assoc_main = {
@@ -528,12 +544,15 @@ def on_press_button(btn, evt, func):
 			act_button(func)
 	return False
 
-def act_reply(recip):
-	print "reply", recip
-
 def act_compose():
 	win_comp.show_all()
 	win_comp.set_data('email-saved', True)
+
+def act_reply(recip):
+	print "reply", recip
+
+def act_mark_spam():
+	pass
 
 def act_wrap(i=1):
 	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=panel_content.get_wrap_mode())
@@ -615,7 +634,7 @@ def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
 		filt = None
 	else:
-		filt = ''
+		filt = ('', None)
 	load_part(get_part_by_itpath(), filt)
 
 def get_current_font(txtv):
@@ -666,6 +685,7 @@ def on_select_parts(selection):
 		spanel_content.hide()
 		btn_open2.set_sensitive(False)
 		btn_save2.set_sensitive(True)
+		menubutton_filters.set_sensitive(False)
 	else:
 		panel_btnbox.hide()
 		spanel_content.show()
@@ -673,11 +693,32 @@ def on_select_parts(selection):
 			btn_open2.set_sensitive(True)
 			btn_save2.set_sensitive(True)
 			itpath = itpaths[0]
-			load_part(get_part_by_itpath(itpath))
+			eml = get_part_by_itpath(itpath)
+			load_part(eml)
+			menubutton_filters.set_sensitive(True)
+			populate_filters_menu(eml)
 		else:
 			btn_open2.set_sensitive(False)
 			btn_save2.set_sensitive(False)
 			clear_content()
+			menubutton_filters.set_sensitive(False)
+
+def populate_filters_menu(eml):
+	for mi in menu_filters.children():
+		menu_filters.remove(mi)
+	uniqfilt = {}
+	for filt in get_filters_by_mime(eml.get_content_maintype(), eml.get_content_subtype()):
+		if filt[0] == '': continue
+		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
+		uniqfilt[filt[0]] = filt[1]
+		mi = gtk.MenuItem(filt[0])
+		mi.connect('activate', lambda mi, eml, filt: load_part(eml, filt), eml, filt)
+		menu_filters.append(mi)
+	menu_filters.show_all()
+	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
+
+def disable_filters_menu(b=True):
+	menubutton_filters.children()[0].children()[1].set_sensitive(not b)
 
 def get_part_by_itpath(itpath = None):
 	if itpath is None:
@@ -698,6 +739,11 @@ def load_toolitems(toolbar, toolitems):
 			elif fnc_left == 'separator':
 				tbi.set_draw(True)
 				tbi.set_expand(False)
+		elif isinstance(stock, gtk.ToolItem):
+			tbi = stock
+			if tip is not None:
+				tbi.set_tooltip_text(tip)
+			tbi.connect('clicked', on_click_button, fnc_left)
 		else:
 			stocklabel = None
 			s = gtk.stock_lookup(stock)
@@ -715,9 +761,9 @@ def load_toolitems(toolbar, toolitems):
 				else:
 					tip = stocklabel
 			tbi = StockToolButton(label=label, stock=stock, tooltip=tip)
-			tbi.child.connect('clicked', on_click_button, fnc_left)
+			tbi.set_data('stock', stock)
+			tbi.connect('clicked', on_click_button, fnc_left)
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
-		tbi.set_data('stock', stock)
 		toolbar.insert(tbi, -1)
 
 def setup_treeview__icon_label(tv):
@@ -822,6 +868,8 @@ btn_save = StockButton(stock=gtk.STOCK_SAVE)
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
 tb_controls = gtk.Toolbar()
+menubutton_filters = gtk.MenuToolButton(gtk.STOCK_ZOOM_FIT)
+menu_filters = gtk.Menu()
 
 win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
@@ -862,6 +910,9 @@ panel_content.set_editable(False)
 panel_content.set_wrap_mode(gtk.WRAP_WORD)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
+menubutton_filters.set_homogeneous(False)
+menubutton_filters.set_menu(menu_filters)
+menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 
 
 toolbuttons = [
@@ -870,8 +921,7 @@ toolbuttons = [
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'separator', None),
-	# 'mail-mark-junk'
-	# 'mail-mark-notjunk'
+	("Spam", 'mail-mark-junk', None, act_mark_spam, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
@@ -883,7 +933,7 @@ toolbuttons = [
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, None, act_save, None),
 	(None, None, None, 'separator', None),
-	("Unfilter", gtk.STOCK_ZOOM_FIT, "Filter / Unfilter", act_view_source, None),
+	("Unfilter", menubutton_filters, "Filter / Unfilter", act_view_source, None),
 	("Wrap", gtk.STOCK_JUSTIFY_LEFT, "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap", act_wrap, (act_wrap, -1)),
 	(None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace", act_font, act_font_switch),
 ]
