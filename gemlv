@@ -16,6 +16,11 @@ from tempfile import mkstemp
 from mimetypes import guess_extension
 from fnmatch import fnmatch
 import argparse
+try:
+	import xattr
+except ImportError:
+	sys.stderr.write(_("Notice: no module xattr loaded") + "\n")
+	xattr = None
 
 
 ### helper classes, functions ###
@@ -471,16 +476,23 @@ def get_headers_markup(eml):
 		"Subject",
 		"Date",
 	]
+	hdr_from = []
 	for hname in hdrs:
 		if eml[hname]:
 			hvals = []
 			for hval in eml.get_all(hname):
 				hval = decode_header(hval)
-				if hname == 'Date':
+				if hname == 'From':
+					hdr_from.append(hval)
+				elif hname == 'Reply-To':
+					if hval in hdr_from:
+						continue
+				elif hname == 'Date':
 					#hval = TODO timezone...
 					pass
 				hvals.append(hval)
-			lns.append(PMU_HEAD + glib.markup_escape_text(_(hname)) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
+			if len(hvals):
+				lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
 	return "\n".join(lns)
 
 def get_filters_by_mime(main, sub, all=True):
@@ -673,8 +685,10 @@ def act_open():
 	mime = eml.get_content_type()
 	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
 	try:
-		save_to_filehandle(eml, fd)
-		os.close(fd)
+		save_to_filedescriptor(eml, fd)
+		fh = os.fdopen(fd)
+		set_xattr_charset(fh, eml.get_content_charset(), tmppath)
+		fh.close()
 	except OSError, e:
 		os.unlink(tmppath)
 		e.filename = tmppath
@@ -706,13 +720,25 @@ def act_save():
 				savefile = os.path.join(savedir, calc_attachment_name(eml, n))
 				save_to_file(eml, savefile)
 
+def set_xattr_charset(fh, charset, filename='-'):
+	if xattr is not None:
+		try:
+			if charset is None:
+				xattr.removexattr(fh, XATTR_CHARSET)
+			else:
+				xattr.setxattr(fh, XATTR_CHARSET, charset)
+		except IOError, e:
+			sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (XATTR_CHARSET, filename, str(e))) + "\n")
+			pass
+
 def save_to_file(eml, filename):
 	if os.path.exists(filename):
 		if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
 			return None
 	try:
 		fh = open(filename, 'w')
-		save_to_filehandle(eml, fh.fileno())
+		save_to_filedescriptor(eml, fh.fileno())
+		set_xattr_charset(fh, eml.get_content_charset(), filename)
 		fh.close()
 		return True
 	except IOError, e:
@@ -722,7 +748,7 @@ def save_to_file(eml, filename):
 		display_error(e)
 	return False
 
-def save_to_filehandle(eml, fd):
+def save_to_filedescriptor(eml, fd):
 	s = eml.get_payload(decode=1)
 	if s is None:
 		s = eml.as_string()
@@ -941,6 +967,7 @@ PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
 PopularHeaders = ["From", "To", "Cc", "Bcc", "Subject", "Priority"]
+XATTR_CHARSET = 'user.mime_encoding'
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
