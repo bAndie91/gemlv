@@ -331,6 +331,7 @@ def win_main_show(widget, event):
 	if args.FILE: load_file(args.FILE)
 
 def load_file(filename):
+	global Email
 	fh = open(filename, 'r')
 	Email = email.message_from_file(fh)
 	fh.close()
@@ -457,16 +458,16 @@ def get_main_subject():
 def get_headers_markup(eml):
 	lns = []
 	hdrs = [
-		'X-X-Sender',
-		'X-Sender',
-		'Sender',
-		'From',
-		'Organization',
-		'Reply-To',
-		'To',
-		'Cc',
-		'Subject',
-		'Date',
+		"X-X-Sender",
+		"X-Sender",
+		"Sender",
+		"From",
+		"Organization",
+		"Reply-To",
+		"To",
+		"Cc",
+		"Subject",
+		"Date",
 	]
 	for hname in hdrs:
 		if eml[hname]:
@@ -477,7 +478,7 @@ def get_headers_markup(eml):
 					#hval = TODO timezone...
 					pass
 				hvals.append(hval)
-			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
+			lns.append(PMU_HEAD + glib.markup_escape_text(_(hname)) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
 	return "\n".join(lns)
 
 def get_filters_by_mime(main, sub, all=True):
@@ -526,6 +527,7 @@ def get_stock_by_mime(main, sub):
 	return gtk.STOCK_FILE
 
 def act_quit():
+	# TODO ask to close edit
 	gtk.main_quit()
 
 def act_button(func):
@@ -702,6 +704,25 @@ def on_select_parts(selection):
 			btn_save2.set_sensitive(False)
 			clear_content()
 			menubutton_filters.set_sensitive(False)
+
+def act_show_headers(chkmi):
+	if chkmi.active:
+		s = ''
+		for hname, hval in Email._headers:
+			hval = decode_header(hval)
+			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + "\n"
+		panel_header.set_markup(s)
+	else:
+		panel_header.set_markup(get_headers_markup(Email))
+	panel_header.set_data('all-headers', chkmi.active)
+
+def populate_header_menu(label, menu):
+	menu.append(gtk.SeparatorMenuItem())
+	mi = gtk.CheckMenuItem(_("All Headers"))
+	mi.set_active(panel_header.get_data('all-headers') == True)
+	mi.connect('toggled', act_show_headers)
+	menu.append(mi)
+	menu.show_all()
 
 def populate_filters_menu(eml):
 	for mi in menu_filters.children():
@@ -896,6 +917,7 @@ panel_header.set_alignment(0, 0)
 panel_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_header.set_selectable(True)
 panel_header.set_line_wrap(True)
+panel_header.connect('populate-popup', populate_header_menu)
 panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
