@@ -40,11 +40,11 @@ class StockToolButton(gtk.ToolButton):
 		img.props.visible = True
 
 class StockButton(gtk.Button):
-	def __init__(self, label=None, stock=None, use_underline=True):
+	def __init__(self, label=None, stock=None, use_underline=True, icon_size=None):
 		if stock is not None and stock in gtk.stock_list_ids():
 			stock_tmp = stock
 		else:
-			stock_tmp=gtk.STOCK_ABOUT
+			stock_tmp = gtk.STOCK_ABOUT
 		super(self.__class__, self).__init__(stock=stock_tmp, use_underline=use_underline)
 		if label is not None:
 			self.set_markup(label)
@@ -52,6 +52,8 @@ class StockButton(gtk.Button):
 			self.set_icon('')
 		elif stock not in gtk.stock_list_ids():
 			self.set_icon(stock)
+		if icon_size is not None:
+			self.set_icon(stock, icon_size)
 	def __get_children(self):
 		align = self.get_children()[0]
 		hbox = align.get_children()[0]
@@ -62,13 +64,13 @@ class StockButton(gtk.Button):
 	def set_markup(self, label):
 		_, lbl = self.__get_children()
 		lbl.set_markup(label)
-	def set_icon(self, icon):
+	def set_icon(self, icon, size=gtk.ICON_SIZE_BUTTON):
 		img, _ = self.__get_children()
 		if type(icon) == str:
 			if icon == '':
 				img.props.visible = False
 			else:
-				img.set_from_icon_name(icon, gtk.ICON_SIZE_BUTTON)
+				img.set_from_icon_name(icon, size)
 				img.props.visible = True
 		else:
 			img.set_from_pixbuf(icon)
@@ -546,12 +548,108 @@ def on_press_button(btn, evt, func):
 			act_button(func)
 	return False
 
+def set_composer_text(s):
+	bufr = panel_edit.get_buffer()
+	bufr.set_text(s)
+	bufr.place_cursor(bufr.get_start_iter())
+
+def set_composer_headers(hname, hvals):
+	clear_composer_headers(hname)
+	for hval in hvals:
+		add_composer_header(hname, hval)
+
+def clear_composer_headers(hname):
+	for wdg in panel_comp_hdr.children():
+		if hname is None or hdr_box_hname(wdg) == hname:
+			panel_comp_hdr.remove(wdg)
+
+def get_composer_headers(hname):
+	hlist = []
+	for chld in panel_comp_hdr.children():
+		if hname is None or hdr_box_hname(chld) == hname:
+			hlist.append((hname, hdr_box_hval(chld)))
+	return hlist
+
+def add_composer_header(hname, hval, after=None):
+	box = new_comp_hdr_wdg(hname, hval)
+	box.show_all()
+	panel_comp_hdr.pack_start(box, False, True)
+	if after is not None:
+		n = 0
+		for chld in panel_comp_hdr.children():
+			if chld == after:
+				panel_comp_hdr.reorder_child(box, n)
+			n += 1
+
+def new_comp_hdr_wdg(hname, hval):
+	box = gtk.HBox(False, 2)
+	wdg_name = gtk.combo_box_entry_new_with_model(PopularHeadersStore, 1)
+	wdg_value = gtk.Entry()
+	wdg_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+	wdg_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+	box.pack_start(wdg_name, False, True)
+	box.pack_start(wdg_value, True, True)
+	box.pack_start(wdg_add, False, False)
+	box.pack_start(wdg_del, False, False)
+	#TODO wdg_value.set_completion()
+	wdg_add.connect('clicked', lambda x, box: add_composer_header(hdr_box_hname(box), hdr_box_hval(box), box), box)
+	wdg_del.connect('clicked', lambda x, box: box.parent.remove(box) if len(box.parent.children())>1 else None, box)
+	hdr_box_hname(box, hname)
+	hdr_box_hval(box, hval)
+	return box
+
+def hdr_box_hname(box, hname=None):
+	cbe = box.children()[0]
+	if hname is None:
+		it = cbe.get_active_iter()
+		if it is not None:
+			return cbe.get_model().get_value(it, 0)
+		else:
+			return cbe.get_data('cname')
+	else:
+		cbe.set_data('cname', hname)
+		cbe.children()[0].set_text(_(hname))
+
+def hdr_box_hval(box, hval=None):
+	ent = box.children()[1]
+	if hval is None:
+		return ent.get_text()
+	else:
+		ent.set_text(hval)
+
+def open_composer(headers, body):
+	if not win_comp.get_visible():
+		win_comp.show_all()
+		win_comp.set_data('email-saved', True)
+		clear_composer_headers(None)
+		for hname, hval in headers:
+			add_composer_header(hname, hval)
+		set_composer_text(body)
+		win_comp.set_focus(panel_edit)
+	else:
+		win_comp.present()
+
+def quote_message_plain():
+	#TODO
+	return "> "
+
+def get_user_signature():
+	try:
+		sign = ''.join(open(os.path.join(os.environ['HOME'], '.signature'), 'r').readlines())
+	except:
+		sign = ''
+	return sign
+
 def act_compose():
-	win_comp.show_all()
-	win_comp.set_data('email-saved', True)
+	open_composer([('Subject', '')], "\n\n" + get_user_signature())
 
 def act_reply(recip):
-	print "reply", recip
+	headers = []
+	if recip == 'one':
+		headers.append(('To', "felado"))
+	elif recip == 'all':
+		headers.append(('To', "mindenki"))
+	open_composer(headers, "\n\n" + get_user_signature() + "\n" + _("Quote:\n") + quote_message_plain())
 
 def act_mark_spam():
 	pass
@@ -842,6 +940,7 @@ Email = None
 PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
+PopularHeaders = ["From", "To", "Cc", "Bcc", "Subject", "Priority"]
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
@@ -980,7 +1079,8 @@ tb_compose = gtk.Toolbar()
 panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
 spanel_comp_hdr = gtk.ScrolledWindow()
-panel_comp_hdr = gtk.HBox(False, 2)
+panel_comp_hdr = gtk.VBox(False, 2)
+PopularHeadersStore = gtk.ListStore(str, str)
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gtk.ListStore(str, str, str, gtk.gdk.Pixbuf)
 panel_attachments = gtk.TreeView(Attachments)
@@ -1006,6 +1106,7 @@ box_compose.pack_start(tb_comp_controls, False, True)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[0]-150)
 spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_comp_hdr.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_compose.set_position(125)
 spanel_edit.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -1023,6 +1124,9 @@ toolbuttons = [
 load_toolitems(tb_compose, toolbuttons)
 setup_treeview__icon_label(panel_attachments)
 
+for h in PopularHeaders:
+	PopularHeadersStore.append([h, _(h)])
+
 toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
@@ -1031,7 +1135,18 @@ load_toolitems(tb_comp_controls, toolbuttons)
 
 
 if args.compose:
-	act_compose()
+	open_composer([], "\n\n" + get_user_signature())
+	if args.FILE:
+		# TODO load email
+		pass
+	if args.to:
+		set_composer_headers('To', args.to)
+	if args.subject:
+		set_composer_headers('Subject', [args.subject])
+	if not get_composer_headers('Subject'):
+		set_composer_headers('Subject', [''])
+	if args.message:
+		set_composer_text(args.message)
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
