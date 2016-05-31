@@ -11,9 +11,13 @@ import glib
 import pango
 import gettext
 import email
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
 import re
 from tempfile import mkstemp
 from mimetypes import guess_extension
+import magic
 from fnmatch import fnmatch
 import argparse
 try:
@@ -631,6 +635,11 @@ def hdr_box_hval(box, hval=None):
 
 def open_composer(headers, body):
 	if not win_comp.get_visible():
+		global NewEmail
+		NewEmail = MIMEMultipart()
+		NewEmail.preamble = PREAMBLE
+		NewEmail.attach(MIMEText(''))
+		
 		win_comp.show_all()
 		win_comp.set_data('email-saved', True)
 		clear_composer_headers(None)
@@ -678,6 +687,11 @@ def get_extension_by_mime(mime):
 	if e is None:
 		e = '.dat'
 	return e
+
+def get_mime_by_filepath(path):
+	t = Magic.file(path)
+	if t is None: return 'application/octet-stream'
+	return t
 
 def act_open():
 	eml = get_part_by_itpath()
@@ -909,14 +923,18 @@ def load_toolitems(toolbar, toolitems):
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
 		toolbar.insert(tbi, -1)
 
-def setup_treeview__icon_label(tv):
+def setup_treeview__icon_label(tv, label_edit_cb=None):
+	colnum_txt = 1
 	tvc = gtk.TreeViewColumn()
 	tv.append_column(tvc)
 	cr_pix = gtk.CellRendererPixbuf()
 	cr_txt = gtk.CellRendererText()
+	if label_edit_cb is not None:
+		cr_txt.set_property('editable', True)
+		cr_txt.connect('edited', label_edit_cb, colnum_txt)
 	tvc.pack_start(cr_pix, False)
 	tvc.pack_start(cr_txt, True)
-	tvc.add_attribute(cr_txt, 'markup', 1)
+	tvc.add_attribute(cr_txt, 'markup', colnum_txt)
 	tvc.add_attribute(cr_pix, 'icon-name', 2)
 	tvc.add_attribute(cr_pix, 'pixbuf', 3)
 
@@ -925,15 +943,38 @@ def act_send():
 	pass
 
 def act_save_edit():
-	pass
+	global NewEmail
+	print NewEmail.as_string()
 
 def act_attach():
 	filename = choose_open_file()
-	if filename:
-		basename = os.path.basename(filename)
-		stock = get_stock_by_mime('', '')
+	if filename is not None:
+		attach_path(filename)
+
+def attach_path(path):
+	if os.path.isdir(path):
+		for entry in os.listdir(path):
+			if not attach_path(os.path.join(path, entry)):
+				return False
+	else:
+		global NewEmail
+		basename = os.path.basename(path)
+		ct_main, ct_sub = get_mime_by_filepath(path).split('/')
+		part = MIMEBase(ct_main, ct_sub)
+		part.add_header(HDR_CD, 'attachment', filename=basename)
+		# Load file into MIME part's payload
+		part.set_payload('')
+		fh = open(path, 'r')
+		while True:
+			buf = fh.read(4096)
+			if buf == '': break
+			part._payload += buf
+		fh.close()
+		NewEmail.attach(part)
+
+		stock = get_stock_by_mime(ct_main, ct_sub)
 		pixb = None
-		Attachments.append(['', basename, stock, pixb])
+		Attachments.append([part, basename, stock, pixb])
 
 def drop_attachment_motion(wdg, context, x, y, time):
 	wdg.drag_highlight()
@@ -942,7 +983,7 @@ def drop_attachment_motion(wdg, context, x, y, time):
 
 def drop_attachment_accept(wdg, context, x, y, time):
 	accepted = False
-	for desired in ['application/octet-stream', 'COMPOUND_TEXT', 'text/uri-list']:
+	for desired in ['text/uri-list']:
 		if desired in context.targets:
 			wdg.drag_get_data(context, desired, time)
 			accepted = True
@@ -952,21 +993,29 @@ def drop_attachment_accept(wdg, context, x, y, time):
 	return True
 
 def drop_attachment(wdg, context, x, y, data, info, time):
+	success = None
 	if data.get_length() > -1:
 		typ = data.get_data_type()
-		print typ
-		if typ == 'COMPOUND_TEXT':
-			print data.get_text()
-		elif typ == 'application/octet-stream':
-			print data.get_()
-		elif typ == 'text/uri-list':
-			print data.get_uris()
+		if typ == 'text/uri-list':
+			for uri in data.get_uris():
+				if uri.startswith('file:///'):
+					if not attach_path(uri[7:]):
+						success = False
+						break
+			if success is None:
+				success = True
 		else:
-			context.finish(False, False, time)
-			return True
-		context.finish(True, False, time)
+			success = False
 	else:
-		context.finish(False, False, time)
+		success = False
+	context.finish(success, False, time)
+	return True
+
+def rename_attachment(cellrenderer, iterator, new_text, colnum):
+	eml = Attachments[iterator][0]
+	eml._headers.remove((HDR_CD, eml[HDR_CD]))
+	eml.add_header(HDR_CD, 'attachment', filename=new_text)
+	Attachments[iterator][colnum] = new_text
 	return True
 
 def act_edit_external():
@@ -1000,6 +1049,10 @@ PartSecondary = None
 LastFolder = os.getcwd()
 PopularHeaders = ["From", "To", "Cc", "Bcc", "Subject", "Priority"]
 XATTR_CHARSET = 'user.mime_encoding'
+NewEmail = None
+PREAMBLE = _("This is a MIME multipart Email.")
+Magic = magic.open(magic.MAGIC_MIME_TYPE)
+HDR_CD = 'Content-Disposition'
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
@@ -1141,7 +1194,7 @@ spanel_comp_hdr = gtk.ScrolledWindow()
 panel_comp_hdr = gtk.VBox(False, 2)
 PopularHeadersStore = gtk.ListStore(str, str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.ListStore(str, str, str, gtk.gdk.Pixbuf)
+Attachments = gtk.ListStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_attachments = gtk.TreeView(Attachments)
 frame_edit = gtk.Frame()
 spanel_edit = gtk.ScrolledWindow()
@@ -1185,7 +1238,7 @@ toolbuttons = [
 	(None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
 load_toolitems(tb_compose, toolbuttons)
-setup_treeview__icon_label(panel_attachments)
+setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 
 for h in PopularHeaders:
 	PopularHeadersStore.append([h, _(h)])
@@ -1197,6 +1250,7 @@ toolbuttons = [
 load_toolitems(tb_comp_controls, toolbuttons)
 
 
+Magic.load()
 if args.compose:
 	open_composer([], "\n\n" + get_user_signature())
 	if args.FILE:
