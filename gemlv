@@ -339,7 +339,8 @@ def run_async(cmd, args, postrun):
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
 	panel_content.set_data('saved-font', get_current_font(panel_content))
-	if args.FILE: load_file(args.FILE)
+	if args.FILE:
+		load_file(args.FILE)
 
 def load_file(filename):
 	global Email
@@ -547,8 +548,23 @@ def get_stock_by_mime(main, sub):
 	return gtk.STOCK_FILE
 
 def act_quit():
-	# TODO ask to close edit
+	if win_comp.get_visible():
+		act_close_edit()
+	if win_comp.get_visible():
+		return True
 	gtk.main_quit()
+	return False
+
+def act_close_edit():
+	if not win_comp.get_data('email-sent') and not win_comp.get_data('is-saved'):
+		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE)):
+			return True
+	if args.compose:
+		gtk.main_quit()
+		return False
+	else:
+		win_comp.hide()
+		return True
 
 def act_button(func):
 	if type(func) != type(()):
@@ -567,7 +583,7 @@ def on_press_button(btn, evt, func):
 	return False
 
 def set_composer_text(s):
-	bufr = panel_edit.get_buffer()
+	bufr = panel_message_edit.get_buffer()
 	bufr.set_text(s)
 	bufr.place_cursor(bufr.get_start_iter())
 
@@ -638,15 +654,19 @@ def open_composer(headers, body):
 		global NewEmail
 		NewEmail = MIMEMultipart()
 		NewEmail.preamble = PREAMBLE
-		NewEmail.attach(MIMEText(''))
+		part0 = MIMEText('')
+		part0.set_charset('UTF-8')
+		NewEmail.attach(part0)
 		
 		win_comp.show_all()
-		win_comp.set_data('email-saved', True)
 		clear_composer_headers(None)
 		for hname, hval in headers:
 			add_composer_header(hname, hval)
 		set_composer_text(body)
-		win_comp.set_focus(panel_edit)
+		on_after_save_draft()
+		win_comp.set_data('saved-to-file', None)
+
+		win_comp.set_focus(panel_message_edit)
 	else:
 		win_comp.present()
 
@@ -662,7 +682,7 @@ def get_user_signature():
 	return sign
 
 def act_compose():
-	open_composer([('Subject', '')], "\n\n" + get_user_signature())
+	open_composer([], "\n\n" + get_user_signature())
 
 def act_reply(recip):
 	headers = []
@@ -743,10 +763,11 @@ def set_xattr_charset(fh, charset, filename='-'):
 			sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (XATTR_CHARSET, filename, str(e))) + "\n")
 			pass
 
-def save_to_file(eml, filename):
-	if os.path.exists(filename):
-		if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
-			return None
+def save_to_file(eml, filename, ask_overwrite=True):
+	if ask_overwrite:
+		if os.path.exists(filename):
+			if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
+				return None
 	try:
 		fh = open(filename, 'w')
 		save_to_filedescriptor(eml, fh.fileno())
@@ -942,9 +963,21 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 def act_send():
 	pass
 
-def act_save_edit():
+def act_save_edit(save_as=False):
 	global NewEmail
-	print NewEmail.as_string()
+	filename = win_comp.get_data('saved-to-file')
+	ask_overwrite = False
+	if filename is None or save_as:
+		ask_overwrite = True
+		filename = choose_save_file(_("Draft") + '.eml')
+	if filename is not None:
+		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
+			win_comp.set_data('saved-to-file', filename)
+			on_after_save_draft()
+
+def on_after_save_draft():
+	win_comp.set_data('is-saved', True)
+	panel_message_edit.get_buffer().set_modified(False)
 
 def act_attach():
 	filename = choose_open_file()
@@ -1018,18 +1051,21 @@ def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	Attachments[iterator][colnum] = new_text
 	return True
 
+def on_keypress_attachments(tv, evt):
+	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
+		sel = panel_attachments.get_selection()
+		for iterator in sel.get_selected_rows()[1]:
+			NewEmail._payload.remove(Attachments[iterator][0])
+			del(Attachments[iterator])
+		return True
+	return False
+
 def act_edit_external():
 	pass
 
-def act_close_edit():
-	if not win_comp.get_data('email-sent') and not win_comp.get_data('email-saved'):
-		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE)):
-			return True
-	if args.compose:
-		act_quit()
-	else:
-		win_comp.hide()
-		return True
+def on_edit_message(tb):
+	if tb.get_modified():
+		win_comp.set_data('is-saved', False)
 
 
 
@@ -1059,9 +1095,12 @@ argparser.add_argument('--compose', action='store_true', help=_("Write a new Ema
 argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
+argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, comma-separated list"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
 args = argparser.parse_args()
-if args.to is not None: args.to = re.split('\s*,\s*', args.to)
+for attr in 'to', 'attach':
+	if getattr(args, attr) is not None:
+		setattr(args, attr, re.split('\s*,\s*', getattr(args, attr)))
 if not args.compose and not args.FILE:
 	sys.stderr.write(_("Either compose mode or FILE is needed.") + "\n")
 	os._exit(1)
@@ -1184,6 +1223,7 @@ win_comp.set_default_size(*win_main.get_default_size())
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
 add_key_binding(win_comp, '<Control>'+('q' if args.compose else 'w'), lambda a,b,c,d: act_close_edit())
 add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
+add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
 add_key_binding(win_comp, '<Control>o', lambda a,b,c,d: act_attach())
 
 box_compose = gtk.VBox(False, 5)
@@ -1197,8 +1237,8 @@ spanel_attachments = gtk.ScrolledWindow()
 Attachments = gtk.ListStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_attachments = gtk.TreeView(Attachments)
 frame_edit = gtk.Frame()
-spanel_edit = gtk.ScrolledWindow()
-panel_edit = gtk.TextView()
+spanel_message_edit = gtk.ScrolledWindow()
+panel_message_edit = gtk.TextView()
 tb_comp_controls = gtk.Toolbar()
 
 win_comp.add(box_compose)
@@ -1211,8 +1251,8 @@ panel_upper.pack2(spanel_attachments, False, True)
 spanel_attachments.add_with_viewport(panel_attachments)
 panel_attachments.set_headers_visible(False)
 panel_compose.pack2(frame_edit, True, True)
-frame_edit.add(spanel_edit)
-spanel_edit.add(panel_edit)
+frame_edit.add(spanel_message_edit)
+spanel_message_edit.add(panel_message_edit)
 box_compose.pack_start(tb_comp_controls, False, True)
 
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
@@ -1224,15 +1264,18 @@ panel_attachments.drag_dest_set(0, [], 0)
 panel_attachments.connect('drag-motion', drop_attachment_motion)
 panel_attachments.connect('drag-drop', drop_attachment_accept)
 panel_attachments.connect('drag-data-received', drop_attachment)
+panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
+panel_attachments.connect('key-press-event', on_keypress_attachments)
 panel_compose.set_position(125)
-spanel_edit.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+spanel_message_edit.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_message_edit.get_buffer().connect('modified-changed', on_edit_message)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 
 toolbuttons = [
 	("Send", 'mail-send', None, act_send, None),
-	(None, gtk.STOCK_SAVE, None, act_save_edit, None),
+	(None, gtk.STOCK_SAVE, _("Save\nRight click: Save As..."), act_save_edit, (act_save_edit, True)),
 	("Attach File", 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
@@ -1252,10 +1295,10 @@ load_toolitems(tb_comp_controls, toolbuttons)
 
 Magic.load()
 if args.compose:
-	open_composer([], "\n\n" + get_user_signature())
+	act_compose()
 	if args.FILE:
 		# TODO load email
-		pass
+		win_comp.set_data('saved-to-file', args.FILE)
 	if args.to:
 		set_composer_headers('To', args.to)
 	if args.subject:
@@ -1264,6 +1307,10 @@ if args.compose:
 		set_composer_headers('Subject', [''])
 	if args.message:
 		set_composer_text(args.message)
+	if args.attach:
+		for path in args.attach:
+			attach_path(path)
+	on_after_save_draft()
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
