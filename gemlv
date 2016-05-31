@@ -459,8 +459,11 @@ def decode_header(s):
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
-def get_main_subject():
-	return decode_header(get_part_by_itpath((0,))['Subject'])
+def get_one_header_main(hname, dflt=None):
+	hval = get_part_by_itpath((0,))[hname]
+	if hval is None:
+		return dflt
+	return decode_header(hval)
 
 def get_headers_markup(eml):
 	lns = []
@@ -485,8 +488,7 @@ def get_headers_markup(eml):
 				if hname == 'From':
 					hdr_from.append(hval)
 				elif hname == 'Reply-To':
-					if hval in hdr_from:
-						continue
+					if hval in hdr_from: continue
 				elif hname == 'Date':
 					#hval = TODO timezone...
 					pass
@@ -587,11 +589,9 @@ def add_composer_header(hname, hval, after=None):
 	box.show_all()
 	panel_comp_hdr.pack_start(box, False, True)
 	if after is not None:
-		n = 0
-		for chld in panel_comp_hdr.children():
-			if chld == after:
+		for n in range(0, len(panel_comp_hdr.children())):
+			if panel_comp_hdr.children()[n] == after:
 				panel_comp_hdr.reorder_child(box, n)
-			n += 1
 
 def new_comp_hdr_wdg(hname, hval):
 	box = gtk.HBox(False, 2)
@@ -699,7 +699,7 @@ def act_open():
 def calc_attachment_name(part, n=None):
 	name = part.get_filename()
 	if name is None:
-		name = "%s_attachment%s%s" % (get_main_subject(), '' if n is None else '-'+str(n), get_extension_by_mime(part.get_content_type()))
+		name = "%s_attachment%s%s" % (get_one_header_main('Subject', _("Email")), '' if n is None else '-'+str(n), get_extension_by_mime(part.get_content_type()))
 	return name
 
 def act_save():
@@ -713,10 +713,8 @@ def act_save():
 	elif len(itpaths) > 1:
 		savedir = choose_save_folder()
 		if savedir is not None:
-			n = 0
-			for itpath in itpaths:
-				n += 1
-				eml = get_part_by_itpath(itpath)
+			for n in range(0, len(itpaths)):
+				eml = get_part_by_itpath(itpaths[n])
 				savefile = os.path.join(savedir, calc_attachment_name(eml, n))
 				save_to_file(eml, savefile)
 
@@ -937,6 +935,40 @@ def act_attach():
 		pixb = None
 		Attachments.append(['', basename, stock, pixb])
 
+def drop_attachment_motion(wdg, context, x, y, time):
+	wdg.drag_highlight()
+	context.drag_status(gtk.gdk.ACTION_COPY, time)
+	return True
+
+def drop_attachment_accept(wdg, context, x, y, time):
+	accepted = False
+	for desired in ['application/octet-stream', 'COMPOUND_TEXT', 'text/uri-list']:
+		if desired in context.targets:
+			wdg.drag_get_data(context, desired, time)
+			accepted = True
+			break
+	context.drop_reply(accepted, time)
+	wdg.drag_unhighlight()
+	return True
+
+def drop_attachment(wdg, context, x, y, data, info, time):
+	if data.get_length() > -1:
+		typ = data.get_data_type()
+		print typ
+		if typ == 'COMPOUND_TEXT':
+			print data.get_text()
+		elif typ == 'application/octet-stream':
+			print data.get_()
+		elif typ == 'text/uri-list':
+			print data.get_uris()
+		else:
+			context.finish(False, False, time)
+			return True
+		context.finish(True, False, time)
+	else:
+		context.finish(False, False, time)
+	return True
+
 def act_edit_external():
 	pass
 
@@ -1069,7 +1101,7 @@ toolbuttons = [
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'separator', None),
-	("Spam", 'mail-mark-junk', None, act_mark_spam, None),
+	("Report Spam", 'mail-mark-junk', None, act_mark_spam, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
@@ -1135,6 +1167,10 @@ panel_upper.set_position(win_comp.get_default_size()[0]-150)
 spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_comp_hdr.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_attachments.drag_dest_set(0, [], 0)
+panel_attachments.connect('drag-motion', drop_attachment_motion)
+panel_attachments.connect('drag-drop', drop_attachment_accept)
+panel_attachments.connect('drag-data-received', drop_attachment)
 panel_compose.set_position(125)
 spanel_edit.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
