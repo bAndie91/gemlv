@@ -595,9 +595,18 @@ def act_comp_hdr_menuitem(mi, hname=None):
 	if on == False:
 		box.cancel()
 	if hname == '':
-		pass
-		# TODO: show_advanced_comp_hdr()
+		show_advanced_comp_hdr()
 	return True
+
+def act_all_comp_hdr(mi):
+	show_advanced_comp_hdr(mi.active)
+
+def show_advanced_comp_hdr(show=True):
+	for n in range(0, len(panel_comp_hdr.children())):
+		box = panel_comp_hdr.children()[n]
+		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
+			if show: box.show()
+			else: box.hide()
 
 def add_composer_header__direct(hname, hval=None):
 	box = None
@@ -610,9 +619,12 @@ def add_composer_header__direct(hname, hval=None):
 		if hval is None: hval = ''
 		box = compose_header_box(hname, hval)
 		panel_comp_hdr.pack_start(box, False, True)
-		if box.hntype == compose_header_box.HNTYPE_LABEL:
-			pass
-			# TODO: reorder to above the 1st HNTYPE_CUSTOM
+		if box.hntype == compose_header_box.HNTYPE_MENU:
+			for n in range(0, len(panel_comp_hdr.children())):
+				if panel_comp_hdr.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
+					panel_comp_hdr.reorder_child(box, n)
+					break
+				n += 1
 	box.show_all()
 	return box
 
@@ -634,23 +646,28 @@ def clear_composer_headers(hname):
 class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	
-	def __init__(self, chname, val):
+	def __init__(self, chname, val, hntype=None):
 		assert isinstance(chname, str)
 		assert isinstance(val, str)
 		plus = True
 		minus = True
 		
 		super(self.__class__, self).__init__(False, 2)
-		if chname is None or chname == '' or chname in AdvancedHeaders:
-			self.hntype = self.HNTYPE_CUSTOM
+		if hntype is None:
+			if chname is None or chname == '' or chname in AdvancedHeaders:
+				hntype = self.HNTYPE_CUSTOM
+			elif chname in RecipientHeaders:
+				hntype = self.HNTYPE_MENU
+			else:
+				hntype = self.HNTYPE_LABEL
+		self.hntype = hntype
+		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
-		elif chname in RecipientHeaders:
-			self.hntype = self.HNTYPE_MENU
+		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
 			self.wdg_name.set_relief(gtk.RELIEF_NONE)
 			self.wdg_name.connect('button-release-event', self.popup_rcpt_menu)
-		else:
-			self.hntype = self.HNTYPE_LABEL
+		elif self.hntype == self.HNTYPE_LABEL:
 			plus = False
 			self.wdg_name = gtk.Label()
 		self.pack_start(self.wdg_name, False, True)
@@ -701,7 +718,7 @@ class compose_header_box(gtk.HBox):
 		return (mx, my, True)
 	
 	def duplicate(self, evtwdg=None):
-		newbox = self.__class__(self['name'], self['value'])
+		newbox = self.__class__(self['name'], self['value'], hntype=self.hntype)
 		self.parent.pack_start(newbox, False, True)
 		newbox.show_all()
 		newbox.wdg_value.grab_focus()
@@ -714,6 +731,12 @@ class compose_header_box(gtk.HBox):
 			self.hide()
 			self.tick_my_menuitem(0)
 		else:
+			if self.hntype == self.HNTYPE_MENU:
+				n = 0
+				for x in self.parent.children():
+					if x.hntype == self.HNTYPE_MENU: n += 1
+					if n > 1: break
+				if n < 2: return False
 			self.parent.remove(self)
 	
 	def tick_my_menuitem(self, on):
@@ -1014,7 +1037,7 @@ def act_show_headers(chkmi):
 
 def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
-	mi = gtk.CheckMenuItem(_("All Headers"))
+	mi = gtk.CheckMenuItem(_("Show All Headers"))
 	mi.set_active(panel_header.get_data('all-headers') == True)
 	mi.connect('toggled', act_show_headers)
 	menu.append(mi)
@@ -1450,12 +1473,15 @@ for name in SenderHeaders:
 	mi.set_data('chname', name)
 	mi.connect('toggled', act_comp_hdr_menuitem)
 	menu_add_header.append(mi)
-mi = gtk.MenuItem(_("Specify Recipient"))
+mi = gtk.MenuItem(_("Add Recipient"))
 mi.connect('activate', act_comp_hdr_menuitem, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gtk.MenuItem(_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
+menu_add_header.append(mi)
+mi = gtk.CheckMenuItem(_("Show All Headers"))
+mi.connect('toggled', act_all_comp_hdr)
 menu_add_header.append(mi)
 menu_add_header.show_all()
 
