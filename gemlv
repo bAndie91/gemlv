@@ -465,10 +465,13 @@ def decode_header(s):
 	return ' '.join(chunks)
 
 def get_one_header_main(hname, dflt=None):
-	hval = get_part_by_itpath((0,))[hname]
+	hval = Email[hname]
 	if hval is None:
 		return dflt
 	return decode_header(hval)
+
+def get_all_headers_main(hname):
+	return map(decode_header, Email.get_all(hname) or [])
 
 def get_headers_markup(eml):
 	lns = []
@@ -495,8 +498,10 @@ def get_headers_markup(eml):
 				elif hname == 'Reply-To':
 					if hval in hdr_from: continue
 				elif hname == 'Date':
-					#hval = TODO timezone...
-					pass
+					try:
+						hval = email.utils.formatdate(email.utils.mktime_tz(email.utils.parsedate_tz(hval)), True)
+					except TypeError:
+						pass
 				hvals.append(hval)
 			if len(hvals):
 				lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
@@ -595,7 +600,7 @@ def act_comp_hdr_menuitem(mi, hname=None):
 	if on == False:
 		box.cancel()
 	if hname == '':
-		show_advanced_comp_hdr()
+		menuitem_add_comp_hdr.set_active(True)
 	return True
 
 def act_all_comp_hdr(mi):
@@ -625,6 +630,7 @@ def add_composer_header__direct(hname, hval=None):
 					panel_comp_hdr.reorder_child(box, n)
 					break
 				n += 1
+	box.wdg_value.grab_focus()
 	box.show_all()
 	return box
 
@@ -641,14 +647,14 @@ def set_composer_headers(hname, hvals):
 def clear_composer_headers(hname):
 	for box in panel_comp_hdr.children():
 		if hname is None or box['name'] == hname:
-			box.cancel()
+			box.cancel(manual=False)
 
 class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	
 	def __init__(self, chname, val, hntype=None):
 		assert isinstance(chname, str)
-		assert isinstance(val, str)
+		assert isinstance(val, str) or isinstance(val, unicode)
 		plus = True
 		minus = True
 		
@@ -726,12 +732,14 @@ class compose_header_box(gtk.HBox):
 			if self.parent.children()[n] == self:
 				self.parent.reorder_child(newbox, n)
 	
-	def cancel(self, evtwdg=None):
+	def cancel(self, evtwdg=None, manual=True):
 		if self.hntype == self.HNTYPE_LABEL:
 			self.hide()
 			self.tick_my_menuitem(0)
+			if not manual:
+				self['value'] = ''
 		else:
-			if self.hntype == self.HNTYPE_MENU:
+			if manual and self.hntype == self.HNTYPE_MENU:
 				n = 0
 				for x in self.parent.children():
 					if x.hntype == self.HNTYPE_MENU: n += 1
@@ -814,7 +822,6 @@ def open_composer():
 
 	win_comp.set_data('saved-to-file', None)
 	on_after_save_draft()
-	win_comp.set_focus(panel_edit_message)
 	return True
 
 def quote_message_plain():
@@ -828,27 +835,40 @@ def get_user_signature():
 		sign = ''
 	return sign
 
+def filter_out_addresses(noaddrs, hvals):
+	filtered = []
+	for realname, addr in email.utils.getaddresses(hvals):
+		if addr not in noaddrs:
+			filtered.append(email.utils.formataddr((realname, addr)))
+	return filtered
+
 def act_compose():
 	if open_composer():
+		add_composer_header('To', '')
 		set_composer_subject('')
 		set_composer_text("\n\n" + get_user_signature())
+		panel_edit_message.grab_focus()
 
 def act_reply(recip):
 	if open_composer():
+		body = "\n\n" + get_user_signature() + "\n"
 		if recip == '':
+			add_composer_header('To', '')
 			set_composer_subject(_("Fwd: ") + get_one_header_main('Subject', ''))
 			# TODO attach original email (file)
 		else:
 			set_composer_subject(_("Re: ") + get_one_header_main('Subject', ''))
-			set_composer_headers('To', ["from"])
-		if recip == 'all':
-			set_composer_headers('Cc', ["cc1", "cc2"])
-			if mail_list:
-				set_composer_headers('To', ["mail_list"])
-		body = "\n\n" + get_user_signature() + "\n"
-		if recip in ['one', 'all']:
+			from_address = get_one_header_main('From')
+			add_composer_header('To', from_address or '')
+			if recip == 'all':
+				myaddresses = [get_one_header_main('Delivered-To'), get_one_header_main('Envelope-To')]
+				noaddresses = myaddresses + [from_address]
+				for h in 'To', 'Cc':
+					for addr in filter_out_addresses(noaddresses, get_all_headers_main(h)):
+						add_composer_header(h, addr)
 			body += "\n" + _("Quote:\n") + quote_message_plain()
 		set_composer_text(body)
+		panel_edit_message.grab_focus()
 
 def act_mark_spam():
 	pass
@@ -1480,9 +1500,9 @@ menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gtk.MenuItem(_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
 menu_add_header.append(mi)
-mi = gtk.CheckMenuItem(_("Show All Headers"))
-mi.connect('toggled', act_all_comp_hdr)
-menu_add_header.append(mi)
+menuitem_add_comp_hdr = gtk.CheckMenuItem(_("Show All Headers"))
+menuitem_add_comp_hdr.connect('toggled', act_all_comp_hdr)
+menu_add_header.append(menuitem_add_comp_hdr)
 menu_add_header.show_all()
 
 toolbuttons = [
@@ -1530,6 +1550,7 @@ if args.compose:
 		for path in args.attach:
 			attach_path(path)
 	on_after_save_draft()
+	panel_edit_message.grab_focus()
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
