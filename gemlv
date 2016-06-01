@@ -401,11 +401,8 @@ def clear_content(s=''):
 
 def decode_properly(s, eml):
 	charset = eml.get_content_charset()
-	if charset is None:
-		s = s.decode('utf-8', 'replace')
-	elif charset.lower() not in ['utf-8', 'utf_8', 'utf8']:
-		s = s.decode(charset, 'replace')
-	return s
+	if charset is None: charset = 'utf-8'
+	return s.decode(charset, 'replace')
 
 def get_content_properly(eml):
 	s = eml.get_payload(decode=1)
@@ -537,6 +534,8 @@ def get_stock_by_mime(main, sub):
 		'application/pgp-signature': 'mail-signed',
 		'application/ics': 'x-office-calendar',
 		'text/calendar': 'x-office-calendar',
+		'inode/directory': gtk.STOCK_DIRECTORY,
+		'inode/x-empty': 'document-new',
 	}
 	full = main + '/' + sub
 
@@ -808,7 +807,7 @@ def open_composer():
 			win_comp.hide()
 	
 	global NewEmail
-	NewEmail = MIMEMultipart()
+	NewEmail = MIMEMultipart('mixed')
 	NewEmail.preamble = PREAMBLE
 	part0 = MIMEText('')
 	part0.set_charset('UTF-8')
@@ -1166,17 +1165,19 @@ def act_attach():
 	if filename is not None:
 		attach_path(filename)
 
-def attach_path(path):
+def attach_path(path, parent_part=None, parent_iter=None):
+	global NewEmail
+	if not os.path.exists(path):
+		return False
+	if parent_part is None:
+		parent_part = NewEmail
+	basename = os.path.basename(path)
+	ct_main, ct_sub = get_mime_by_filepath(path).split('/')
+	
 	if os.path.isdir(path):
-		for entry in os.listdir(path):
-			if not attach_path(os.path.join(path, entry)):
-				return False
+		part = MIMEMultipart('related')
 	else:
-		global NewEmail
-		basename = os.path.basename(path)
-		ct_main, ct_sub = get_mime_by_filepath(path).split('/')
 		part = MIMEBase(ct_main, ct_sub)
-		part.add_header(HDR_CD, 'attachment', filename=basename)
 		# Load file into MIME part's payload
 		part.set_payload('')
 		fh = open(path, 'r')
@@ -1185,11 +1186,18 @@ def attach_path(path):
 			if buf == '': break
 			part._payload += buf
 		fh.close()
-		NewEmail.attach(part)
-
-		stock = get_stock_by_mime(ct_main, ct_sub)
-		pixb = None
-		Attachments.append([part, basename, stock, pixb])
+	
+	part.add_header(HDR_CD, 'attachment', filename=basename)
+	parent_part.attach(part)
+	stock = get_stock_by_mime(ct_main, ct_sub)
+	pixb = None
+	iterator = Attachments.append(parent_iter, [part, basename, stock, pixb])
+	
+	if os.path.isdir(path):
+		for entry in os.listdir(path):
+			if not attach_path(os.path.join(path, entry), part, iterator):
+				return False
+	return True
 
 def drop_attachment_motion(wdg, context, x, y, time):
 	wdg.drag_highlight()
@@ -1236,8 +1244,18 @@ def rename_attachment(cellrenderer, iterator, new_text, colnum):
 def on_keypress_attachments(tv, evt):
 	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
 		sel = panel_attachments.get_selection()
-		for iterator in sel.get_selected_rows()[1]:
-			NewEmail._payload.remove(Attachments[iterator][0])
+		for itpath in reversed(sel.get_selected_rows()[1]):
+			try:
+				iterator = Attachments.get_iter(itpath)
+			except ValueError:
+				# child deleted in meantime
+				continue
+			parent_iter = Attachments.iter_parent(iterator)
+			if parent_iter is None:
+				parent_part = NewEmail
+			else:
+				parent_part = Attachments[parent_iter][0]
+			parent_part._payload.remove(Attachments[iterator][0])
 			del(Attachments[iterator])
 		return True
 	return False
@@ -1439,7 +1457,7 @@ menu_add_header = gtk.Menu()
 panel_comp_hdr = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.ListStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
+Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
 panel_subject = gtk.HBox(False, 5)
@@ -1475,6 +1493,7 @@ spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_comp_hdr.connect('button-press-event', open_comp_hdr_menu)
 panel_comp_hdr.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_attachments.get_selection().set_mode(gtk.SELECTION_MULTIPLE)
 panel_attachments.drag_dest_set(0, [], 0)
 panel_attachments.connect('drag-motion', drop_attachment_motion)
 panel_attachments.connect('drag-drop', drop_attachment_accept)
