@@ -587,6 +587,126 @@ def set_composer_text(s):
 	bufr.set_text(s)
 	bufr.place_cursor(bufr.get_start_iter())
 
+def add_composer_header(hname, hval):
+	box = compose_header_box(hname, hval)
+	box.show_all()
+	panel_comp_hdr.pack_start(box, False, True)
+
+class compose_header_box(gtk.HBox):
+	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
+	
+	def __init__(self, chname, val):
+		assert isinstance(chname, str)
+		assert isinstance(val, str)
+		plus = True
+		minus = True
+		
+		super(self.__class__, self).__init__(False, 2)
+		if chname is None or chname == '' or chname in AdvancedHeaders:
+			self.hntype = self.HNTYPE_CUSTOM
+			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
+		elif chname in RecipientHeaders:
+			self.hntype = self.HNTYPE_MENU
+			self.wdg_name = gtk.Button()
+			self.wdg_name.set_relief(gtk.RELIEF_NONE)
+			self.wdg_name.connect('button-release-event', self.popup_rcpt_menu)
+		else:
+			self.hntype = self.HNTYPE_LABEL
+			plus = False
+			if chname == 'Subject': minus = False
+			self.wdg_name = gtk.Label()
+		self.pack_start(self.wdg_name, False, True)
+		
+		self.wdg_value = gtk.Entry()
+		self.pack_start(self.wdg_value, True, True)
+		#TODO wdg_value.set_completion()
+		
+		if plus:
+			self.wdg_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+			self.pack_start(self.wdg_add, False, False)
+			self.wdg_add.connect('clicked', self.duplicate)
+		if minus:
+			self.wdg_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+			self.pack_start(self.wdg_del, False, False)
+			self.wdg_del.connect('clicked', self.delete)
+		
+		self['name'] = chname
+		self['value'] = val
+	
+	def popup_rcpt_menu(self, wdg, evt):
+		wdg.set_relief(gtk.RELIEF_NORMAL)
+		mnu = gtk.Menu()
+		mnu.connect('deactivate', self.popup_rcpt_menu_disappear, wdg)
+		for chname in RecipientHeaders:
+			mi = gtk.MenuItem(label=_(chname))
+			mi.set_data('name', chname)
+			mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
+			mnu.append(mi)
+		mnu.show_all()
+		mnu.popup(None, None, self.bottomleft, evt.button, evt.time, wdg)
+	
+	def popup_rcpt_menuitem_activated(self, mi, wdg):
+		self['name'] = mi.get_data('name')
+		self.popup_rcpt_menu_disappear(mi.parent, wdg)
+	
+	def popup_rcpt_menu_disappear(self, mnu, wdg):
+		wdg.set_relief(gtk.RELIEF_NONE)
+		self.wdg_value.grab_focus()
+	
+	def bottomleft(self, mnu, wdg):
+		X, Y = self.window.get_origin()
+		x, y, w, h = wdg.get_allocation()
+		mx = X + x
+		my = Y + y + h
+		return (mx, my, True)
+	
+	def duplicate(self, wdg):
+		newbox = self.__class__(self['name'], self['value'])
+		self.parent.pack_start(newbox, False, True)
+		newbox.show_all()
+		newbox.wdg_value.grab_focus()
+		for n in range(0, len(self.parent.children())):
+			if self.parent.children()[n] == self:
+				self.parent.reorder_child(newbox, n)
+	
+	def delete(self, wdg):
+		if self.hntype == self.HNTYPE_MENU:
+			n = 0
+			for box in self.parent.children():
+				if box.hntype == self.hntype:
+					n += 1
+			if n <= 1: return
+		self.parent.remove(self)
+	
+	def __getitem__(self, key):
+		if key == 'name':
+			if self.hntype == self.HNTYPE_CUSTOM:
+				it = self.wdg_name.get_active_iter()
+				if it is not None:
+					return self.wdg_name.get_model().get_value(it, 0)
+				else:
+					return self.wdg_name.children()[0].get_text()
+			else:
+				return self.wdg_name.get_data('name')
+		elif key == 'value':
+			return self.wdg_value.get_text()
+		else:
+			raise IndexError()
+
+	def __setitem__(self, key, newvalue):
+		if key == 'name':
+			self.wdg_name.set_data('name', newvalue)
+			if self.hntype == self.HNTYPE_CUSTOM:
+				self.wdg_name.children()[0].set_text(newvalue)
+			else:
+				self.wdg_name.set_data('name', newvalue)
+				self.wdg_name.set_label(_(newvalue))
+		elif key == 'value':
+			return self.wdg_value.set_text(newvalue)
+		else:
+			raise IndexError()
+
+
 def set_composer_headers(hname, hvals):
 	clear_composer_headers(hname)
 	for hval in hvals:
@@ -594,60 +714,15 @@ def set_composer_headers(hname, hvals):
 
 def clear_composer_headers(hname):
 	for wdg in panel_comp_hdr.children():
-		if hname is None or hdr_box_hname(wdg) == hname:
+		if hname is None or wdg['name'] == hname:
 			panel_comp_hdr.remove(wdg)
 
 def get_composer_headers(hname):
 	hlist = []
 	for chld in panel_comp_hdr.children():
-		if hname is None or hdr_box_hname(chld) == hname:
-			hlist.append((hname, hdr_box_hval(chld)))
+		if hname is None or chld['name'] == hname:
+			hlist.append((hname, chld['value']))
 	return hlist
-
-def add_composer_header(hname, hval, after=None):
-	box = new_comp_hdr_wdg(hname, hval)
-	box.show_all()
-	panel_comp_hdr.pack_start(box, False, True)
-	if after is not None:
-		for n in range(0, len(panel_comp_hdr.children())):
-			if panel_comp_hdr.children()[n] == after:
-				panel_comp_hdr.reorder_child(box, n)
-
-def new_comp_hdr_wdg(hname, hval):
-	box = gtk.HBox(False, 2)
-	wdg_name = gtk.combo_box_entry_new_with_model(PopularHeadersStore, 1)
-	wdg_value = gtk.Entry()
-	wdg_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
-	wdg_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
-	box.pack_start(wdg_name, False, True)
-	box.pack_start(wdg_value, True, True)
-	box.pack_start(wdg_add, False, False)
-	box.pack_start(wdg_del, False, False)
-	#TODO wdg_value.set_completion()
-	wdg_add.connect('clicked', lambda x, box: add_composer_header(hdr_box_hname(box), hdr_box_hval(box), box), box)
-	wdg_del.connect('clicked', lambda x, box: box.parent.remove(box) if len(box.parent.children())>1 else None, box)
-	hdr_box_hname(box, hname)
-	hdr_box_hval(box, hval)
-	return box
-
-def hdr_box_hname(box, hname=None):
-	cbe = box.children()[0]
-	if hname is None:
-		it = cbe.get_active_iter()
-		if it is not None:
-			return cbe.get_model().get_value(it, 0)
-		else:
-			return cbe.get_data('cname')
-	else:
-		cbe.set_data('cname', hname)
-		cbe.children()[0].set_text(_(hname))
-
-def hdr_box_hval(box, hval=None):
-	ent = box.children()[1]
-	if hval is None:
-		return ent.get_text()
-	else:
-		ent.set_text(hval)
 
 def open_composer(headers, body):
 	if not win_comp.get_visible():
@@ -864,12 +939,16 @@ def on_select_parts(selection):
 
 def act_show_headers(chkmi):
 	if chkmi.active:
+		spanel_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		panel_header.set_line_wrap(False)
 		s = ''
 		for hname, hval in Email._headers:
 			hval = decode_header(hval)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + "\n"
 		panel_header.set_markup(s)
 	else:
+		spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+		panel_header.set_line_wrap(True)
 		panel_header.set_markup(get_headers_markup(Email))
 	panel_header.set_data('all-headers', chkmi.active)
 
@@ -1083,15 +1162,28 @@ Email = None
 PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
-PopularHeaders = ["From", "To", "Cc", "Bcc", "Subject", "Priority"]
+SenderHeaders = ['From', 'Reply-To', 'Organization']
+RecipientHeaders = ['To', 'Cc', 'Bcc']
+PopularHeaders = ['Subject']
+AdvancedHeaders = [
+	'References', 'In-Reply-To', 'Disposition-Notification-To',
+	'Priority', 'Importance', 'Precedence',
+	'Newsgroups', 'Followup-To', 'Thread-Topic',
+	'Accept-Language', 'Content-Language',
+	'User-Agent', 'X-Mailer',
+	]
 XATTR_CHARSET = 'user.mime_encoding'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)
 HDR_CD = 'Content-Disposition'
 
+
+### Parse Arguments ###
+
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
+argparser.add_argument('--from', metavar='FROM', help=_("New Email's Sender name and address"))
 argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
@@ -1162,11 +1254,11 @@ panel_right.pack_start(tb_controls, False, True)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
 spanel_header.set_size_request(-1, 104)
 spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+panel_header.set_line_wrap(True)
 panel_header.set_padding(4, 2)
 panel_header.set_alignment(0, 0)
 panel_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_header.set_selectable(True)
-panel_header.set_line_wrap(True)
 panel_header.connect('populate-popup', populate_header_menu)
 panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -1218,6 +1310,8 @@ for tbi in tb_controls.get_children():
 		btn_save2 = tbi
 
 
+### Build Composer GUI ###
+
 win_comp = gtk.Window()
 win_comp.set_default_size(*win_main.get_default_size())
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
@@ -1232,7 +1326,7 @@ panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
 spanel_comp_hdr = gtk.ScrolledWindow()
 panel_comp_hdr = gtk.VBox(False, 2)
-PopularHeadersStore = gtk.ListStore(str, str)
+UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gtk.ListStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_attachments = gtk.TreeView(Attachments)
@@ -1283,8 +1377,8 @@ toolbuttons = [
 load_toolitems(tb_compose, toolbuttons)
 setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 
-for h in PopularHeaders:
-	PopularHeadersStore.append([h, _(h)])
+for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
+	UnionHeadersStore.append([h])
 
 toolbuttons = [
 	(None, None, None, 'space', None),
@@ -1299,6 +1393,8 @@ if args.compose:
 	if args.FILE:
 		# TODO load email
 		win_comp.set_data('saved-to-file', args.FILE)
+	if getattr(args, 'from'):
+		set_composer_headers('From', [getattr(args, 'from')])
 	if args.to:
 		set_composer_headers('To', args.to)
 	if args.subject:
