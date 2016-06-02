@@ -25,9 +25,16 @@ try:
 except ImportError:
 	sys.stderr.write(_("Notice: no module xattr loaded") + "\n")
 	xattr = None
+import urlparse
 
 
 ### helper classes, functions ###
+
+class StockToggleToolButton(gtk.ToggleToolButton):
+	def __init__(self, stock=None):
+		super(self.__class__, self).__init__(stock)
+		if stock not in gtk.stock_list_ids():
+			self.set_icon_name(stock)
 
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
@@ -344,21 +351,13 @@ def win_main_show(widget, event):
 
 def load_file(filename):
 	global Email
+	global LeafParts
 	fh = open(filename, 'r')
 	Email = email.message_from_file(fh)
 	fh.close()
 	
 	panel_header.set_markup(get_headers_markup(Email))
 	clear_parts(Parts)
-	if Email.is_multipart():
-		pos = panel_body.get_data('saved-position')
-		if pos is not None:
-			panel_body.set_position(pos)
-			panel_body.set_data('saved-position', None)
-	else:
-		panel_body.set_data('saved-position', panel_body.get_position())
-		panel_body.set_position(0)
-	
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
 	if Email.is_multipart():
@@ -371,12 +370,24 @@ def load_file(filename):
 	else:
 		selection_parts.select_path((0,))
 
+	if LeafParts > 1:
+		pos = panel_body.get_data('saved-position')
+		if pos is not None:
+			panel_body.set_position(pos)
+			panel_body.set_data('saved-position', None)
+	else:
+		panel_body.set_data('saved-position', panel_body.get_position())
+		panel_body.set_position(0)
+
 def clear_parts(model):
+	global LeafParts
+	LeafParts = 0
 	model.clear()
 
 def load_parts(eml, model, parent):
 	global PartPrimary
 	global PartSecondary
+	global LeafParts
 	
 	label = PMU_MIME + glib.markup_escape_text(eml.get_content_type()) + PMU_MIME_CLOSE
 	filename = eml.get_filename()
@@ -392,6 +403,8 @@ def load_parts(eml, model, parent):
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
+	else:
+		LeafParts += 1
 
 def clear_content(s=''):
 	bufr = panel_content.get_buffer()
@@ -470,6 +483,17 @@ def get_one_header_main(hname, dflt=None):
 def get_all_headers_main(hname):
 	return map(decode_header, Email.get_all(hname) or [])
 
+def get_mailtos(s):
+	l = []
+	for uri in re.finditer('<([^>]+)>', s):
+		rslt = urlparse.urlsplit(uri.group(1))
+		if rslt.scheme.lower() == 'mailto':
+			m = {'to': rslt.path}
+			q = dict((k.lower(), v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
+			m.update(q)
+			l.append(m)
+	return l
+
 def get_headers_markup(eml):
 	lns = []
 	hdrs = [
@@ -484,17 +508,17 @@ def get_headers_markup(eml):
 		"Subject",
 		"Date",
 	]
-	hdr_from = []
+	from_addresses = map(lambda x: x[1], email.utils.getaddresses(eml.get_all('From') or []))
 	for hname in hdrs:
 		hvals = []
 		for hval in eml.get_all(hname) or []:
 			hval = decode_header(hval)
-			if hname == 'From':
-				hdr_from.extend(map(lambda x: x[1], email.utils.getaddresses([hval])))
-			elif hname == 'Reply-To':
-				if hval in hdr_from: continue
+			if hname.endswith == 'Sender' or hname == 'Reply-To':
+				# do not display Sender or Reply-To fields if they equal to From
+				if hval in from_addresses: continue
 			elif hname == 'Date':
 				try:
+					# display Date field in local timezone
 					hval = email.utils.formatdate(email.utils.mktime_tz(email.utils.parsedate_tz(hval)), True)
 				except TypeError:
 					pass
@@ -550,6 +574,14 @@ def get_stock_by_mime(main, sub):
 		return main + '-x-generic'
 
 	return gtk.STOCK_FILE
+
+def sighandler(sign, frame):
+	if sign == signal.SIGTERM:
+		glib.idle_add(sig_term, priority=glib.PRIORITY_HIGH)
+
+def sig_term():
+	act_quit()
+	return False
 
 def act_quit():
 	if win_comp.get_visible():
@@ -857,18 +889,39 @@ def act_reply(recip):
 			# TODO attach original email (file)
 		else:
 			set_composer_subject(_("Re: ") + get_one_header_main('Subject', ''))
+			reply_fulladdress = None
+			reply_address = None
 			for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
 				if Email[h] is not None:
-					from_address = get_one_header_main(h)
+					reply_fulladdress = get_one_header_main(h)
+					reply_address = email.utils.parseaddr(reply_fulladdress)[1]
 					break
-			add_composer_header('To', from_address or '')
-			if recip == 'all':
-				myaddresses = [get_one_header_main('Delivered-To'), get_one_header_main('Envelope-To')]
-				noaddresses = myaddresses + [from_address]
+			try:
+				listaddress = get_mailtos(','.join(get_all_headers_main('List-Post') or []))[0]['to']
+			except IndexError:
+				listaddress = None
+			except KeyError:
+				listaddress = None
+			
+			if recip == 'one':
+				add_composer_header('To', reply_fulladdress or '')
+			elif recip == 'all':
+				my_address = get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
+				cc_addresses = map(lambda x: x[1], email.utils.getaddresses(get_all_headers_main('Cc')))
+				skip_addresses = [my_address, reply_address, '']
+				rcpt_addresses = []
+				
+				if reply_address is not None and reply_address != my_address:
+					add_composer_header('To', reply_fulladdress)
 				for h in 'To', 'Cc':
-					for addr in filter_out_addresses(noaddresses + [''], get_all_headers_main(h)):
+					for addr in filter_out_addresses(skip_addresses, get_all_headers_main(h)):
 						add_composer_header(h, addr)
-			body += "\n" + _("Quote:\n") + quote_message_plain()
+						rcpt_addresses.append(email.utils.parseaddr(addr)[1])
+				if listaddress is not None and listaddress not in rcpt_addresses:
+					add_composer_header('To', listaddress)
+			
+			if recip in ['one', 'all']:
+				body += "\n" + _("Quote:\n") + quote_message_plain()
 		set_composer_text(body)
 		panel_edit_message.grab_focus()
 
@@ -1059,7 +1112,7 @@ def act_show_headers(chkmi):
 
 def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
-	mi = gtk.CheckMenuItem(_("Show All Headers"))
+	mi = gtk.CheckMenuItem(_("Show Custom Headers"))
 	mi.set_active(panel_header.get_data('all-headers') == True)
 	mi.connect('toggled', act_show_headers)
 	menu.append(mi)
@@ -1263,6 +1316,12 @@ def on_keypress_attachments(tv, evt):
 		return True
 	return False
 
+def act_encrypt():
+	pass
+
+def act_sign():
+	pass
+
 def act_edit_external():
 	pass
 
@@ -1310,12 +1369,14 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
 argparser.add_argument('--from', metavar='FROM', help=_("New Email's Sender name and address"))
 argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
+argparser.add_argument('--cc', metavar='ADDRESSES', help=_("Carbon Copy Recipients, comma-separated list"))
+argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy Recipients, comma-separated list"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, comma-separated list"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
 args = argparser.parse_args()
-for attr in 'to', 'attach':
+for attr in 'to', 'cc', 'bcc', 'attach':
 	if getattr(args, attr) is not None:
 		setattr(args, attr, re.split('\s*,\s*', getattr(args, attr)))
 if not args.compose and not args.FILE:
@@ -1541,10 +1602,17 @@ setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
 
+toggle_notimportant = StockToggleToolButton('mail-mark-read')
+toggle_notimportant.connect('toggled', lambda x: toggle_important.set_active(False) if x.get_active() else None)
+toggle_important = StockToggleToolButton('mail-mark-important')
+toggle_important.connect('toggled', lambda x: toggle_notimportant.set_active(False) if x.get_active() else None)
 toolbuttons = [
 	(None, None, None, 'space', None),
-	(None, 'mail-mark-important', "Non-Important", None, None), # TODO
-	(None, 'mail-mark-important', "Important", None, None), # TODO
+	(None, StockToggleToolButton('dialog-password'), "Encrypt", act_encrypt, None),
+	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", act_sign, None),
+	(None, None, None, 'separator', None),
+	(None, toggle_notimportant, "Not Important", None, None),
+	(None, toggle_important, "Important", None, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
@@ -1555,6 +1623,7 @@ load_toolitems(tb_comp_controls, toolbuttons)
 
 gettext.bindtextdomain('gemlv')
 Magic.load()
+signal.signal(signal.SIGTERM, sighandler)
 if args.compose:
 	open_composer()
 	if args.FILE:
@@ -1564,6 +1633,13 @@ if args.compose:
 		set_composer_headers('From', [getattr(args, 'from')])
 	if args.to:
 		set_composer_headers('To', args.to)
+	if args.cc:
+		set_composer_headers('Cc', args.cc)
+	if args.bcc:
+		set_composer_headers('Bcc', args.bcc)
+	if not (args.to or args.cc or args.bcc):
+		# TODO: and to preloaded recipients
+		add_composer_header('To')
 	if args.subject:
 		set_composer_subject(args.subject)
 	if args.message:
@@ -1576,4 +1652,5 @@ if args.compose:
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
+
 gtk.main()
