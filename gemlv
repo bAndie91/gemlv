@@ -75,13 +75,13 @@ class StockButton(gtk.Button):
 		hbox = align.get_children()[0]
 		return hbox.get_children()
 	def set_label(self, label):
-		_, lbl = self.__get_children()
+		x, lbl = self.__get_children()
 		lbl.set_label(label)
 	def set_markup(self, label):
-		_, lbl = self.__get_children()
+		x, lbl = self.__get_children()
 		lbl.set_markup(label)
 	def set_icon(self, icon, size=gtk.ICON_SIZE_BUTTON):
-		img, _ = self.__get_children()
+		img, x = self.__get_children()
 		if type(icon) == str:
 			if icon == '':
 				img.props.visible = False
@@ -182,7 +182,7 @@ class pipereader:
 	
 	def __del__(self):
 		self.reader.close()
-		_, status = os.waitpid(self.pid, 0)
+		x, status = os.waitpid(self.pid, 0)
 		if self.exitdict is not None:
 			sig = status & 0x7F
 			core = status & 0x80 >> 7
@@ -332,7 +332,7 @@ def run_async(cmd, args, postrun):
 				os.execvp(cmd, args)
 				os._exit(127)
 			else:
-				_, status = os.waitpid(pid3, 0)
+				x, status = os.waitpid(pid3, 0)
 				excode = status >> 8
 				postrun[0](*postrun[1:])
 				os._exit(excode)
@@ -355,6 +355,11 @@ def load_file(filename):
 	fh = open(filename, 'r')
 	Email = email.message_from_file(fh)
 	fh.close()
+	
+	if get_listaddress_main() is not None:
+		menubutton_replytolist.show()
+	if (Email['List-Unsubscribe'] or '').strip():
+		menubutton_unsubscribe.show()
 	
 	panel_header.set_markup(get_headers_markup(Email))
 	clear_parts(Parts)
@@ -493,6 +498,15 @@ def get_mailtos(s):
 			m.update(q)
 			l.append(m)
 	return l
+
+def get_listaddress_main():
+	try:
+		listaddress = get_mailtos(','.join(get_all_headers_main('List-Post') or []))[0]['to']
+	except IndexError:
+		listaddress = None
+	except KeyError:
+		listaddress = None
+	return listaddress
 
 def get_headers_markup(eml):
 	lns = []
@@ -754,6 +768,11 @@ class compose_header_box(gtk.HBox):
 		my = Y + y + h
 		return (mx, my, True)
 	
+	def show_all(self):
+		super(self.__class__, self).show_all()
+		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_add_comp_hdr.get_active():
+			self.hide()
+	
 	def duplicate(self, evtwdg=None):
 		newbox = self.__class__(self['name'], self['value'], hntype=self.hntype)
 		self.parent.pack_start(newbox, False, True)
@@ -824,6 +843,9 @@ def get_composer_headers(hname):
 def set_composer_subject(s):
 	entry_subject.set_text(s)
 
+def get_composer_subject():
+	return entry_subject.get_text()
+
 def set_composer_text(s):
 	bufr = panel_edit_message.get_buffer()
 	bufr.set_text(s)
@@ -882,13 +904,20 @@ def act_compose():
 
 def act_reply(recip):
 	if open_composer():
+		subj = get_one_header_main('Subject', '')
 		body = "\n\n" + get_user_signature() + "\n"
 		if recip == '':
+			pre = _("Fwd: ")
+			if not subj.startswith(pre): subj = pre + subj
+			set_composer_subject(subj)
 			add_composer_header('To', '')
-			set_composer_subject(_("Fwd: ") + get_one_header_main('Subject', ''))
 			# TODO attach original email (file)
 		else:
-			set_composer_subject(_("Re: ") + get_one_header_main('Subject', ''))
+			pre = _("Re: ")
+			if not subj.startswith(pre): subj = pre + subj
+			set_composer_subject(subj)
+			body += "\n" + _("Quote:") + "\n" + quote_message_plain()
+			
 			reply_fulladdress = None
 			reply_address = None
 			for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
@@ -896,12 +925,7 @@ def act_reply(recip):
 					reply_fulladdress = get_one_header_main(h)
 					reply_address = email.utils.parseaddr(reply_fulladdress)[1]
 					break
-			try:
-				listaddress = get_mailtos(','.join(get_all_headers_main('List-Post') or []))[0]['to']
-			except IndexError:
-				listaddress = None
-			except KeyError:
-				listaddress = None
+			listaddress = get_listaddress_main()
 			
 			if recip == 'one':
 				add_composer_header('To', reply_fulladdress or '')
@@ -919,11 +943,13 @@ def act_reply(recip):
 						rcpt_addresses.append(email.utils.parseaddr(addr)[1])
 				if listaddress is not None and listaddress not in rcpt_addresses:
 					add_composer_header('To', listaddress)
-			
-			if recip in ['one', 'all']:
-				body += "\n" + _("Quote:\n") + quote_message_plain()
+			elif recip == 'list':
+				add_composer_header('To', listaddress)
 		set_composer_text(body)
 		panel_edit_message.grab_focus()
+
+def act_unsubscribe():
+	pass
 
 def act_mark_spam():
 	pass
@@ -1112,7 +1138,7 @@ def act_show_headers(chkmi):
 
 def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
-	mi = gtk.CheckMenuItem(_("Show Custom Headers"))
+	mi = gtk.CheckMenuItem(_("Show All Headers"))
 	mi.set_active(panel_header.get_data('all-headers') == True)
 	mi.connect('toggled', act_show_headers)
 	menu.append(mi)
@@ -1157,26 +1183,27 @@ def load_toolitems(toolbar, toolitems):
 		elif isinstance(stock, gtk.ToolItem):
 			tbi = stock
 			if tip is not None:
-				tbi.set_tooltip_text(tip)
+				tbi.set_tooltip_text(_(tip))
 			tbi.connect('clicked', on_click_button, fnc_left)
 		else:
-			stocklabel = None
-			s = gtk.stock_lookup(stock)
-			if s:
-				stocklabel = re.sub('_', '', s[1])
+			Lstocklabel = None
+			st = gtk.stock_lookup(stock)
+			if st:
+				Lstocklabel = re.sub('_', '', st[1])
 			if label is not None:
-				label = _(label)
+				Llabel = _(label)
 			else:
-				label = stocklabel
+				Llabel = Lstocklabel
 			if tip is not None:
-				tip = _(tip)
+				Ltip = _(tip)
 			else:
 				if label is not None:
-					tip = label
+					Ltip = Llabel
 				else:
-					tip = stocklabel
-			tbi = StockToolButton(label=label, stock=stock, tooltip=tip)
+					Ltip = Lstocklabel
+			tbi = StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
 			tbi.set_data('stock', stock)
+			tbi.set_data('label', label)
 			tbi.connect('clicked', on_click_button, fnc_left)
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
 		toolbar.insert(tbi, -1)
@@ -1206,7 +1233,9 @@ def act_save_edit(save_as=False):
 	ask_overwrite = False
 	if filename is None or save_as:
 		ask_overwrite = True
-		filename = choose_save_file(_("Draft") + '.eml')
+		subj = get_composer_subject()
+		if subj: subj = ' - ' + subj
+		filename = choose_save_file(_("Draft") + subj + '.eml')
 	if filename is not None:
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
@@ -1322,6 +1351,13 @@ def act_encrypt():
 def act_sign():
 	pass
 
+def act_importance():
+	n = 1
+	if toggle_important.get_active(): n = 2
+	elif toggle_unimportant.get_active(): n = 0
+	set_composer_headers('Importance', [] if n == 1 else [Importances[n]])
+	set_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
+
 def act_edit_external():
 	pass
 
@@ -1334,6 +1370,7 @@ def on_edit_message(tb):
 ### Main ###
 
 PROGNAME = 'gemlv'
+gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 PMU_MIME = '<i><span color="gray30">'
 PMU_MIME_CLOSE = '</span></i>'
@@ -1361,19 +1398,22 @@ NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)
 HDR_CD = 'Content-Disposition'
+Importances = ['low','normal','high']
+Priorities = ['non-urgent','normal','urgent']
 
 
 ### Parse Arguments ###
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
-argparser.add_argument('--from', metavar='FROM', help=_("New Email's Sender name and address"))
+argparser.add_argument('--from', metavar='FROM', help=_("New Email's writer's name and address"))
 argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
 argparser.add_argument('--cc', metavar='ADDRESSES', help=_("Carbon Copy Recipients, comma-separated list"))
 argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy Recipients, comma-separated list"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, comma-separated list"))
+argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
 args = argparser.parse_args()
 for attr in 'to', 'cc', 'bcc', 'attach':
@@ -1382,6 +1422,8 @@ for attr in 'to', 'cc', 'bcc', 'attach':
 if not args.compose and not args.FILE:
 	sys.stderr.write(_("Either compose mode or FILE is needed.") + "\n")
 	os._exit(1)
+if args.localedir:
+	gettext.bindtextdomain(PROGNAME, os.path.abspath(args.localedir))
 
 
 ### Build GUI ###
@@ -1469,14 +1511,22 @@ menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 toolbuttons = [
 	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
 	("Reply", 'mail-reply-sender', None, (act_reply, 'one'), None),
+	("Reply To List", 'mail-reply-all', None, (act_reply, 'list'), None),
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'separator', None),
+	("Unsubscribe", 'call-stop', None, act_unsubscribe, None),
 	("Report Spam", 'mail-mark-junk', None, act_mark_spam, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
 load_toolitems(toolbar, toolbuttons)
+for tbi in toolbar.get_children():
+	if tbi.get_data('label') == 'Reply To List':
+		menubutton_replytolist = tbi
+	elif tbi.get_data('label') == 'Unsubscribe':
+		menubutton_unsubscribe = tbi
+
 setup_treeview__icon_label(panel_parts)
 
 def ToolItemDeclaration_wrap(tv):
@@ -1583,14 +1633,14 @@ menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gtk.MenuItem(_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
 menu_add_header.append(mi)
-menuitem_add_comp_hdr = gtk.CheckMenuItem(_("Show All Headers"))
+menuitem_add_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
 menuitem_add_comp_hdr.connect('toggled', act_all_comp_hdr)
 menu_add_header.append(menuitem_add_comp_hdr)
 menu_add_header.show_all()
 
 toolbuttons = [
 	("Send", 'mail-send', None, act_send, None),
-	(None, gtk.STOCK_SAVE, _("Save\nRight click: Save As..."), act_save_edit, (act_save_edit, True)),
+	(None, gtk.STOCK_SAVE, "Save\nRight click: Save As...", act_save_edit, (act_save_edit, True)),
 	("Addressbook", 'x-office-address-book', None, None, None), # TODO
 	("Attach File", 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
@@ -1602,17 +1652,17 @@ setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
 
-toggle_notimportant = StockToggleToolButton('mail-mark-read')
-toggle_notimportant.connect('toggled', lambda x: toggle_important.set_active(False) if x.get_active() else None)
-toggle_important = StockToggleToolButton('mail-mark-important')
-toggle_important.connect('toggled', lambda x: toggle_notimportant.set_active(False) if x.get_active() else None)
+toggle_unimportant = StockToggleToolButton('emblem-generic')
+toggle_unimportant.connect('toggled', lambda x: toggle_important.set_active(False) if x.get_active() else None)
+toggle_important = StockToggleToolButton('emblem-important')
+toggle_important.connect('toggled', lambda x: toggle_unimportant.set_active(False) if x.get_active() else None)
 toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, StockToggleToolButton('dialog-password'), "Encrypt", act_encrypt, None),
 	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", act_sign, None),
 	(None, None, None, 'separator', None),
-	(None, toggle_notimportant, "Not Important", None, None),
-	(None, toggle_important, "Important", None, None),
+	(None, toggle_unimportant, "Unimportant", act_importance, None),
+	(None, toggle_important, "Important", act_importance, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
@@ -1621,7 +1671,6 @@ toolbuttons = [
 load_toolitems(tb_comp_controls, toolbuttons)
 
 
-gettext.bindtextdomain('gemlv')
 Magic.load()
 signal.signal(signal.SIGTERM, sighandler)
 if args.compose:
@@ -1652,5 +1701,7 @@ if args.compose:
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
+	menubutton_replytolist.hide()
+	menubutton_unsubscribe.hide()
 
 gtk.main()
