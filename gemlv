@@ -298,12 +298,6 @@ def get_pipe_handlers(npairs):
 		pipes.append(os.fdopen(w, 'w'))
 	return pipes
 
-def joinNone(glue, dflt, lst):
-	lst2 = []
-	for e in lst:
-		lst2.append(dflt if e is None else e)
-	return glue.join(lst2)
-
 def which(cmd):
 	def is_executable(p):
 		return (os.path.isfile(p) and os.access(p, os.X_OK))
@@ -417,60 +411,94 @@ def clear_content(s=''):
 	panel_content.set_sensitive(False)
 	return bufr
 
-def decode_properly(s, eml):
+def decode_readably(s, eml):
 	charset = eml.get_content_charset()
 	if charset is None: charset = 'utf-8'
 	return s.decode(charset, 'replace')
 
-def get_content_properly(eml):
-	s = eml.get_payload(decode=1)
-	if s is None:
-		s = eml.as_string()
-	return decode_properly(s, eml)
+def get_content_readably(eml):
+	return decode_readably(get_content_any(eml), eml)
 
-def set_content_text(s, eml=None):
-	if s is None:
-		s = get_content_properly(eml)
-	elif eml is not None:
-		s = decode_properly(s, eml)
-	panel_content.get_buffer().set_text(s)
+def get_content_any(eml):
+	s = eml.get_payload(decode=1)
+	if s is None: s = eml.as_string()
+	return s
+
+def set_content_text(s):
+	bufr = panel_content.get_buffer()
+	bufr.set_text(s)
+	if s != '' and bufr.get_text(bufr.get_start_iter(), bufr.get_end_iter(), True) == '':
+		return False
 	panel_content.set_sensitive(True)
+	return True
 
 def load_part(eml, filt=None):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
+	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 
 	if filt is None:
-		filt = get_filter_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
+		filt = get_filter_by_mime(ct_main, ct_sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == type([]) and not(eml.preamble is None and eml.epilogue is None):
-			set_content_text(joinNone("\n", '', [eml.preamble, eml.epilogue]), eml)
+		if type(eml.get_payload()) == type([]) and (eml.preamble is not None or eml.epilogue is not None):
+			set_content_text(decode_readably("\n".join([eml.preamble or '', eml.epilogue or '']), eml))
 		else:
-			label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
-			filename = eml.get_filename()
-			if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + "\n" + label
-			lbl_right.set_markup(label)
-			
-			panel_btnbox.show()
-			btn_open.show()
-			btn_save.set_label(gtk.stock_lookup(gtk.STOCK_SAVE)[1])
+			if ct_main == 'image':
+				loader = gtk.gdk.PixbufLoader()
+				loader.write(eml.get_payload(decode=1))
+				loader.close()
+				pxb = loader.get_pixbuf()
+				panel_content_image.set_data('last-alloc', None)
+				panel_content_image.set_data('pixbuf', pxb)
+				panel_content_image.show()
+			else:
+				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
+				filename = eml.get_filename()
+				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + "\n" + label
+				lbl_right.set_markup(label)
+				
+				panel_btnbox.show()
+				btn_open.show()
+				btn_save.set_label(gtk.stock_lookup(gtk.STOCK_SAVE)[1])
 			spanel_content.hide()
 	else:
-		cmd, args = filt[:]
+		cmd, args, binary = filt[:]
+		if binary:
+			content = get_content_any(eml)
+		else:
+			content = get_content_readably(eml)
 		if cmd == '':
 			panel_content.set_data('view-unfiltered', True)
-			set_content_text(None, eml)
-			panel_btnbox.hide()
-			spanel_content.show()
-			panel_content.set_sensitive(True)
+			set_content_text(content) or clear_content(_("Loading failed"))
 		else:
 			bufr = panel_content.get_buffer()
 			bufr.set_text('')
-			for s in pipereader(get_content_properly(eml), cmd, args):
+			for s in pipereader(content, cmd, args):
 				bufr.insert(bufr.get_end_iter(), s)
 			panel_content.set_sensitive(True)
+
+def on_allocate_panel_content_image(wdg, alloc):
+	pxb = wdg.get_data('pixbuf')
+	if pxb is not None:
+		lastalloc = wdg.get_data('last-alloc')
+		if lastalloc is None or alloc.width != lastalloc.width or alloc.height != lastalloc.height:
+			wdg.set_data('last-alloc', alloc)
+			B = wdg.get_border_width()
+			W, H = alloc.width - B, alloc.height - B
+			w0, h0 = pxb.get_width(), pxb.get_height()
+			w = w0
+			h = h0
+			if W < w:
+				w = W
+				h = h0 * w / w0
+			if H < h:
+				h = H
+				w = w0 * h / h0
+			b = 5+B*2
+			pxb = pxb.scale_simple(w - b, h - b, gtk.gdk.INTERP_BILINEAR)
+			wdg.children()[0].set_from_pixbuf(pxb)
 
 def decode_header(s):
 	chunks = []
@@ -544,13 +572,14 @@ def get_headers_markup(eml):
 
 def get_filters_by_mime(main, sub, all=True):
 	filters = []
-	for m, s, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(\S+)\s*(.+)?', splitgroups=[4]):
+	for m, s, mark, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(!?)(\S+)\s*(.+)?', splitgroups=[5]):
 		if fnmatch(main, m) and fnmatch(sub, s):
+			isbin = mark == '!'
 			e = None
 			if cmd == '-':
-				e = ('', None)
+				e = ('', None, isbin)
 			elif which(cmd):
-				e = (cmd, args)
+				e = (cmd, args, isbin)
 			if e is not None:
 				if all:
 					filters.append(e)
@@ -1016,7 +1045,6 @@ def set_xattr_charset(fh, charset, filename='-'):
 				xattr.setxattr(fh, XATTR_CHARSET, charset)
 		except IOError, e:
 			sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (XATTR_CHARSET, filename, str(e))) + "\n")
-			pass
 
 def save_to_file(eml, filename, ask_overwrite=True):
 	if ask_overwrite:
@@ -1048,7 +1076,7 @@ def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
 		filt = None
 	else:
-		filt = ('', None)
+		filt = ('', None, False)
 	load_part(get_part_by_itpath(), filt)
 
 def act_wrap(tv, i=1):
@@ -1100,12 +1128,14 @@ def on_select_parts(selection):
 		lbl_right.set_markup(_("Multiple (%s) selected attachments") % (len(itpaths)))
 		btn_open.hide()
 		btn_save.set_label(_("Save All"))
+		panel_content_image.hide()
 		spanel_content.hide()
 		btn_open2.set_sensitive(False)
 		btn_save2.set_sensitive(True)
 		menubutton_filters.set_sensitive(False)
 	else:
 		panel_btnbox.hide()
+		panel_content_image.hide()
 		spanel_content.show()
 		if len(itpaths) == 1:
 			btn_open2.set_sensitive(True)
@@ -1456,6 +1486,7 @@ panel_btnbox = gtk.HBox()
 btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
+panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
 tb_controls = gtk.Toolbar()
@@ -1475,6 +1506,8 @@ panel_btnbox.pack_start(lbl_right, True, False)
 panel_btnbox.pack_start(btnbox_right, True, False)
 btnbox_right.pack_start(btn_open, False, False)
 btnbox_right.pack_start(btn_save, False, False)
+panel_right.pack_start(panel_content_image, True, True)
+panel_content_image.add(gtk.Image())
 panel_right.pack_start(spanel_content, True, True)
 spanel_content.add_with_viewport(panel_content)
 panel_right.pack_start(tb_controls, False, True)
@@ -1499,6 +1532,7 @@ lbl_right.set_alignment(0, 0)
 lbl_right.set_justify(gtk.JUSTIFY_LEFT)
 btn_open.connect('clicked', lambda wdg: act_open())
 btn_save.connect('clicked', lambda wdg: act_save())
+panel_content_image.connect('size-allocate', on_allocate_panel_content_image)
 panel_content.set_editable(False)
 panel_content.set_wrap_mode(gtk.WRAP_WORD)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
@@ -1701,6 +1735,7 @@ if args.compose:
 else:
 	win_main.show_all()
 	panel_btnbox.hide()
+	panel_content_image.hide()
 	menubutton_replytolist.hide()
 	menubutton_unsubscribe.hide()
 
