@@ -706,7 +706,7 @@ def act_comp_hdr_menuitem(mi, hname=None):
 	if hname is None:
 		hname = mi.get_data('chname')
 	if hname == '':
-		menuitem_add_comp_hdr.set_active(True)
+		menuitem_all_comp_hdr.set_active(True)
 	on = mi.active if isinstance(mi, gtk.CheckMenuItem) else None
 	box = add_composer_header__direct(hname)
 	if on == False:
@@ -850,7 +850,7 @@ class compose_header_box(gtk.HBox):
 	
 	def show_all(self):
 		super(self.__class__, self).show_all()
-		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_add_comp_hdr.get_active():
+		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_all_comp_hdr.get_active():
 			self.hide()
 	
 	def duplicate(self, evtwdg=None):
@@ -956,8 +956,10 @@ def open_composer():
 	part0 = MIMEText('')
 	part0.set_charset('UTF-8')
 	NewEmail.attach(part0)
+	Attachments.clear()
 	
 	win_comp.show_all()
+	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
 	for h in SenderHeaders: add_composer_header(h).cancel()
 	set_composer_subject('')
@@ -968,8 +970,9 @@ def open_composer():
 	return True
 
 def quote_message_plain():
-	#TODO
-	return "> "
+	if PartPrimary is not None:
+		return re.sub('(^|\n)(.)', '\\1> \\2', get_content_readably(Parts[PartPrimary][0]))
+	return '>'
 
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
@@ -989,8 +992,13 @@ def filter_out_addresses(noaddrs, hvals):
 			filtered.append(email.utils.formataddr((realname, addr)))
 	return filtered
 
+def add_composer_agent_headers():
+	add_composer_header('User-Agent', USERAGENT)
+	add_composer_header('X-Mailer', USERAGENT)
+
 def act_compose():
 	if open_composer():
+		add_composer_agent_headers()
 		add_composer_header('To', '')
 		set_composer_subject('')
 		set_composer_text('\n\n' + get_user_signature())
@@ -999,6 +1007,7 @@ def act_compose():
 
 def act_reply(recip):
 	if open_composer():
+		add_composer_agent_headers()
 		subj = get_one_header_main('Subject', '')
 		body = '\n\n' + get_user_signature()
 		if recip == '':
@@ -1013,10 +1022,11 @@ def act_reply(recip):
 			NewEmail.attach(part)
 			Attachments.append(None, [part, fwdname, 'emblem-mail', None])
 		else:
+			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic', subj))
 			pre = _("Re: ")
 			if not subj.startswith(pre): subj = pre + subj
 			set_composer_subject(subj)
-			body += '\n' + _("Quote:") + '\n' + quote_message_plain()
+			body += '\n' + _("Quote:") + '\n\n' + quote_message_plain()
 			
 			reply_fulladdress = None
 			reply_address = None
@@ -1077,7 +1087,7 @@ def act_open():
 	try:
 		save_to_filedescriptor(eml, fd)
 		fh = os.fdopen(fd, 'r')
-		set_xattr_charset(fh, eml.get_content_charset(), tmppath)
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mime}, tmppath)
 		fh.close()
 	except OSError, e:
 		os.unlink(tmppath)
@@ -1110,15 +1120,16 @@ def act_save():
 				savefile = os.path.join(savedir, calc_attachment_name(eml, n))
 				save_to_file(eml, savefile)
 
-def set_xattr_charset(fh, charset, filename='-'):
+def set_xattrs(fh, attrs, filename='-'):
 	if xattr is not None:
-		try:
-			if charset is None:
-				xattr.removexattr(fh, XATTR_CHARSET)
-			else:
-				xattr.setxattr(fh, XATTR_CHARSET, charset)
-		except IOError, e:
-			sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (XATTR_CHARSET, filename, str(e))) + '\n')
+		for attrname, attrval in attrs.iteritems():
+			try:
+				if attrval is None:
+					xattr.removexattr(fh, attrname)
+				else:
+					xattr.setxattr(fh, attrname, attrval)
+			except IOError, e:
+				sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e))) + '\n')
 
 def save_to_file(eml, filename, ask_overwrite=True):
 	if ask_overwrite:
@@ -1128,7 +1139,7 @@ def save_to_file(eml, filename, ask_overwrite=True):
 	try:
 		fh = open(filename, 'w')
 		save_to_filedescriptor(eml, fh.fileno())
-		set_xattr_charset(fh, eml.get_content_charset(), filename)
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: eml.get_content_type()}, filename)
 		fh.close()
 		return True
 	except IOError, e:
@@ -1492,7 +1503,7 @@ def act_edit_external():
 	try:
 		filehandler = os.fdopen(fd, 'w')
 		filehandler.write(get_composer_text())
-		set_xattr_charset(filehandler, 'UTF-8', tmppath)
+		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: 'text/plain'}, tmppath)
 		filehandler.close()
 	except IOError, e:
 		err = e
@@ -1540,6 +1551,8 @@ def on_edit_message(tb):
 ### Main ###
 
 PROGNAME = 'gemlv'
+VERSION = '0.1'
+USERAGENT = PROGNAME + '/' + VERSION
 gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 PMU_MIME = '<i><span color="gray30">'
@@ -1564,6 +1577,7 @@ AdvancedHeaders = [
 	'User-Agent', 'X-Mailer',
 	]
 XATTR_CHARSET = 'user.mime_encoding'
+XATTR_TYPE = 'user.mime_type'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)
@@ -1624,7 +1638,9 @@ panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
 lbl_right = gtk.Label()
-panel_btnbox = gtk.HBox()
+panel_btnbox = gtk.Frame()
+panel_btnbox2 = gtk.VBox()
+panel_btnbox3 = gtk.HBox()
 btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
@@ -1643,9 +1659,11 @@ box_main.pack_start(panel_body, True, True)
 panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
 spanel_parts.add_with_viewport(panel_parts)
-panel_right.pack_start(panel_btnbox, True, False)
-panel_btnbox.pack_start(lbl_right, True, False)
-panel_btnbox.pack_start(btnbox_right, True, False)
+panel_right.pack_start(panel_btnbox, True, True)
+panel_btnbox.add(panel_btnbox2)
+panel_btnbox2.pack_start(panel_btnbox3, True, False)
+panel_btnbox3.pack_start(lbl_right, True, False)
+panel_btnbox3.pack_start(btnbox_right, True, False)
 btnbox_right.pack_start(btn_open, False, False)
 btnbox_right.pack_start(btn_save, False, False)
 panel_right.pack_start(panel_content_image, True, True)
@@ -1799,9 +1817,9 @@ menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gtk.MenuItem(_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
 menu_add_header.append(mi)
-menuitem_add_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
-menuitem_add_comp_hdr.connect('toggled', act_all_comp_hdr)
-menu_add_header.append(menuitem_add_comp_hdr)
+menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
+menuitem_all_comp_hdr.connect('toggled', act_all_comp_hdr)
+menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
 toolbuttons = [
