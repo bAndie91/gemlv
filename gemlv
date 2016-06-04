@@ -1010,12 +1010,16 @@ def act_reply(recip):
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject', '')
 		body = '\n\n' + get_user_signature()
+
 		if recip == '':
 			fwdname = (subj or _("Email")) + '.eml'
 			pre = _("Fwd: ")
-			if not subj.startswith(pre): subj = pre + subj
+			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
 			add_composer_header('To', '')
+			references = get_one_header_main('References')
+			if references is not None:
+				add_composer_header('References', references)
 			
 			part = MIMEMessage(Email)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
@@ -1024,9 +1028,20 @@ def act_reply(recip):
 		else:
 			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic', subj))
 			pre = _("Re: ")
-			if not subj.startswith(pre): subj = pre + subj
+			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
 			body += '\n' + _("Quote:") + '\n\n' + quote_message_plain()
+
+			messageid = get_one_header_main('Message-ID')
+			references = get_one_header_main('References')
+			if messageid is not None:
+				add_composer_header('In-Reply-To', messageid)
+				if references is not None:
+					references = references + ' ' + messageid
+				else:
+					references = messageid
+			if references is not None:
+				add_composer_header('References', references)
 			
 			reply_fulladdress = None
 			reply_address = None
