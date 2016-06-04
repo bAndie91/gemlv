@@ -28,6 +28,7 @@ except ImportError:
 	xattr = None
 import urlparse
 import pwd
+import threading
 
 
 ### helper classes, functions ###
@@ -184,14 +185,9 @@ class pipereader:
 	
 	def __del__(self):
 		self.reader.close()
-		x, status = os.waitpid(self.pid, 0)
+		status = WaitExecStatus(self.pid)
 		if self.exitdict is not None:
-			sig = status & 0x7F
-			core = status & 0x80 >> 7
-			excode = status >> 8
-			exitdict['status'] = excode
-			exitdict['signal'] = sig
-			exitdict['coredumped'] = core
+			self.exitdict.update(status.__dict__)
 
 class cyclelist(list):
 	def __init__(self, lst, **kvargs):
@@ -328,14 +324,47 @@ def run_async(cmd, args, postrun):
 				os.execvp(cmd, args)
 				os._exit(127)
 			else:
-				x, status = os.waitpid(pid3, 0)
-				excode = status >> 8
+				status = WaitExecStatus(pid3)
 				postrun[0](*postrun[1:])
-				os._exit(excode)
+				os._exit(status.code)
 		else:
 			os._exit(0)
 	else:
 		os.waitpid(pid1, 0)
+
+class WaitExecStatus:
+	def __init__(self, pid):
+		x, status = os.waitpid(pid, 0)
+		self.status = status >> 8
+		self.code = self.status
+		self.signal = status & 0x7F
+		self.coredumped = status & 0x80 >> 7
+
+class ExecThreadRunner(threading.Thread):
+	def __init__(self, syscmd, sysargs, cb=None):
+		assert isinstance(syscmd, str)
+		assert isinstance(sysargs, list)
+		assert isinstance(cb, list)
+		assert len(cb) > 0
+		super(self.__class__, self).__init__(target=self.execve, args=[syscmd, sysargs])
+		self.callback = cb
+	
+	def execve(self, cmd, args):
+		pid = os.fork()
+		if pid == 0:
+			os.closerange(0, 255)
+			try:
+				os.execvp(cmd, [cmd] + args)
+			except OSError, e:
+				sys.stderr.write(str(e))
+			os._exit(127)
+		else:
+			return WaitExecStatus(pid)
+	
+	def run(self):
+		result = self._Thread__target(*self._Thread__args, **self._Thread__kwargs)
+		if self.callback is not None:
+			self.callback[0](result, *self.callback[1:])
 
 ### private functions ###
 
@@ -884,14 +913,17 @@ def set_composer_text(s):
 	bufr.set_text(s)
 	bufr.place_cursor(bufr.get_start_iter())
 
+def get_composer_text():
+	bufr = panel_edit_message.get_buffer()
+	return bufr.get_text(bufr.get_start_iter(), bufr.get_end_iter(), True)
+
 def open_composer():
 	if win_comp.get_visible():
-		if not win_comp.get_data('email-sent') and not win_comp.get_data('is-saved'):
-			win_comp.set_urgency_hint(True)
-			win_comp.present()
-			return False
-		else:
-			win_comp.hide()
+		act_close_edit()
+	if win_comp.get_visible():
+		win_comp.set_urgency_hint(True)
+		win_comp.present()
+		return False
 	
 	global NewEmail
 	NewEmail = MIMEMultipart('mixed')
@@ -937,6 +969,7 @@ def act_compose():
 		add_composer_header('To', '')
 		set_composer_subject('')
 		set_composer_text('\n\n' + get_user_signature())
+		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
 def act_reply(recip):
@@ -944,12 +977,12 @@ def act_reply(recip):
 		subj = get_one_header_main('Subject', '')
 		body = '\n\n' + get_user_signature()
 		if recip == '':
-			fwdname = subj + '.eml'
+			fwdname = (subj or _("Email")) + '.eml'
 			pre = _("Fwd: ")
 			if not subj.startswith(pre): subj = pre + subj
 			set_composer_subject(subj)
 			add_composer_header('To', '')
-
+			
 			part = MIMEMessage(Email)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
 			NewEmail.attach(part)
@@ -988,6 +1021,7 @@ def act_reply(recip):
 			elif recip == 'list':
 				add_composer_header('To', listaddress)
 		set_composer_text(body)
+		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
 def act_unsubscribe():
@@ -1017,7 +1051,7 @@ def act_open():
 	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
 	try:
 		save_to_filedescriptor(eml, fd)
-		fh = os.fdopen(fd)
+		fh = os.fdopen(fd, 'r')
 		set_xattr_charset(fh, eml.get_content_charset(), tmppath)
 		fh.close()
 	except OSError, e:
@@ -1030,7 +1064,9 @@ def act_open():
 def calc_attachment_name(part, n=None):
 	name = part.get_filename()
 	if name is None:
-		name = "%s_attachment%s%s" % (get_one_header_main('Subject', _("Email")), '' if n is None else '-'+str(n), get_extension_by_mime(part.get_content_type()))
+		sfx = ''
+		if n is not None: sfx = '-' + str(n)
+		name = "%s - attachment%s" % (get_one_header_main('Subject', _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
 	return name
 
 def act_save():
@@ -1214,6 +1250,7 @@ def get_part_by_itpath(itpath = None):
 	return model.get_value(model.get_iter(itpath), 0)
 
 def load_toolitems(toolbar, toolitems):
+	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
 		if type(fnc_left) == str:
 			tbi = gtk.SeparatorToolItem()
@@ -1250,6 +1287,8 @@ def load_toolitems(toolbar, toolitems):
 			tbi.connect('clicked', on_click_button, fnc_left)
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
 		toolbar.insert(tbi, -1)
+		items.append(tbi)
+	return items
 
 def setup_treeview__icon_label(tv, label_edit_cb=None):
 	colnum_txt = 1
@@ -1268,10 +1307,14 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 
 
 def act_send():
-	pass
+	# TODO: check subject
+	build_newemail()
+
+def build_newemail():
+	# TODO: setup headers
+	NewEmail.get_payload()[0].set_payload(get_composer_text())
 
 def act_save_edit(save_as=False):
-	global NewEmail
 	filename = win_comp.get_data('saved-to-file')
 	ask_overwrite = False
 	if filename is None or save_as:
@@ -1280,6 +1323,7 @@ def act_save_edit(save_as=False):
 		if subj: subj = ' - ' + subj
 		filename = choose_save_file(_("Draft") + subj + '.eml')
 	if filename is not None:
+		build_newemail()
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
@@ -1403,7 +1447,50 @@ def act_importance():
 	set_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
 
 def act_edit_external():
-	pass
+	menubutton_send.set_sensitive(False)
+	panel_edit_message.set_sensitive(False)
+	menubutton_edit_external.set_sensitive(False)
+	
+	err = None
+	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = '.txt')
+	try:
+		filehandler = os.fdopen(fd, 'w+')
+		filehandler.write(get_composer_text())
+		filehandler.flush()
+		set_xattr_charset(filehandler, 'UTF-8', tmppath)
+	except IOError, e:
+		err = e
+	except OSError, e:
+		e.filename = tmppath
+		err = e
+	if err is not None:
+		display_error(e)
+		filehandler.close()
+		os.unlink(tmppath)
+		on_edit_external_done()
+		return
+	print filehandler, tmppath
+	thread = ExecThreadRunner('mimeopen-gui', [tmppath], [cb_edit_external, filehandler, tmppath])
+	thread.start()
+
+def cb_edit_external(status, filehandler, filepath):
+	print filehandler, filepath
+	filehandler.seek(0)
+	gtk.threads_enter()
+	on_edit_external_done(''.join(filehandler.readlines()))
+	gtk.threads_leave()
+	filehandler.close()
+	try:
+		os.unlink(filepath)
+	except OSError:
+		pass
+
+def on_edit_external_done(data=None):
+	if data is not None:
+		set_composer_text(data)
+	menubutton_send.set_sensitive(True)
+	panel_edit_message.set_sensitive(True)
+	menubutton_edit_external.set_sensitive(True)
 
 def on_edit_message(tb):
 	if tb.get_modified():
@@ -1456,6 +1543,7 @@ argparser.add_argument('--cc', metavar='ADDRESSES', help=_("Carbon Copy Recipien
 argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy Recipients, comma-separated list"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
+argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
 argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, comma-separated list"))
 argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
@@ -1468,6 +1556,7 @@ if not args.compose and not args.FILE:
 	os._exit(1)
 if args.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(args.localedir))
+gtk.gdk.threads_init()
 
 
 ### Build GUI ###
@@ -1568,13 +1657,8 @@ toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
-load_toolitems(toolbar, toolbuttons)
-for tbi in toolbar.get_children():
-	if tbi.get_data('label') == 'Reply To List':
-		menubutton_replytolist = tbi
-	elif tbi.get_data('label') == 'Unsubscribe':
-		menubutton_unsubscribe = tbi
-
+x, x, menubutton_replytolist, x, x, x, menubutton_unsubscribe, x, x, x \
+= load_toolitems(toolbar, toolbuttons)
 setup_treeview__icon_label(panel_parts)
 
 def ToolItemDeclaration_wrap(tv):
@@ -1591,13 +1675,8 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-load_toolitems(tb_controls, toolbuttons)
-for tbi in tb_controls.get_children():
-	s = tbi.get_data('stock')
-	if s == gtk.STOCK_OPEN:
-		btn_open2 = tbi
-	elif s == gtk.STOCK_SAVE:
-		btn_save2 = tbi
+x, btn_open2, btn_save2, x, x, x, x \
+= load_toolitems(tb_controls, toolbuttons)
 
 
 ### Build Composer GUI ###
@@ -1694,7 +1773,8 @@ toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
-load_toolitems(tb_compose, toolbuttons)
+menubutton_send, x, x, x, x, x \
+= load_toolitems(tb_compose, toolbuttons)
 setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 
 for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
@@ -1716,7 +1796,8 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_edit_message),
 	ToolItemDeclaration_font(panel_edit_message),
 ]
-load_toolitems(tb_comp_controls, toolbuttons)
+x_, x, x, x_, x, x, x_, menubutton_edit_external, x, x \
+= load_toolitems(tb_comp_controls, toolbuttons)
 
 
 Magic.load()
@@ -1726,6 +1807,8 @@ if args.compose:
 	if args.FILE:
 		# TODO load email
 		win_comp.set_data('saved-to-file', args.FILE)
+	if args.mailto:
+		print get_mailtos(args.mailto)
 	if getattr(args, 'from'):
 		set_composer_headers('From', [getattr(args, 'from')])
 	if args.to:
