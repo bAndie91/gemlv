@@ -1454,10 +1454,10 @@ def act_edit_external():
 	err = None
 	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = '.txt')
 	try:
-		filehandler = os.fdopen(fd, 'w+')
+		filehandler = os.fdopen(fd, 'w')
 		filehandler.write(get_composer_text())
-		filehandler.flush()
 		set_xattr_charset(filehandler, 'UTF-8', tmppath)
+		filehandler.close()
 	except IOError, e:
 		err = e
 	except OSError, e:
@@ -1465,25 +1465,28 @@ def act_edit_external():
 		err = e
 	if err is not None:
 		display_error(e)
-		filehandler.close()
 		os.unlink(tmppath)
 		on_edit_external_done()
 		return
-	print filehandler, tmppath
-	thread = ExecThreadRunner('mimeopen-gui', [tmppath], [cb_edit_external, filehandler, tmppath])
+	thread = ExecThreadRunner('mimeopen-gui', [tmppath], [cb_edit_external, tmppath])
 	thread.start()
 
-def cb_edit_external(status, filehandler, filepath):
-	print filehandler, filepath
-	filehandler.seek(0)
+def cb_edit_external(status, filepath):
 	gtk.threads_enter()
-	on_edit_external_done(''.join(filehandler.readlines()))
-	gtk.threads_leave()
-	filehandler.close()
+	filehandler = None
+	try:
+		filehandler = open(filepath, 'r')
+		on_edit_external_done(''.join(filehandler.readlines()))
+	except IOError, e:
+		display_error(e)
+		on_edit_external_done()
+	finally:
+		if filehandler is not None: filehandler.close()
 	try:
 		os.unlink(filepath)
 	except OSError:
 		pass
+	gtk.threads_leave()
 
 def on_edit_external_done(data=None):
 	if data is not None:
