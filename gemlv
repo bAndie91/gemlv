@@ -509,6 +509,9 @@ def load_part(eml, filt=None):
 			for s in pipereader(content, cmd, args):
 				bufr.insert(bufr.get_end_iter(), s)
 			panel_content.set_sensitive(True)
+		panel_btnbox.hide()
+		panel_content_image.hide()
+		spanel_content.show()
 
 def on_allocate_panel_content_image(wdg, alloc):
 	pxb = wdg.get_data('pixbuf')
@@ -805,6 +808,16 @@ class compose_header_box(gtk.HBox):
 			self.pack_start(self.wdg_del, False, False)
 			self.wdg_del.connect('clicked', self.cancel)
 		
+		if chname == 'Importance':
+			h1 = toggle_unimportant.get_data('clicked-handler')
+			h2 = toggle_important.get_data('clicked-handler')
+			toggle_unimportant.handler_block(h1)
+			toggle_important.handler_block(h2)
+			toggle_important.set_active(val.lower().find('high')>-1)
+			toggle_unimportant.set_active(val.lower().find('low')>-1)
+			toggle_unimportant.handler_unblock(h1)
+			toggle_important.handler_unblock(h2)
+		
 		self['name'] = chname
 		self['value'] = val
 	
@@ -865,7 +878,6 @@ class compose_header_box(gtk.HBox):
 			self.parent.remove(self)
 	
 	def tick_my_menuitem(self, on):
-		# FIXME: call out of the class
 		for mi in menu_add_header.children():
 			if mi.get_data('chname') == self['name']:
 				mi.set_active(on)
@@ -1265,6 +1277,7 @@ def get_part_by_itpath(itpath = None):
 def load_toolitems(toolbar, toolitems):
 	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
+		hid = None
 		if type(fnc_left) == str:
 			tbi = gtk.SeparatorToolItem()
 			if fnc_left == 'space':
@@ -1277,7 +1290,7 @@ def load_toolitems(toolbar, toolitems):
 			tbi = stock
 			if tip is not None:
 				tbi.set_tooltip_text(_(tip))
-			tbi.connect('clicked', on_click_button, fnc_left)
+			hid = tbi.connect('clicked', on_click_button, fnc_left)
 		else:
 			Lstocklabel = None
 			st = gtk.stock_lookup(stock)
@@ -1297,8 +1310,9 @@ def load_toolitems(toolbar, toolitems):
 			tbi = StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
 			tbi.set_data('stock', stock)
 			tbi.set_data('label', label)
-			tbi.connect('clicked', on_click_button, fnc_left)
+			hid = tbi.connect('clicked', on_click_button, fnc_left)
 			tbi.child.connect('button-press-event', on_press_button, fnc_right)
+		tbi.set_data('clicked-handler', hid)
 		toolbar.insert(tbi, -1)
 		items.append(tbi)
 	return items
@@ -1451,6 +1465,15 @@ def act_encrypt():
 
 def act_sign():
 	pass
+
+def on_toggled_importance(wdg):
+	if wdg.get_active():
+		if wdg == toggle_important:
+			toggle_unimportant.set_active(False)
+		elif wdg == toggle_unimportant:
+			toggle_important.set_active(False)
+		return True
+	return False
 
 def act_importance():
 	n = 1
@@ -1797,16 +1820,16 @@ for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
 
 toggle_unimportant = StockToggleToolButton('emblem-generic')
-toggle_unimportant.connect('toggled', lambda x: toggle_important.set_active(False) if x.get_active() else None)
 toggle_important = StockToggleToolButton('emblem-important')
-toggle_important.connect('toggled', lambda x: toggle_unimportant.set_active(False) if x.get_active() else None)
+toggle_unimportant.connect('toggled', on_toggled_importance)
+toggle_important.connect('toggled', on_toggled_importance)
 toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, StockToggleToolButton('dialog-password'), "Encrypt", act_encrypt, None),
 	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", act_sign, None),
 	(None, None, None, 'separator', None),
-	(None, toggle_unimportant, "Unimportant", act_importance, None),
-	(None, toggle_important, "Important", act_importance, None),
+	("Unimportant", toggle_unimportant, "Unimportant", act_importance, None),
+	("Important", toggle_important, "Important", act_importance, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
@@ -1849,6 +1872,7 @@ if args.compose:
 	if args.attach:
 		for path in args.attach:
 			attach_path(path)
+	add_composer_header('Importance', 'low')
 	on_after_save_draft()
 	panel_edit_message.grab_focus()
 else:
