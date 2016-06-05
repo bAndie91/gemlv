@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding: utf-8
 
 import os
 import sys
@@ -550,14 +551,17 @@ def get_one_header_main(hname, dflt=None):
 def get_all_headers_main(hname):
 	return map(decode_header, Email.get_all(hname) or [])
 
-def get_mailtos(s):
+def get_mailtos(s, schemata=['mailto']):
 	l = []
-	for uri in re.finditer('<([^>]+)>', s):
-		rslt = urlparse.urlsplit(uri.group(1))
-		if rslt.scheme.lower() == 'mailto':
+	for m in re.finditer('<([^>]+)>', s):
+		uri = m.group(1)
+		rslt = urlparse.urlsplit(uri)
+		if rslt.scheme.lower() in schemata:
 			m = {'to': rslt.path}
 			q = dict((k.lower(), v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
 			m.update(q)
+			m['uri'] = uri
+			m['split'] = rslt
 			l.append(m)
 	return l
 
@@ -948,6 +952,7 @@ def open_composer():
 	if win_comp.get_visible():
 		win_comp.set_urgency_hint(True)
 		win_comp.present()
+		win_comp.set_urgency_hint(False)
 		return False
 	
 	global NewEmail
@@ -995,6 +1000,13 @@ def filter_out_addresses(noaddrs, hvals):
 def add_composer_agent_headers():
 	add_composer_header('User-Agent', USERAGENT)
 	add_composer_header('X-Mailer', USERAGENT)
+
+def add_composer_mailto(mailto):
+	add_composer_header('To', mailto['to'])
+	if mailto.has_key('subject'):
+		set_composer_subject(mailto['subject'])
+	if mailto.has_key('body'):
+		set_composer_text(mailto['body'])
 
 def act_compose():
 	if open_composer():
@@ -1075,7 +1087,32 @@ def act_reply(recip):
 		panel_edit_message.grab_focus()
 
 def act_unsubscribe():
-	pass
+	MAXLEN = 64
+	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https'])
+	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
+		if open_composer():
+			add_composer_mailto(links[0])
+	else:
+		text = ''
+		for link in links:
+			escuri = glib.markup_escape_text(link['uri'])
+			if link['split'].scheme == 'mailto':
+				text += '\n\n<b>@</b> <a href="%s">%s</a>' % (escuri, link['to'])
+			else:
+				if len(escuri) > MAXLEN:
+					hellip = escuri[0:MAXLEN-1] + '…'
+				else:
+					hellip = escuri
+				text += '\n\n<a href="%s">%s</a>' % (escuri, hellip)
+		dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
+		dlg.set_title(_("Unsubscribe Methods"))
+		dlg.set_markup(_("Select one link to unsubscribe") + text)
+		try:
+			label = dlg.get_content_area().children()[0].children()[1].children()[0]
+			label.set_selectable(False)
+		except: pass
+		dlg.run()
+		dlg.destroy()
 
 def act_mark_spam():
 	pass
@@ -1688,6 +1725,7 @@ spanel_content.add_with_viewport(panel_content)
 panel_right.pack_start(tb_controls, False, True)
 
 win_main.set_icon_name('emblem-mail')
+gtk.Window.set_geometry_hints(win_main, min_width=100, min_height=100)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
 spanel_header.set_size_request(-1, 104)
 spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
@@ -1800,6 +1838,7 @@ spanel_edit_message.add(panel_edit_message)
 box_compose.pack_start(tb_comp_controls, False, True)
 
 win_comp.set_icon_name('mail-message-new')
+gtk.Window.set_geometry_hints(win_comp, min_width=100, min_height=100)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[0]-150)
 spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -1880,12 +1919,12 @@ if args.compose:
 		# TODO load email
 		win_comp.set_data('saved-to-file', args.FILE)
 	if args.mailto:
-		for mailto in get_mailtos('<%s>' % (args.mailto)):
-			add_composer_header('To', mailto['to'])
-			if mailto.has_key('subject'):
-				set_composer_subject(mailto['subject'])
-			if mailto.has_key('body'):
-				set_composer_text(mailto['body'])
+		try:
+			mailto = get_mailtos('<%s>' % (args.mailto))[0]
+		except IndexError:
+			sys.stderr.write(_("Can not parse mailto link.") + '\n')
+		else:
+			add_composer_mailto(mailto)
 	if getattr(args, 'from'):
 		set_composer_headers('From', [getattr(args, 'from')])
 	if args.to:
