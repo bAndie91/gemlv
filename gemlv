@@ -40,6 +40,12 @@ class StockToggleToolButton(gtk.ToggleToolButton):
 		if stock not in gtk.stock_list_ids():
 			self.set_icon_name(stock)
 
+class StockMenuItem(gtk.ImageMenuItem):
+	def __init__(self, stock_id=None, accel_group=None, label=None):
+		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
+		if label is not None:
+			self.set_label(label)
+
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
 		super(self.__class__, self).__init__()
@@ -556,7 +562,7 @@ def get_mailtos(s, schemata=['mailto']):
 	for m in re.finditer('<([^>]+)>', s):
 		uri = m.group(1)
 		rslt = urlparse.urlsplit(uri)
-		if rslt.scheme.lower() in schemata:
+		if '*' in schemata or rslt.scheme.lower() in schemata:
 			m = {'to': rslt.path}
 			q = dict((k.lower(), v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
 			m.update(q)
@@ -813,14 +819,10 @@ class compose_header_box(gtk.HBox):
 			self.wdg_del.connect('clicked', self.cancel)
 		
 		if chname == 'Importance':
-			h1 = toggle_unimportant.get_data('clicked-handler')
-			h2 = toggle_important.get_data('clicked-handler')
-			toggle_unimportant.handler_block(h1)
-			toggle_important.handler_block(h2)
-			toggle_important.set_active(val.lower().find('high')>-1)
+			turn_importance_signal(False)
 			toggle_unimportant.set_active(val.lower().find('low')>-1)
-			toggle_unimportant.handler_unblock(h1)
-			toggle_important.handler_unblock(h2)
+			toggle_important.set_active(val.lower().find('high')>-1)
+			turn_importance_signal(True)
 		
 		self['name'] = chname
 		self['value'] = val
@@ -879,6 +881,13 @@ class compose_header_box(gtk.HBox):
 					if x.hntype == self.HNTYPE_MENU: n += 1
 					if n > 1: break
 				if n < 2: return False
+			if self['name'] == 'Importance':
+				turn_importance_signal(False)
+				if self['value'].lower().find('low')>-1:
+					toggle_unimportant.set_active(False)
+				if self['value'].lower().find('high')>-1: 
+					toggle_important.set_active(False)
+				turn_importance_signal(True)
 			self.parent.remove(self)
 	
 	def tick_my_menuitem(self, on):
@@ -1088,28 +1097,30 @@ def act_reply(recip):
 
 def act_unsubscribe():
 	MAXLEN = 64
-	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https'])
+	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
 	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
 		if open_composer():
 			add_composer_mailto(links[0])
 	else:
 		text = ''
 		for link in links:
-			escuri = glib.markup_escape_text(link['uri'])
+			uri = link['uri']
+			escuri = glib.markup_escape_text(uri)
 			if link['split'].scheme == 'mailto':
-				text += '\n\n<b>@</b> <a href="%s">%s</a>' % (escuri, link['to'])
+				linktext = link['to']
 			else:
-				if len(escuri) > MAXLEN:
-					hellip = escuri[0:MAXLEN-1] + '…'
+				if len(uri) > MAXLEN:
+					linktext = glib.markup_escape_text(uri[0:MAXLEN-1] + '…')
 				else:
-					hellip = escuri
-				text += '\n\n<a href="%s">%s</a>' % (escuri, hellip)
+					linktext = escuri
+			text += '\n\n<a href="%s">%s</a>' % (escuri, linktext)
 		dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe Methods"))
 		dlg.set_markup(_("Select one link to unsubscribe") + text)
 		try:
 			label = dlg.get_content_area().children()[0].children()[1].children()[0]
 			label.set_selectable(False)
+			dlg.get_action_area().children()[0].grab_focus()
 		except: pass
 		dlg.run()
 		dlg.destroy()
@@ -1529,6 +1540,13 @@ def act_encrypt():
 def act_sign():
 	pass
 
+def turn_importance_signal(on):
+	h1 = toggle_unimportant.get_data('clicked-handler')
+	h2 = toggle_important.get_data('clicked-handler')
+	meth = 'handler_unblock' if on else 'handler_block'
+	getattr(toggle_unimportant, meth).__call__(h1)
+	getattr(toggle_important, meth).__call__(h2)
+
 def on_toggled_importance(wdg):
 	if wdg.get_active():
 		if wdg == toggle_important:
@@ -1725,7 +1743,7 @@ spanel_content.add_with_viewport(panel_content)
 panel_right.pack_start(tb_controls, False, True)
 
 win_main.set_icon_name('emblem-mail')
-gtk.Window.set_geometry_hints(win_main, min_width=100, min_height=100)
+win_main.set_geometry_hints(min_width=100, min_height=250)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
 spanel_header.set_size_request(-1, 104)
 spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
@@ -1838,7 +1856,7 @@ spanel_edit_message.add(panel_edit_message)
 box_compose.pack_start(tb_comp_controls, False, True)
 
 win_comp.set_icon_name('mail-message-new')
-gtk.Window.set_geometry_hints(win_comp, min_width=100, min_height=100)
+win_comp.set_geometry_hints(min_width=120, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[0]-150)
 spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -1864,11 +1882,11 @@ for name in SenderHeaders:
 	mi.set_data('chname', name)
 	mi.connect('toggled', act_comp_hdr_menuitem)
 	menu_add_header.append(mi)
-mi = gtk.MenuItem(_("Add Recipient"))
+mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
 mi.connect('activate', act_comp_hdr_menuitem, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
-mi = gtk.MenuItem(_("Add Custom Header"))
+mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
 menu_add_header.append(mi)
 menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
@@ -1944,7 +1962,6 @@ if args.compose:
 	if args.attach:
 		for path in args.attach:
 			attach_path(path)
-	add_composer_header('Importance', 'low')
 	on_after_save_draft()
 	panel_edit_message.grab_focus()
 else:
