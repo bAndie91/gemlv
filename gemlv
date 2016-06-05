@@ -794,6 +794,7 @@ class compose_header_box(gtk.HBox):
 		self.hntype = hntype
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
+			self.wdg_name.connect('changed', set_unsaved)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
 			self.wdg_name.set_relief(gtk.RELIEF_NONE)
@@ -804,6 +805,7 @@ class compose_header_box(gtk.HBox):
 		self.pack_start(self.wdg_name, False, True)
 		
 		self.wdg_value = gtk.Entry()
+		self.wdg_value.connect('changed', set_unsaved)
 		self.pack_start(self.wdg_value, True, True)
 		#TODO wdg_value.set_completion()
 		
@@ -842,6 +844,7 @@ class compose_header_box(gtk.HBox):
 	def popup_rcpt_menuitem_activated(self, mi, wdg):
 		self['name'] = mi.get_data('name')
 		self.popup_rcpt_menu_disappear(mi.parent, wdg)
+		set_unsaved()
 	
 	def popup_rcpt_menu_disappear(self, mnu, wdg):
 		wdg.set_relief(gtk.RELIEF_NONE)
@@ -869,6 +872,8 @@ class compose_header_box(gtk.HBox):
 				self.parent.reorder_child(newbox, n)
 	
 	def cancel(self, evtwdg=None, manual=True):
+		if self['value']:
+			set_unsaved()
 		if self.hntype == self.HNTYPE_LABEL:
 			self.hide()
 			self.tick_my_menuitem(0)
@@ -924,7 +929,9 @@ class compose_header_box(gtk.HBox):
 				self.wdg_name.set_data('name', newvalue)
 				self.wdg_name.set_label(_(newvalue))
 		elif key == 'value':
-			return self.wdg_value.set_text(newvalue)
+			self.wdg_value.set_text(newvalue)
+			if newvalue:
+				set_unsaved()
 		else:
 			raise IndexError()
 
@@ -945,6 +952,9 @@ def set_composer_subject(s):
 
 def get_composer_subject():
 	return entry_subject.get_text()
+
+def on_edit_subject(wdg):
+	set_unsaved()
 
 def set_composer_text(s):
 	bufr = panel_edit_message.get_buffer()
@@ -1430,7 +1440,7 @@ def act_save_edit(save_as=False):
 			on_after_save_draft()
 
 def on_after_save_draft():
-	win_comp.set_data('is-saved', True)
+	set_unsaved(False)
 	panel_edit_message.get_buffer().set_modified(False)
 
 def act_attach():
@@ -1463,6 +1473,7 @@ def attach_path(path, parent_part=None, parent_iter=None):
 	
 	part.add_header(HDR_CD, 'attachment', filename=basename)
 	parent_part.attach(part)
+	set_unsaved()
 	stock = get_stock_by_mime(ct_main, ct_sub)
 	pixb = None
 	iterator = Attachments.append(parent_iter, [part, basename, stock, pixb])
@@ -1612,9 +1623,20 @@ def on_edit_external_done(data=None):
 	panel_edit_message.set_sensitive(True)
 	menubutton_edit_external.set_sensitive(True)
 
+def set_unsaved(unsaved=True):
+	win_comp.set_data('is-saved', not unsaved)
+	s = menubutton_save_draft.get_label()
+	endmark = '*'
+	endmarkre = re.escape(endmark)
+	if unsaved:
+		s = re.sub('(%s)?$' % (endmarkre), endmark, s)
+	else:
+		s = re.sub(endmarkre + '$', '', s)
+	menubutton_save_draft.set_label(s)
+
 def on_edit_message(tb):
 	if tb.get_modified():
-		win_comp.set_data('is-saved', False)
+		set_unsaved()
 
 
 
@@ -1871,6 +1893,7 @@ panel_attachments.connect('drag-data-received', drop_attachment)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
 panel_compose.set_position(125)
+entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_edit_message.get_buffer().connect('modified-changed', on_edit_message)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
@@ -1902,7 +1925,7 @@ toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT if args.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
-menubutton_send, x, x, x, x_, x \
+menubutton_send, menubutton_save_draft, x, x, x_, x \
 = load_toolitems(tb_compose, toolbuttons)
 setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
 
