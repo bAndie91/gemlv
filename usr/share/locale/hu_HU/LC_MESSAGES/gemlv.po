@@ -1,0 +1,222 @@
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Notice: no module xattr loaded"
+msgstr "Figyelem: az xattr modul nem töltődött be"
+
+msgid "Error"
+msgstr "Hiba"
+
+msgid "Question"
+msgstr "Kérdés"
+
+msgid "Working Dir"
+msgstr "Munkakönyvtár"
+
+msgid "Loading failed"
+msgstr "Betöltés meghiúsult"
+
+msgid "Content type: %s%s%s"
+msgstr "Tartalom típusa: %s%s%s"
+
+msgid "Filename: %s%s%s"
+msgstr "Fájlnév: %s%s%s"
+
+msgid "X-X-Sender"
+msgstr "X-X-Küldő"
+
+msgid "X-Sender"
+msgstr "X-Küldő"
+
+msgid "Sender"
+msgstr "Küldő"
+
+msgid "From"
+msgstr "Feladó"
+
+msgid "Organization"
+msgstr "Szervezet"
+
+msgid "Reply-To"
+msgstr "Válaszcím"
+
+msgid "To"
+msgstr "Címzett"
+
+msgid "Cc"
+msgstr "Másolat"
+
+msgid "Bcc"
+msgstr "Titkos Címzett"
+
+msgid "Subject"
+msgstr "Tárgy"
+
+msgid "Date"
+msgstr "Dátum"
+
+msgid "Message is not saved.\nClose anyway?"
+msgstr "Az üzenet nincs mentve.\nMégis bezárod?"
+
+msgid "Fwd: "
+msgstr "Tov: "
+
+msgid "Re: "
+msgstr "Vá: "
+
+msgid "Quote:"
+msgstr "Idézet:"
+
+msgid "%s - attachment%s"
+msgstr "%s - csatolmány%s"
+
+msgid "Email"
+msgstr "Email"
+
+msgid "Notice: can not set xattr '%s' on '%s': %s"
+msgstr "Figyelem: nem tudtam a '%s' x-attribútumot beállítani '%s' fájlon: %s"
+
+msgid "This file already exists:\n%s\nOverwrite?"
+msgstr "Ez a fájl már létezik:\n%s\nFelülírod?"
+
+msgid "Select Font"
+msgstr "Betűtípus kiválasztása"
+
+msgid "Multiple (%s) selected attachments"
+msgstr "Több (%s) kiválasztott csatolmány"
+
+msgid "Save All"
+msgstr "Mindegyik Mentése"
+
+msgid "Show Custom Headers"
+msgstr "Egyéni fejlécek mutatása"
+
+msgid "Draft"
+msgstr "Vázlat"
+
+msgid "This is a MIME multipart Email."
+msgstr "Ez egy többrészes MIME Email."
+
+msgid "Write a new Email"
+msgstr "Új Email írása"
+
+msgid "New Email's Recipients, comma-separated list"
+msgstr "Az új Email címzettje, vesszővel tagolt lista"
+
+msgid "Carbon Copy Recipients, comma-separated list"
+msgstr "Másolat-címzettek, vesszővel tagolt lista"
+
+msgid "Blind Carbon Copy Recipients, comma-separated list"
+msgstr "Titkos másolat címek, vesszővel tagolt lista"
+
+msgid "Message body"
+msgstr "Üzenet szövege"
+
+msgid "Attachments, comma-separated list"
+msgstr "Csatolmányok, vesszővel tagolt lista"
+
+msgid "L10n base directory"
+msgstr "L10n alapkönyvtár"
+
+msgid "Raw Email file for read or continue editing"
+msgstr "Nyers Email fájl megnyitásra, vagy szerkesztésre"
+
+msgid "Either compose mode or FILE is needed."
+msgstr "Muszáj vagy compose módot, vagy egy FILE-t megadni."
+
+msgid "Filters"
+msgstr "Szűrők"
+
+msgid "Compose"
+msgstr "Új írása"
+
+msgid "Reply"
+msgstr "Válasz"
+
+msgid "Reply To All"
+msgstr "Válasz Mindenkinek"
+
+msgid "Reply To List"
+msgstr "Válasz a Listára"
+
+msgid "Forward"
+msgstr "Továbbítás"
+
+msgid "Report Spam"
+msgstr "Spam bejelentése"
+
+msgid "Wrap"
+msgstr "Tördelés"
+
+msgid "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap"
+msgstr "Tördelés: szó / betű / nincs\njobb klikk: nincs / szó / betű"
+
+msgid "Change Font\nRight click: monospace"
+msgstr "Betűtípus-váltás\njobb klikk: monospace"
+
+msgid "Unfilter"
+msgstr "ne legyen szűrés"
+
+msgid "Filter / Unfilter"
+msgstr "Szűrés be / ki"
+
+msgid "Specify %s"
+msgstr "%s megadása"
+
+msgid "Add Recipient"
+msgstr "Címzett hozzáadása"
+
+msgid "Add Custom Header"
+msgstr "Egyéni fejléc hozzáadása"
+
+msgid "Show All Headers"
+msgstr "Minden fejléc mutatása"
+
+msgid "Send"
+msgstr "Küldés"
+
+msgid "Save\nRight click: Save As..."
+msgstr "Mentés\njobb klikk: Mentés másként..."
+
+msgid "Addressbook"
+msgstr "Címtár"
+
+msgid "Attach File"
+msgstr "Fájl csatolása"
+
+msgid "Encrypt"
+msgstr "Titkosítás"
+
+msgid "Crypto-Sign"
+msgstr "Digitális aláírás"
+
+msgid "Unimportant"
+msgstr "Sokadlagos"
+
+msgid "Important"
+msgstr "Fontos"
+
+msgid "Edit with External Program"
+msgstr "Szekresztés külső programmal"
+
+msgid "Unsubscribe Methods"
+msgstr "Leiratkozási módok"
+
+msgid "Select one link to unsubscribe"
+msgstr "Válassz egy linket, amivel leiratkozol"
+
+msgid "New Email's writer's name and address"
+msgstr "Az új Email szerzőjének neve és címe"
+
+msgid "Full 'mailto:' link"
+msgstr "Teljes 'mailto:' link"
+
+msgid "Unsubscribe"
+msgstr "Leiratkozás"
+
+msgid "Can not parse mailto link."
+msgstr "Nem lehet értelmezni a mailto linket."
+

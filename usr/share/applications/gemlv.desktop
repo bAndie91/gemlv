@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Local Email Viewer & Composer
+Exec=gemlv %f
+Icon=emblem-mail
+Terminal=false
+Type=Application
+Categories=Network;Communication;
+MimeType=message/rfc822;text/message;text/plain;
+StartupNotify=true
