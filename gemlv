@@ -612,16 +612,20 @@ def get_headers_markup(eml):
 		"Subject",
 		"Date",
 	]
+	originator_headers = ['X-X-Sender', 'X-Sender', 'Sender', 'From', 'Reply-To']
 	from_addresses = map(lambda x: x[1], email.utils.getaddresses(eml.get_all('From') or []))
+	if len(filter(lambda h: eml[h] is not None, originator_headers)) == 0:
+		hdrs = ['Return-Path'] + hdrs
+	
 	for hname in hdrs:
 		hvals_mu = []
 		for hval in eml.get_all(hname) or []:
 			hval = decode_header(hval)
-			if hname.endswith('Sender') or hname == 'Reply-To':
+			if hname != 'From' and hname in originator_headers:
 				# do not display Sender or Reply-To fields if they equal to From
 				addr = email.utils.parseaddr(hval)[1]
 				if addr in from_addresses: continue
-			if hname.endswith('Sender') or hname in RecipientHeaders + ['From', 'Reply-To']:
+			if hname in RecipientHeaders or hname in originator_headers:
 				list_mu = []
 				for realname, addr in email.utils.getaddresses([hval]):
 					realname = decode_header(realname)
