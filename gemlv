@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
+from email.header import make_header
 import re
 from tempfile import mkstemp
 from mimetypes import guess_extension
@@ -384,7 +385,12 @@ def win_main_show(widget, event):
 def load_file(filename):
 	global Email
 	global LeafParts
-	fh = open(filename, 'r')
+	try:
+		fh = open(filename, 'r')
+	except IOError, e:
+		display_error(e)
+		act_quit()
+		return
 	Email = email.message_from_file(fh)
 	fh.close()
 	
@@ -938,13 +944,14 @@ class compose_header_box(gtk.HBox):
 
 def get_composer_headers(hname):
 	hlist = []
-	for chld in panel_comp_hdr.children():
-		if hname is None:
-			hlist.append((chld['name'], chld['value']))
-		elif type(hname) == type([]) and chld['name'] in hname:
-			hlist.append(chld['value'])
-		elif chld['name'] == hname:
-			hlist.append(chld['value'])
+	for hbox in panel_comp_hdr.children():
+		if hbox.get_visible():
+			if hname is None:
+				hlist.append((hbox['name'], hbox['value']))
+			elif type(hname) == type([]) and hbox['name'] in hname:
+				hlist.append(hbox['value'])
+			elif hbox['name'] == hname:
+				hlist.append(hbox['value'])
 	return hlist
 
 def set_composer_subject(s):
@@ -976,9 +983,11 @@ def open_composer():
 	
 	global NewEmail
 	NewEmail = MIMEMultipart('mixed')
+	win_comp.set_data('preserve-headers', map(lambda x: x[0], NewEmail._headers))
 	NewEmail.preamble = PREAMBLE
 	part0 = MIMEText('')
 	part0.set_charset('UTF-8')
+	part0.replace_header(HDR_CTE, '')
 	NewEmail.attach(part0)
 	Attachments.clear()
 	
@@ -1148,7 +1157,7 @@ def get_extension_by_mime(mime):
 	return e
 
 def get_mime_by_filepath(path):
-	t = Magic.file(path)
+	t = Magic.file(os.path.realpath(path))
 	if t is None: return 'application/octet-stream'
 	return t
 
@@ -1198,7 +1207,11 @@ def set_xattrs(fh, attrs, filename='-'):
 		for attrname, attrval in attrs.iteritems():
 			try:
 				if attrval is None:
-					xattr.removexattr(fh, attrname)
+					try:
+						xattr.removexattr(fh, attrname)
+					except IOError, e:
+						if e.errno != os.errno.ENODATA:
+							raise e
 				else:
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError, e:
@@ -1422,8 +1435,31 @@ def act_send():
 	build_newemail()
 
 def build_newemail():
-	# TODO: setup headers
-	NewEmail.get_payload()[0].set_payload(get_composer_text())
+	preserve_headers = win_comp.get_data('preserve-headers')
+	idx = 0
+	for hname, hval in NewEmail._headers:
+		if hname not in preserve_headers:
+			del(NewEmail._headers[idx])
+			continue
+		idx += 1
+	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
+		if len(hval) > 0:
+			mimeheader = make_header([(hval, 'UTF-8')])
+			print "add", hname, hval
+			NewEmail.add_header(hname, str(mimeheader))
+
+	text = get_composer_text()
+	text_qp = text.encode('quoted-printable')
+	text_b64 = text.encode('base64')
+	if len(text_qp) < len(text_b64):
+		text = text_qp
+		enc = 'quoted-printable'
+	else:
+		text = text_b64
+		enc = 'base64'
+	part0 = NewEmail.get_payload()[0]
+	part0.replace_header(HDR_CTE, enc)
+	part0.set_payload(text)
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
@@ -1461,13 +1497,24 @@ def attach_path(path, parent_part=None, parent_iter=None):
 		part = MIMEMultipart('related')
 	else:
 		part = MIMEBase(ct_main, ct_sub)
-		# Load file into MIME part's payload
 		part.set_payload('')
+		enc = None
 		fh = open(path, 'r')
 		while True:
-			buf = fh.read(4096)
+			buf = fh.read(4095)
 			if buf == '': break
-			# TODO: boundary
+			if enc is None:
+				qp = buf.encode('quoted-printable')
+				b64 = buf.encode('base64')
+				if qp < b64:
+					buf = qp
+					enc = 'quoted-printable'
+				else:
+					buf = b64
+					enc = 'base64'
+				part.add_header(HDR_CTE, enc)
+			else:
+				buf = buf.encode(enc)
 			part._payload += buf
 		fh.close()
 	
@@ -1674,6 +1721,7 @@ NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)
 HDR_CD = 'Content-Disposition'
+HDR_CTE = 'Content-Transfer-Encoding'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
 
