@@ -573,8 +573,11 @@ def get_all_headers_main(hname):
 
 def get_mailtos(s, schemata=['mailto']):
 	l = []
-	for m in re.finditer('<([^>]+)>', s):
-		uri = m.group(1)
+	uris = re.findall('<([^>]+)>', s)
+	if len(uris) == 0:
+		# For poorly behaved mail lists.
+		uris = re.findall('^\s*(\S+)', s)
+	for uri in uris:
 		rslt = urlparse.urlsplit(uri)
 		if '*' in schemata or rslt.scheme.lower() in schemata:
 			m = {'to': rslt.path}
@@ -587,6 +590,7 @@ def get_mailtos(s, schemata=['mailto']):
 
 def get_listaddress_main():
 	try:
+		# Hopefully there is only one list address.
 		listaddress = get_mailtos(','.join(get_all_headers_main('List-Post') or []))[0]['to']
 	except IndexError:
 		listaddress = None
@@ -610,22 +614,34 @@ def get_headers_markup(eml):
 	]
 	from_addresses = map(lambda x: x[1], email.utils.getaddresses(eml.get_all('From') or []))
 	for hname in hdrs:
-		hvals = []
+		hvals_mu = []
 		for hval in eml.get_all(hname) or []:
 			hval = decode_header(hval)
-			if hname.endswith == 'Sender' or hname == 'Reply-To':
+			if hname.endswith('Sender') or hname == 'Reply-To':
 				# do not display Sender or Reply-To fields if they equal to From
-				if hval in from_addresses: continue
-			elif hname == 'Date':
-				try:
-					# display Date field in local timezone
-					hval = email.utils.formatdate(email.utils.mktime_tz(email.utils.parsedate_tz(hval)), True)
-				except TypeError:
-					pass
-			if len(hval):
-				hvals.append(hval)
-		if len(hvals):
-			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(map(glib.markup_escape_text, hvals)))
+				addr = email.utils.parseaddr(hval)[1]
+				if addr in from_addresses: continue
+			if hname.endswith('Sender') or hname in RecipientHeaders + ['From', 'Reply-To']:
+				list_mu = []
+				for realname, addr in email.utils.getaddresses([hval]):
+					realname = decode_header(realname)
+					addr_mu = glib.markup_escape_text(addr)
+					mu = '<a href=\'mailto:%s\'>%s</a>' % (addr_mu, addr_mu)
+					if realname: mu = realname + ' ' + mu
+					list_mu.append(mu)
+				hval_mu = ', '.join(list_mu)
+			else:
+				if hname == 'Date':
+					try:
+						# display Date field in local timezone
+						hval = email.utils.formatdate(email.utils.mktime_tz(email.utils.parsedate_tz(hval)), True)
+					except TypeError:
+						pass
+				hval_mu = glib.markup_escape_text(hval)
+			if len(hval_mu):
+				hvals_mu.append(hval_mu)
+		if len(hvals_mu):
+			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(hvals_mu))
 	return '\n'.join(lns)
 
 def get_filters_by_mime(main, sub, all=True):
