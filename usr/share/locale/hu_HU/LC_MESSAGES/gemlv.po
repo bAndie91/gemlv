@@ -220,3 +220,21 @@ msgstr "Leiratkozás"
 msgid "Can not parse mailto link."
 msgstr "Nem lehet értelmezni a mailto linket."
 
+msgid "Send anyway?"
+msgstr "Mégis küldöd?"
+
+msgid "Sending..."
+msgstr "Küldés..."
+
+msgid "Email is sent."
+msgstr "Email elküldve."
+
+msgid "Sendmail error %s."
+msgstr "Sendmail hiba %s."
+
+msgid "Save to Structure"
+msgstr "Mentés Strukturáltan"
+
+msgid "Save\nRight click: Save to Structure"
+msgstr "Mentés\njobb klikk: Mentés Strukturáltan"
+

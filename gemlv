@@ -320,6 +320,13 @@ def which(cmd):
 				return p
 	return None
 
+def mkdir(path):
+	if os.path.exists(path) or path == '':
+		return
+	else:
+		mkdir(os.path.dirname(path))
+		os.mkdir(path)
+
 def run_async(cmd, args, postrun):
 	args = args[:]
 	args.insert(0, os.path.basename(cmd))
@@ -1187,6 +1194,32 @@ def calc_attachment_name(part, n=None):
 		name = "%s - attachment%s" % (get_one_header_main('Subject', _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
 	return name
 
+def act_save_struct():
+	itpaths = selection_parts.get_selected_rows()[1]
+	savedir = choose_save_folder()
+	if savedir is not None:
+		for n in range(0, len(itpaths)):
+			act_save_struct_inner(savedir, Parts.get_iter(itpaths[n]))
+
+def act_save_struct_inner(savedir, iterator):
+	part = Parts[iterator][0]
+	myname = part.get_filename()
+	if not myname:
+		myname = 'multipart-%s' % ('-'.join(map(str, Parts.get_path(iterator))))
+	if Parts.iter_has_child(iterator):
+		mysavedir = os.path.join(savedir, myname)
+		try:
+			mkdir(mysavedir)
+		except OSError, e:
+			display_error(e)
+		else:
+			for nth in range(0, Parts.iter_n_children(iterator)):
+				subiter = Parts.iter_nth_child(iterator, nth)
+				act_save_struct_inner(mysavedir, subiter)
+	else:
+		savefile = os.path.join(savedir, myname)
+		save_to_file(part, savefile)
+
 def act_save():
 	itpaths = selection_parts.get_selected_rows()[1]
 	if len(itpaths) == 1:
@@ -1200,7 +1233,8 @@ def act_save():
 		if savedir is not None:
 			for n in range(0, len(itpaths)):
 				eml = get_part_by_itpath(itpaths[n])
-				savefile = os.path.join(savedir, calc_attachment_name(eml, n))
+				basename = calc_attachment_name(eml, n)
+				savefile = os.path.join(savedir, basename)
 				save_to_file(eml, savefile)
 
 def set_xattrs(fh, attrs, filename='-'):
@@ -1877,6 +1911,7 @@ panel_btnbox3 = gtk.HBox()
 btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
+btn_save_struct = StockButton(label=_("Save to Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
@@ -1899,6 +1934,7 @@ panel_btnbox3.pack_start(lbl_right, True, False)
 panel_btnbox3.pack_start(btnbox_right, True, False)
 btnbox_right.pack_start(btn_open, False, False)
 btnbox_right.pack_start(btn_save, False, False)
+btnbox_right.pack_start(btn_save_struct, False, False)
 panel_right.pack_start(panel_content_image, True, True)
 panel_content_image.add(gtk.Image())
 panel_right.pack_start(spanel_content, True, True)
@@ -1926,6 +1962,7 @@ lbl_right.set_alignment(0, 0)
 lbl_right.set_justify(gtk.JUSTIFY_LEFT)
 btn_open.connect('clicked', lambda wdg: act_open())
 btn_save.connect('clicked', lambda wdg: act_save())
+btn_save_struct.connect('clicked', lambda wdg: act_save_struct())
 panel_content_image.connect('size-allocate', on_allocate_panel_content_image)
 panel_content.set_editable(False)
 panel_content.set_wrap_mode(gtk.WRAP_WORD)
@@ -1960,7 +1997,7 @@ def ToolItemDeclaration_font(tv):
 toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
-	(None, gtk.STOCK_SAVE, None, act_save, None),
+	(None, gtk.STOCK_SAVE, "Save\nRight click: Save to Structure", act_save, act_save_struct),
 	(None, None, None, 'separator', None),
 	("Unfilter", menubutton_filters, "Filter / Unfilter", act_view_source, None),
 	ToolItemDeclaration_wrap(panel_content),
