@@ -168,6 +168,7 @@ class pipereader:
 			parent_write.close()
 			os.dup2(child_read.fileno(), sys.stdin.fileno())
 			os.dup2(child_write.fileno(), sys.stdout.fileno())
+			os.closerange(3, 255)
 			try:
 				os.execvp(cmd, args)
 			except OSError, e:
@@ -1132,7 +1133,7 @@ def act_unsubscribe():
 					linktext = glib.markup_escape_text(uri[0:MAXLEN-1] + '…')
 				else:
 					linktext = escuri
-			text += '\n\n<a href="%s">%s</a>' % (escuri, linktext)
+			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
 		dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe Methods"))
 		dlg.set_markup(_("Select one link to unsubscribe") + text)
@@ -1158,7 +1159,7 @@ def get_extension_by_mime(mime):
 
 def get_mime_by_filepath(path):
 	t = Magic.file(os.path.realpath(path))
-	if t is None: return 'application/octet-stream'
+	if t is None or t.find('/')<1: return 'application/octet-stream'
 	return t
 
 def act_open():
@@ -1431,8 +1432,96 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 
 
 def act_send():
-	# TODO: check subject
+	msg = ''
+	if not get_composer_subject():
+		msg += _("No Subject.\n")
+	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
+		msg += _("No any Recipient.\n")
+	if msg != '':
+		msg += _("Send anyway?")
+		if not question(msg, (_("Send"), 'mail-send')):
+			return
 	build_newemail()
+	
+	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
+	dlg.set_title(_("Sending..."))
+	dlg.set_markup(_("Sending..."))
+	carea = dlg.get_content_area()
+	aarea = dlg.get_action_area()
+	progressbar = gtk.ProgressBar()
+	carea.pack_start(progressbar, False, True)
+	btn_cancel = aarea.children()[0]
+	dlg.show_all()
+	
+	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel))
+	thrd.start()
+
+def sending_thread(dlg, progressbar, btn_cancel):
+	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
+	pid = os.fork()
+	if pid == 0:
+		parent_read.close()
+		parent_write.close()
+		os.dup2(child_read.fileno(), sys.stdin.fileno())
+		os.dup2(child_write.fileno(), sys.stdout.fileno())
+		os.dup2(child_write.fileno(), sys.stderr.fileno())
+		os.closerange(3, 255)
+		try:
+			os.execvp('sendmail', ['sendmail', '-ti'])
+		except OSError, e:
+			sys.stderr.write(str(e))
+		os._exit(127)
+	
+	gtk.threads_enter()
+	sn = btn_cancel.connect('clicked', sending_cancel, pid, parent_write)
+	gtk.threads_leave()
+	
+	child_read.close()
+	child_write.close()
+	resp = ''
+	text = NewEmail.as_string()
+	pos = 0
+	bufsize = 512
+	length = len(text)
+	while pos < length:
+		try:
+			parent_write.write(text[pos:pos+bufsize])
+			pos += bufsize
+		except ValueError, e:
+			resp += str(e) + '\n'
+			break
+		gtk.threads_enter()
+		progressbar.set_fraction((min(pos, length) + 0.0) / length)
+		gtk.threads_leave()
+	try:
+		parent_write.close()
+	except IOError, e:
+		resp += str(e) + '\n'
+	
+	resp += ''.join(parent_read.readlines())
+	parent_read.close()
+	status = WaitExecStatus(pid)
+	
+	gtk.threads_enter()
+	progressbar.hide()
+	btn_cancel.hide()
+	btn_close = gtk.Button(stock=gtk.STOCK_CLOSE)
+	btn_close.connect('clicked', lambda x: dlg.destroy())
+	dlg.get_action_area().pack_start(btn_close, False, False)
+	btn_close.show_all()
+	img = dlg.get_content_area().children()[0].children()[0]
+	if status.code == 0:
+		img.set_from_icon_name(gtk.STOCK_APPLY, gtk.ICON_SIZE_DIALOG)
+		dlg.set_markup(_("Email is sent."))
+		win_comp.set_data('email-sent', True)
+	else:
+		img.set_from_icon_name(gtk.STOCK_DIALOG_ERROR, gtk.ICON_SIZE_DIALOG)
+		dlg.set_markup(_("Sendmail error %s." % (status.code)) + '\n<tt>' + glib.markup_escape_text(resp) + '</tt>')
+	gtk.threads_leave()
+
+def sending_cancel(btn, pid, writer_fh):
+	writer_fh.close()
+	os.kill(pid, signal.SIGINT)
 
 def build_newemail():
 	preserve_headers = win_comp.get_data('preserve-headers')
@@ -1445,7 +1534,6 @@ def build_newemail():
 	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
 		if len(hval) > 0:
 			mimeheader = make_header([(hval, 'UTF-8')])
-			print "add", hname, hval
 			NewEmail.add_header(hname, str(mimeheader))
 
 	text = get_composer_text()
@@ -1499,7 +1587,11 @@ def attach_path(path, parent_part=None, parent_iter=None):
 		part = MIMEBase(ct_main, ct_sub)
 		part.set_payload('')
 		enc = None
-		fh = open(path, 'r')
+		try:
+			fh = open(path, 'r')
+		except IOError, e:
+			display_error(e)
+			return False
 		while True:
 			buf = fh.read(4095)
 			if buf == '': break
@@ -1672,6 +1764,7 @@ def on_edit_external_done(data=None):
 
 def set_unsaved(unsaved=True):
 	win_comp.set_data('is-saved', not unsaved)
+	win_comp.set_data('email-sent', False)
 	s = menubutton_save_draft.get_label()
 	endmark = '*'
 	endmarkre = re.escape(endmark)
@@ -1694,7 +1787,7 @@ VERSION = '0.1'
 USERAGENT = PROGNAME + '/' + VERSION
 gettext.textdomain(PROGNAME)
 _ = gettext.gettext
-PMU_MIME = '<i><span color="gray30">'
+PMU_MIME = '<i><span color=\'gray30\'>'
 PMU_MIME_CLOSE = '</span></i>'
 PMU_NAME = '<b>'
 PMU_NAME_CLOSE = '</b>'
