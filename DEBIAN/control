@@ -1,0 +1,16 @@
+Package: gemlv
+Priority: optional
+Section: mail
+Installed-Size: 
+Maintainer: Andras Hrubak <andreas@uucp.hu>
+Architecture: all
+Version: 0.1
+Depends: python-gtk2, python-magic
+Recommends: mimeopen-gui, python-xattr
+Suggests: 
+Provides: 
+Replaces: 
+Conflicts: 
+Homepage: 
+Vcs-Browser: https://github.com/bAndie91/gemlv
+Description: Email viewer and composer for local email files.
