@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# coding: utf-8
+# -*- coding: utf-8 -*-
 
 import os
 import sys
@@ -557,10 +557,18 @@ def on_allocate_panel_content_image(wdg, alloc):
 			pxb = pxb.scale_simple(w - b, h - b, gtk.gdk.INTERP_BILINEAR)
 			wdg.children()[0].set_from_pixbuf(pxb)
 
+def resize_panel_view_header(wdg, rect=None):
+	if not panel_view_header.get_data('all-headers'):
+		if rect is None: rect = wdg.get_allocation()
+		h, v = panel_view_header.get_padding()
+		panel_view_header.set_size_request(rect.width - h - 4, -1)
+
 def decode_header(s):
 	chunks = []
 	for chars, encoding in email.Header.decode_header(s):
-		if encoding is None: encoding = 'utf-8'
+		if encoding is None:
+			chars = re.sub('\r?\n\s*', ' ', chars)  # unfold folded header
+			encoding = 'utf-8'
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
@@ -1034,6 +1042,7 @@ def open_composer():
 	win_comp.show_all()
 	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
+	add_composer_from_hidden()
 	for h in SenderHeaders: add_composer_header(h).cancel()
 	set_composer_subject('')
 	set_composer_text('')
@@ -1079,6 +1088,18 @@ def add_composer_mailto(mailto):
 	if mailto.has_key('body'):
 		set_composer_text(mailto['body'])
 
+def guess_my_address():
+	return get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
+
+def add_composer_from_hidden():
+	addr = guess_my_address()
+	if addr is not None:
+		name = get_gecos_name()
+		box = add_composer_header('From', email.utils.formataddr((name, addr)))
+		box.cancel()
+		return True
+	return False
+
 def act_compose():
 	if open_composer():
 		add_composer_agent_headers()
@@ -1093,6 +1114,7 @@ def act_reply(recip):
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject', '')
 		body = '\n\n' + get_user_signature()
+		my_address = guess_my_address()
 
 		if recip == '':
 			fwdname = (subj or _("Email")) + '.eml'
@@ -1138,7 +1160,6 @@ def act_reply(recip):
 			if recip == 'one':
 				add_composer_header('To', reply_fulladdress or '')
 			elif recip == 'all':
-				my_address = get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
 				cc_addresses = map(lambda x: x[1], email.utils.getaddresses(get_all_headers_main('Cc')))
 				skip_addresses = [my_address, reply_address, '']
 				rcpt_addresses = []
@@ -1163,6 +1184,7 @@ def act_unsubscribe():
 	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
 		if open_composer():
 			add_composer_mailto(links[0])
+			on_after_save_draft()
 	else:
 		text = ''
 		for link in links:
@@ -1392,9 +1414,13 @@ def on_select_parts(selection):
 			clear_content()
 			menubutton_filters.set_sensitive(False)
 
-def act_show_headers(chkmi):
-	if chkmi.active:
+def act_show_view_headers(chkmi):
+	show_view_headers(chkmi.active)
+
+def show_view_headers(show=True):
+	if show:
 		spanel_view_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		panel_view_header.set_size_request(-1, -1)
 		panel_view_header.set_line_wrap(False)
 		s = ''
 		for hname, hval in Email._headers:
@@ -1403,15 +1429,17 @@ def act_show_headers(chkmi):
 		panel_view_header.set_markup(s)
 	else:
 		spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+		resize_panel_view_header(spanel_view_header)
 		panel_view_header.set_line_wrap(True)
 		panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_header.set_data('all-headers', chkmi.active)
+	panel_view_header.set_data('all-headers', show)
 
 def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
 	mi = gtk.CheckMenuItem(_("Show All Headers"))
 	mi.set_active(panel_view_header.get_data('all-headers') == True)
-	mi.connect('toggled', act_show_headers)
+	if panel_view_header.get_data('all-headers'): mi.set_active(True)
+	mi.connect('toggled', act_show_view_headers)
 	menu.append(mi)
 	menu.show_all()
 
@@ -1933,6 +1961,7 @@ add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply('one'))
 add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply('all'))
 add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(''))
 add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
+add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
@@ -1940,7 +1969,7 @@ spanel_view_header = gtk.ScrolledWindow()
 panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
 panel_view_header = gtk.Label()
-panel_view_subject = gtk.Label()
+panel_view_subject = gtk.Label(' ')
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
 Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
@@ -1992,12 +2021,14 @@ win_main.set_geometry_hints(min_width=100, min_height=250)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
 panel_view.set_position(124)
 spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+spanel_view_header.connect('size-allocate', resize_panel_view_header)
 panel_view_header.set_line_wrap(True)
 panel_view_header.set_padding(4, 2)
 panel_view_header.set_alignment(0, 0)
 panel_view_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_view_header.set_selectable(True)
 panel_view_header.connect('populate-popup', populate_header_menu)
+panel_view_subject.set_selectable(True)
 panel_view_subject.set_padding(5, 4)
 panel_view_subject.set_alignment(0, 0)
 panel_view_subject.set_justify(gtk.JUSTIFY_LEFT)

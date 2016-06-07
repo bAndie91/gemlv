@@ -42,7 +42,7 @@ Email viewer and composer for local emails in GTK
 	- by drag-and-drop
 - CLI options
 	- viewer mode
-	- compose mode direct (```--compose```)
+	- direct compose mode (```--compose```)
 	- addresses
 		- ```--from '"Anna Ann" <me@example.net>'```
 		- ```--to bud@example.net,Carl\ <carl@example.net>```

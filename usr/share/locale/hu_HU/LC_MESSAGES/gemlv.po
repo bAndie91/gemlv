@@ -194,7 +194,7 @@ msgid "Crypto-Sign"
 msgstr "Digitális aláírás"
 
 msgid "Unimportant"
-msgstr "Sokadlagos"
+msgstr "Többedleges"
 
 msgid "Important"
 msgstr "Fontos"
