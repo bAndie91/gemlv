@@ -4,13 +4,51 @@ Email viewer and composer for local emails in GTK
 ## Features
 
 - display headers
-	- only significant for users
+	- only which are significant for users
 	- highlight email addresses
-	- date header in local timezone
-	- all headers
+	- convert Date to local timezone
+	- Reply-By and Expires headers, show warning if time is over
+	- switch to show all of the headers
 - display attachments and other MIME parts in tree view
-	- select first text/plain or text/html part
-- view plain text message (or filtered attachment)
-	- configure multiple filters for non text types
-	- changable font or monospace
+	- select first text/plain or text/html part at start
+	- show attached file names, and mime type
+- view plain text message, or a filtered attachment
+	- configure multiple filters for non text attachments
+	- changable font or monospace on/off
 	- wrap lines, wrap letters, no wrap
+- undisplayable parts can be opened with external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+- save attachments (MIME parts)
+	- as single files
+	- more files at once in a folder
+	- preserving multipart structure (ie. save in directory tree)
+- button for unsubscribe from newsletters, mailing lists
+- report as spam/ham button
+	- razor
+	- pyzor
+- writing Email
+	- send by ```sendmail -ti``` (preconfig is out of scope)
+	- edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+	- importance buttons influences Importance and Priority headers
+	- you can add usual headers (From, Reply-To, To, Cc, Bcc) as arbitrary ones as well
+- reply options
+	- handle Reply-To field
+	- set References, In-Reply-To headers
+	- quote plain text message in the new email
+	- Reply To All: reply to sender, to all recipients, to the mailing list, except ourself
+	- Reply To List
+	- Forward: attach original email, not quote
+- attach files and even whole subdirectories
+	- by browsing them
+	- by drag-and-drop
+- CLI options
+	- viewer mode
+	- compose mode direct (```--compose```)
+	- addresses
+		- ```--from '"Anna Ann" <me@example.net>'```
+		- ```--to bud@example.net,Carl\ <carl@example.net>```
+		- ```--cc ...```
+		- ```--bcc ...```
+	- subject (```--subject "..."```)
+	- meesage body (```--message "..."```)
+	- attachments (```--attach file1,file2,dir1,dir2```)
+	- full mailto link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```)

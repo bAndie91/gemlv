@@ -582,12 +582,11 @@ def get_mailtos(s, schemata=['mailto']):
 	for uri in uris:
 		rslt = urlparse.urlsplit(uri)
 		if '*' in schemata or rslt.scheme.lower() in schemata:
-			m = {'to': rslt.path}
-			q = dict((k.lower(), v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
-			m.update(q)
-			m['uri'] = uri
-			m['split'] = rslt
-			l.append(m)
+			q = dict((k.lower(), v if len(v)>1 else v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
+			q['to'] = urlparse.unquote(rslt.path)
+			q['uri'] = uri
+			q['split'] = rslt
+			l.append(q)
 	return l
 
 def get_listaddress_main():
@@ -1071,7 +1070,10 @@ def add_composer_agent_headers():
 	add_composer_header('X-Mailer', USERAGENT)
 
 def add_composer_mailto(mailto):
-	add_composer_header('To', mailto['to'])
+	for h in 'To', 'Cc', 'Bcc':
+		k = h.lower()
+		if mailto.has_key(k):
+			add_composer_headers(h, mailto[k] if hasattr(mailto[k], '__iter__') else [mailto[k]])
 	if mailto.has_key('subject'):
 		set_composer_subject(mailto['subject'])
 	if mailto.has_key('body'):
