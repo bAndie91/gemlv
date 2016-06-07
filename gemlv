@@ -31,6 +31,7 @@ except ImportError:
 import urlparse
 import pwd
 import threading
+import time
 
 
 ### helper classes, functions ###
@@ -407,7 +408,8 @@ def load_file(filename):
 	if (Email['List-Unsubscribe'] or '').strip():
 		menubutton_unsubscribe.show()
 	
-	panel_header.set_markup(get_headers_markup(Email))
+	panel_view_header.set_markup(get_headers_markup(Email))
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(get_one_header_main('Subject', '')) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
@@ -609,8 +611,9 @@ def get_headers_markup(eml):
 		"Reply-To",
 		"To",
 		"Cc",
-		"Subject",
 		"Date",
+		"Reply-By",
+		"Expires",
 	]
 	originator_headers = ['X-X-Sender', 'X-Sender', 'Sender', 'From', 'Reply-To']
 	from_addresses = map(lambda x: x[1], email.utils.getaddresses(eml.get_all('From') or []))
@@ -634,13 +637,23 @@ def get_headers_markup(eml):
 					if realname: mu = realname + ' ' + mu
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
+			elif hname in DateTimeHeaders:
+				# display Date field in local timezone
+				try:
+					timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(hval))
+				except TypeError:
+					timestamp = None
+				else:
+					hval = email.utils.formatdate(timestamp, True)
+				hval_mu = glib.markup_escape_text(hval)
+				if timestamp is not None and timestamp < time.time():
+					if hname == 'Reply-By':
+						wrn = _("Overdue")
+					elif hname == 'Expires':
+						wrn = _("Expired")
+					try: hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
+					except NameError: pass
 			else:
-				if hname == 'Date':
-					try:
-						# display Date field in local timezone
-						hval = email.utils.formatdate(email.utils.mktime_tz(email.utils.parsedate_tz(hval)), True)
-					except TypeError:
-						pass
 				hval_mu = glib.markup_escape_text(hval)
 			if len(hval_mu):
 				hvals_mu.append(hval_mu)
@@ -761,15 +774,15 @@ def act_all_comp_hdr(mi):
 	show_advanced_comp_hdr(mi.active)
 
 def show_advanced_comp_hdr(show=True):
-	for n in range(0, len(panel_comp_hdr.children())):
-		box = panel_comp_hdr.children()[n]
+	for n in range(0, len(panel_comp_header.children())):
+		box = panel_comp_header.children()[n]
 		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
 			if show: box.show()
 			else: box.hide()
 
 def add_composer_header__direct(hname, hval=None):
 	box = None
-	for thisbox in panel_comp_hdr.children():
+	for thisbox in panel_comp_header.children():
 		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox['name'] == hname:
 			box = thisbox
 			if hval is not None: box['value'] = hval
@@ -777,11 +790,11 @@ def add_composer_header__direct(hname, hval=None):
 	if box is None:
 		if hval is None: hval = ''
 		box = compose_header_box(hname, hval)
-		panel_comp_hdr.pack_start(box, False, True)
+		panel_comp_header.pack_start(box, False, True)
 		if box.hntype == compose_header_box.HNTYPE_MENU:
-			for n in range(0, len(panel_comp_hdr.children())):
-				if panel_comp_hdr.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
-					panel_comp_hdr.reorder_child(box, n)
+			for n in range(0, len(panel_comp_header.children())):
+				if panel_comp_header.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
+					panel_comp_header.reorder_child(box, n)
 					break
 				n += 1
 	box.focus()
@@ -804,7 +817,7 @@ def set_composer_headers(hname, hvals):
 		add_composer_header(hname, hval)
 
 def clear_composer_headers(hname):
-	for box in panel_comp_hdr.children():
+	for box in panel_comp_header.children():
 		if hname is None or box['name'] == hname:
 			box.cancel(manual=False)
 
@@ -972,7 +985,7 @@ class compose_header_box(gtk.HBox):
 
 def get_composer_headers(hname):
 	hlist = []
-	for hbox in panel_comp_hdr.children():
+	for hbox in panel_comp_header.children():
 		if hbox.get_visible():
 			if hname is None:
 				hlist.append((hbox['name'], hbox['value']))
@@ -1211,7 +1224,7 @@ def calc_attachment_name(part, n=None):
 	if name is None:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s" % (get_one_header_main('Subject', _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
+		name = "%s - attachment%s%s" % (get_one_header_main('Subject', _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
 	return name
 
 def act_save_struct():
@@ -1379,23 +1392,23 @@ def on_select_parts(selection):
 
 def act_show_headers(chkmi):
 	if chkmi.active:
-		spanel_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-		panel_header.set_line_wrap(False)
+		spanel_view_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		panel_view_header.set_line_wrap(False)
 		s = ''
 		for hname, hval in Email._headers:
 			hval = decode_header(hval)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
-		panel_header.set_markup(s)
+		panel_view_header.set_markup(s)
 	else:
-		spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
-		panel_header.set_line_wrap(True)
-		panel_header.set_markup(get_headers_markup(Email))
-	panel_header.set_data('all-headers', chkmi.active)
+		spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+		panel_view_header.set_line_wrap(True)
+		panel_view_header.set_markup(get_headers_markup(Email))
+	panel_view_header.set_data('all-headers', chkmi.active)
 
 def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
 	mi = gtk.CheckMenuItem(_("Show All Headers"))
-	mi.set_active(panel_header.get_data('all-headers') == True)
+	mi.set_active(panel_view_header.get_data('all-headers') == True)
 	mi.connect('toggled', act_show_headers)
 	menu.append(mi)
 	menu.show_all()
@@ -1847,12 +1860,17 @@ PMU_NAME = '<b>'
 PMU_NAME_CLOSE = '</b>'
 PMU_HEAD = '<b>'
 PMU_HEAD_CLOSE = '</b>'
+PMU_WARN = '<span foreground=\'darkred\' weight=\'bold\'>'
+PMU_WARN_CLOSE = '</span>'
+PMU_SUBJ = '<big>'
+PMU_SUBJ_CLOSE = '</big>'
 Email = None
 PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
+DateTimeHeaders = ['Date', 'Reply-By', 'Expires']
 PopularHeaders = ['Subject']
 AdvancedHeaders = [
 	'References', 'In-Reply-To', 'Disposition-Notification-To',
@@ -1916,8 +1934,11 @@ add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
-spanel_header = gtk.ScrolledWindow()
-panel_header = gtk.Label()
+spanel_view_header = gtk.ScrolledWindow()
+panel_view = gtk.VPaned()
+panel_view_upper = gtk.VBox()
+panel_view_header = gtk.Label()
+panel_view_subject = gtk.Label()
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
 Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
@@ -1941,9 +1962,12 @@ menu_filters = gtk.Menu()
 
 win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
-box_main.pack_start(spanel_header, False, True)
-spanel_header.add_with_viewport(panel_header)
-box_main.pack_start(panel_body, True, True)
+box_main.pack_start(panel_view, True, True)
+panel_view.pack1(panel_view_upper, False, True)
+panel_view_upper.pack_start(spanel_view_header, True, True)
+spanel_view_header.add_with_viewport(panel_view_header)
+panel_view_upper.pack_start(panel_view_subject, False, True)
+panel_view.pack2(panel_body, True, True)
 panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
 spanel_parts.add_with_viewport(panel_parts)
@@ -1964,14 +1988,17 @@ panel_right.pack_start(tb_controls, False, True)
 win_main.set_icon_name('emblem-mail')
 win_main.set_geometry_hints(min_width=100, min_height=250)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
-spanel_header.set_size_request(-1, 104)
-spanel_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
-panel_header.set_line_wrap(True)
-panel_header.set_padding(4, 2)
-panel_header.set_alignment(0, 0)
-panel_header.set_justify(gtk.JUSTIFY_LEFT)
-panel_header.set_selectable(True)
-panel_header.connect('populate-popup', populate_header_menu)
+panel_view.set_position(124)
+spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
+panel_view_header.set_line_wrap(True)
+panel_view_header.set_padding(4, 2)
+panel_view_header.set_alignment(0, 0)
+panel_view_header.set_justify(gtk.JUSTIFY_LEFT)
+panel_view_header.set_selectable(True)
+panel_view_header.connect('populate-popup', populate_header_menu)
+panel_view_subject.set_padding(5, 4)
+panel_view_subject.set_alignment(0, 0)
+panel_view_subject.set_justify(gtk.JUSTIFY_LEFT)
 panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -2041,9 +2068,9 @@ box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()
 panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
-spanel_comp_hdr = gtk.ScrolledWindow()
+spanel_comp_header = gtk.ScrolledWindow()
 menu_add_header = gtk.Menu()
-panel_comp_hdr = gtk.VBox(False, 0)
+panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
@@ -2061,8 +2088,8 @@ win_comp.add(box_compose)
 box_compose.pack_start(tb_compose, False, True)
 box_compose.pack_start(panel_compose, True, True)
 panel_compose.pack1(panel_upper, True, True)
-panel_upper.pack1(spanel_comp_hdr, True, True)
-spanel_comp_hdr.add_with_viewport(panel_comp_hdr)
+panel_upper.pack1(spanel_comp_header, True, True)
+spanel_comp_header.add_with_viewport(panel_comp_header)
 panel_upper.pack2(spanel_attachments, False, True)
 spanel_attachments.add_with_viewport(panel_attachments)
 panel_attachments.set_headers_visible(False)
@@ -2079,9 +2106,9 @@ win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=120, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[0]-150)
-spanel_comp_hdr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-spanel_comp_hdr.connect('button-press-event', open_comp_hdr_menu)
-panel_comp_hdr.set_border_width(4)
+spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
+panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_attachments.get_selection().set_mode(gtk.SELECTION_MULTIPLE)
 panel_attachments.drag_dest_set(0, [], 0)
