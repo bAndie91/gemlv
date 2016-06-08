@@ -32,6 +32,8 @@ import urlparse
 import pwd
 import threading
 import time
+import hashlib
+import urllib2
 
 
 ### helper classes, functions ###
@@ -411,6 +413,14 @@ def load_file(filename):
 	Email = email.message_from_file(fh)
 	fh.close()
 	
+	senderaddr = None
+	for h in OriginatorHeaders:
+		addrs = map(lambda x: x[1], email.utils.getaddresses(Email.get_all(h) or []))
+		if len(addrs) > 0:
+			senderaddr = addrs[0]
+			break
+	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
+	
 	if get_listaddress_main() is not None:
 		menubutton_replytolist.show()
 	if (Email['List-Unsubscribe'] or '').strip():
@@ -606,6 +616,27 @@ def get_mailtos(s, schemata=['mailto']):
 			l.append(q)
 	return l
 
+def load_gravatar(addr, container):
+	if not isinstance(addr, str): return
+	url = 'https://www.gravatar.com/avatar/%s?default=404&size=64&rating=G' % (hashlib.md5(addr.lower()).hexdigest())
+	try:
+		web = urllib2.urlopen(url)
+	except urllib2.HTTPError:
+		pass
+	else:
+		loader = gtk.gdk.PixbufLoader()
+		try:
+			loader.write(web.read())
+			loader.close()
+		except glib.GError, e:
+			if e.code != 3:   # 'Unrecognized image file format'
+				raise e
+		else:
+			pxb = loader.get_pixbuf()
+			img = container.children()[0]
+			img.set_from_pixbuf(pxb)
+			container.show_all()
+
 def get_listaddress_main():
 	try:
 		# Hopefully there is only one list address.
@@ -619,6 +650,7 @@ def get_listaddress_main():
 def get_headers_markup(eml):
 	lns = []
 	hdrs = [
+		"Return-Path",
 		"X-X-Sender",
 		"X-Sender",
 		"Sender",
@@ -632,20 +664,21 @@ def get_headers_markup(eml):
 		"Reply-By",
 		"Expires",
 	]
-	originator_headers = ['X-X-Sender', 'X-Sender', 'Sender', 'From', 'Reply-To']
 	from_addresses = map(lambda x: x[1], email.utils.getaddresses(eml.get_all('From') or []))
-	if len(filter(lambda h: eml[h] is not None, originator_headers)) == 0:
-		hdrs = ['Return-Path'] + hdrs
+	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
+		if eml[h] is not None:
+			hdrs.remove('Return-Path')
+			break
 	
 	for hname in hdrs:
 		hvals_mu = []
 		for hval in eml.get_all(hname) or []:
 			hval = decode_header(hval)
-			if hname != 'From' and hname in originator_headers:
+			if hname != 'From' and hname in OriginatorHeaders:
 				# do not display Sender or Reply-To fields if they equal to From
 				addr = email.utils.parseaddr(hval)[1]
 				if addr in from_addresses: continue
-			if hname in RecipientHeaders or hname in originator_headers:
+			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
 				for realname, addr in email.utils.getaddresses([hval]):
 					realname = decode_header(realname)
@@ -1993,6 +2026,7 @@ Email = None
 PartPrimary = None
 PartSecondary = None
 LastFolder = os.getcwd()
+OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
 DateTimeHeaders = ['Date', 'Reply-By', 'Expires']
@@ -2063,7 +2097,9 @@ toolbar = gtk.Toolbar()
 spanel_view_header = gtk.ScrolledWindow()
 panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
+panel_view_upper_2 = gtk.HBox()
 panel_view_header = gtk.Label()
+panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
@@ -2090,7 +2126,10 @@ win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
 box_main.pack_start(panel_view, True, True)
 panel_view.pack1(panel_view_upper, False, True)
-panel_view_upper.pack_start(spanel_view_header, True, True)
+panel_view_upper.pack_start(panel_view_upper_2, True, True)
+panel_view_upper_2.pack_start(spanel_view_header, True, True)
+panel_view_upper_2.pack_start(panel_view_avatar, False, False)
+panel_view_avatar.pack_start(gtk.Image(), False, False)
 spanel_view_header.add_with_viewport(panel_view_header)
 panel_view_upper.pack_start(panel_view_subject, False, True)
 panel_view.pack2(panel_body, True, True)
@@ -2123,6 +2162,7 @@ panel_view_header.set_alignment(0, 0)
 panel_view_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_view_header.set_selectable(True)
 panel_view_header.connect('populate-popup', populate_header_menu)
+panel_view_avatar.children()[0].set_padding(6, 1)
 panel_view_subject.set_selectable(True)
 panel_view_subject.set_padding(5, 4)
 panel_view_subject.set_alignment(0, 0)
@@ -2342,9 +2382,10 @@ if args.compose:
 	panel_edit_message.grab_focus()
 else:
 	win_main.show_all()
-	panel_btnbox.hide()
-	panel_content_image.hide()
 	menubutton_replytolist.hide()
 	menubutton_unsubscribe.hide()
+	panel_view_avatar.hide()
+	panel_btnbox.hide()
+	panel_content_image.hide()
 
 gtk.main()
