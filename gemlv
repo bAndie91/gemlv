@@ -236,6 +236,12 @@ def add_key_binding(widget, keyname, callback):
 	accelgroup.connect_group(key, modifier, gtk.ACCEL_VISIBLE, callback)
 	widget.add_accel_group(accelgroup)
 
+def get_current_window():
+	for w in gtk.window_list_toplevels():
+		if w.is_active():
+			return w
+	return None
+
 def display_error(e):
 	text = None
 	if isinstance(e, OSError) or isinstance(e, IOError):
@@ -246,13 +252,13 @@ def display_error(e):
 		text = ''.join(e)
 	if text is None:
 		text = str(e)
-	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
 	dlg.set_title(_("Error"))
 	dlg.run()
 	dlg.destroy()
 
 def question(msg, stock_yes=None):
-	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO, msg)
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO, msg)
 	dlg.set_title(_("Question"))
 	if stock_yes is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
@@ -270,7 +276,7 @@ def choose_dialog(action, filename=None):
 	btn_accept_stock = gtk.STOCK_SAVE
 	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
 		btn_accept_stock = gtk.STOCK_OPEN
-	dlg = gtk.FileChooserDialog(action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
+	dlg = gtk.FileChooserDialog(parent=get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
 	if LastFolder is not None: dlg.set_current_folder(LastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
@@ -356,6 +362,8 @@ class WaitExecStatus:
 		self.code = self.status
 		self.signal = status & 0x7F
 		self.coredumped = status & 0x80 >> 7
+	def __repr__(self):
+		return 'status %s, signal %s%s' % (self.status, self.signal, ', core dumped' if self.coredumped else '')
 
 class ExecThreadRunner(threading.Thread):
 	def __init__(self, syscmd, sysargs, cb=None):
@@ -409,7 +417,7 @@ def load_file(filename):
 		menubutton_unsubscribe.show()
 	
 	panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(get_one_header_main('Subject', '')) + PMU_SUBJ_CLOSE)
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header_main('Subject', ''))) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
@@ -563,20 +571,21 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
-def decode_header(s):
+def decode_header(s, unfold=False):
 	chunks = []
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
-			chars = re.sub('\r?\n\s*', ' ', chars)  # unfold folded header
+			if unfold:
+				chars = re.sub('\r?\n\s*', ' ', chars)
 			encoding = 'utf-8'
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
-def get_one_header_main(hname, dflt=None):
+def get_one_header_main(hname, dflt=None, unfold=True):
 	hval = Email[hname]
 	if hval is None:
 		return dflt
-	return decode_header(hval)
+	return decode_header(hval, unfold=unfold)
 
 def get_all_headers_main(hname):
 	return map(decode_header, Email.get_all(hname) or [])
@@ -616,6 +625,7 @@ def get_headers_markup(eml):
 		"From",
 		"Organization",
 		"Reply-To",
+		"Importance",
 		"To",
 		"Cc",
 		"Date",
@@ -657,7 +667,7 @@ def get_headers_markup(eml):
 					if hname == 'Reply-By':
 						wrn = _("Overdue")
 					elif hname == 'Expires':
-						wrn = _("Expired")
+						wrn = _("(Expired)")
 					try: hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
 					except NameError: pass
 			else:
@@ -670,14 +680,19 @@ def get_headers_markup(eml):
 
 def get_filters_by_mime(main, sub, all=True):
 	filters = []
-	for m, s, mark, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+(!?)(\S+)\s*(.+)?', splitgroups=[5]):
+	for m, s, marks, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+([!\$]*)(\S+)\s*(.+)?', splitgroups=[5]):
 		if fnmatch(main, m) and fnmatch(sub, s):
-			isbin = mark == '!'
+			isbin = marks.find('!')>-1
+			isshell = marks.find('$')>-1
 			e = None
 			if cmd == '-':
 				e = ('', None, isbin)
-			elif which(cmd):
-				e = (cmd, args, isbin)
+			else:
+				if isshell:
+					e = ('sh', ['-c', ' '.join([cmd]+args)], isbin)
+				else:
+					if which(cmd):
+						e = (cmd, args, isbin)
 			if e is not None:
 				if all:
 					filters.append(e)
@@ -1179,7 +1194,7 @@ def act_reply(recip):
 		panel_edit_message.grab_focus()
 
 def act_unsubscribe():
-	MAXLEN = 64
+	MAXLEN = 80
 	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
 	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
 		if open_composer():
@@ -1188,7 +1203,7 @@ def act_unsubscribe():
 	else:
 		text = ''
 		for link in links:
-			uri = link['uri']
+			uri = urlparse.unquote(link['uri'])
 			escuri = glib.markup_escape_text(uri)
 			if link['split'].scheme == 'mailto':
 				linktext = link['to']
@@ -1198,9 +1213,9 @@ def act_unsubscribe():
 				else:
 					linktext = escuri
 			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
-		dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
+		dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe Methods"))
-		dlg.set_markup(_("Select one link to unsubscribe") + text)
+		dlg.set_markup(_("Select a link to unsubscribe") + text)
 		try:
 			label = dlg.get_content_area().children()[0].children()[1].children()[0]
 			label.set_selectable(False)
@@ -1209,8 +1224,84 @@ def act_unsubscribe():
 		dlg.run()
 		dlg.destroy()
 
-def act_mark_spam():
-	pass
+def scroll_textview(tv, rect, scrwin):
+	vadj = scrwin.get_vadjustment()
+	vadj.set_value(vadj.upper - vadj.page_size)
+
+def act_report_spam(considered_as_spam = True):
+	win = gtk.Window()
+	vb = gtk.VBox(False, 6)
+	spanel_output = gtk.ScrolledWindow()
+	panel_output = gtk.TextView()
+	hb = gtk.HBox()
+	btn = StockButton(stock=gtk.STOCK_CLOSE)
+	win.add(vb)
+	vb.pack_start(spanel_output, True, True)
+	spanel_output.add(panel_output)
+	vb.pack_start(hb, False, True)
+	hb.pack_start(btn, True, False)
+	
+	win.set_transient_for(win_main)
+	win.set_modal(True)
+	win.set_border_width(4)
+	win.set_title(_("Reporting Spam") if considered_as_spam else _("Reporting Ham"))
+	hid = win.connect('delete-event', lambda w, e: True)
+	win.set_data('delete-event-handler', hid)
+	spanel_output.set_size_request(420, 34)
+	spanel_output.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	panel_output.set_editable(False)
+	panel_output.set_wrap_mode(gtk.WRAP_NONE)
+	panel_output.modify_font(pango.FontDescription('monospace'))
+	bgc = win.get_style().bg[gtk.STATE_NORMAL]
+	panel_output.modify_base(gtk.STATE_NORMAL, bgc)
+	panel_output.connect('size-allocate', scroll_textview, spanel_output)
+	buffer_output = panel_output.get_buffer()
+	btn.set_sensitive(False)
+	btn.connect('clicked', lambda w: win.destroy())
+	win.show_all()
+	
+	razor_cmd = 'razor-report' if considered_as_spam else 'razor-revoke'
+	pipedesc_reader, pipedesc_writer = os.pipe()
+	thrd_feed = threading.Thread(target=spam_feeder_thread, args=(pipedesc_writer,))
+	thrd_feed.start()
+	thrd = threading.Thread(target=runcmd_thread, args=([razor_cmd, '-f', '-d'], pipedesc_reader, buffer_output, win, btn))
+	thrd.start()
+
+def spam_feeder_thread(fd):
+	os.write(fd, Email.as_string())
+	os.close(fd)
+
+def runcmd_thread(args, input_fd, out_buffer, win, btn):
+	reader, writer = get_pipe_handlers(1)
+	pid = os.fork()
+	if pid == 0:
+		reader.close()
+		os.dup2(input_fd, sys.stdin.fileno())
+		os.dup2(writer.fileno(), sys.stdout.fileno())
+		os.dup2(writer.fileno(), sys.stderr.fileno())
+		os.closerange(3, 255)
+		try:
+			os.execvp(args[0], args)
+		except OSError, e:
+			sys.stderr.write(str(e))
+		os._exit(127)
+	
+	writer.close()
+	while True:
+		ln = reader.readline()
+		if ln == '': break
+		gtk.threads_enter()
+		out_buffer.insert(out_buffer.get_end_iter(), ln)
+		gtk.threads_leave()
+	reader.close()
+	status = WaitExecStatus(pid)
+	
+	gtk.threads_enter()
+	out_buffer.insert(out_buffer.get_end_iter(), _("exit code: %s") % (status.code))
+	win.connect('delete-event', lambda w, e: w.destroy())
+	win.disconnect(win.get_data('delete-event-handler'))
+	btn.set_sensitive(True)
+	gtk.threads_leave()
 
 def get_extension_by_mime(mime):
 	if mime is None:
@@ -1368,6 +1459,7 @@ def act_font_switch(tv):
 
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
+	dlg.set_transient_for(get_current_window())
 	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	dlg.set_modal(True)
 	dlg.run()
@@ -1451,7 +1543,10 @@ def populate_filters_menu(eml):
 		if filt[0] == '': continue
 		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
 		uniqfilt[filt[0]] = filt[1]
-		mi = gtk.MenuItem(filt[0])
+		lbl = filt[0]
+		if lbl == 'sh':
+			lbl = ' '.join(re.findall('(^\S+|\d*[<>]+(?:&\d+|\s*\S+)|[;\|&]+\s*\S+)', filt[1][1]))
+		mi = gtk.MenuItem(lbl)
 		mi.connect('activate', lambda mi, eml, filt: load_part(eml, filt), eml, filt)
 		menu_filters.append(mi)
 	menu_filters.show_all()
@@ -1540,7 +1635,7 @@ def act_send():
 			return
 	build_newemail()
 	
-	dlg = gtk.MessageDialog(None, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.set_title(_("Sending..."))
 	dlg.set_markup(_("Sending..."))
 	carea = dlg.get_content_area()
@@ -2056,16 +2151,16 @@ menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 toolbuttons = [
 	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
 	("Reply", 'mail-reply-sender', None, (act_reply, 'one'), None),
-	("Reply To List", 'mail-reply-all', None, (act_reply, 'list'), None),
 	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
+	("Reply To List", 'mail-reply-all', None, (act_reply, 'list'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'separator', None),
-	("Unsubscribe", 'call-stop', None, act_unsubscribe, None),
-	("Report Spam", 'mail-mark-junk', None, act_mark_spam, None),
+	("Unsubscribe", 'stop', None, act_unsubscribe, None),
+	("Report Spam", 'mail-mark-junk', None, act_report_spam, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT, None, act_quit, None),
 ]
-x, x, menubutton_replytolist, x, x, x_, menubutton_unsubscribe, x, x_, x \
+x, x, x, menubutton_replytolist, x, x_, menubutton_unsubscribe, x, x_, x \
 = load_toolitems(toolbar, toolbuttons)
 setup_treeview__icon_label(panel_parts)
 

@@ -70,8 +70,8 @@ msgstr "Vá: "
 msgid "Quote:"
 msgstr "Idézet:"
 
-msgid "%s - attachment%s"
-msgstr "%s - csatolmány%s"
+msgid "%s - attachment%s%s"
+msgstr "%s - csatolmány%s%s"
 
 msgid "Email"
 msgstr "Email"
@@ -194,7 +194,7 @@ msgid "Crypto-Sign"
 msgstr "Digitális aláírás"
 
 msgid "Unimportant"
-msgstr "Többedleges"
+msgstr "Sokadlagos"
 
 msgid "Important"
 msgstr "Fontos"
@@ -237,4 +237,16 @@ msgstr "Mentés Strukturáltan"
 
 msgid "Save\nRight click: Save to Structure"
 msgstr "Mentés\njobb klikk: Mentés Strukturáltan"
+
+msgid "Reply-By"
+msgstr "Válasz Eddig"
+
+msgid "Expires"
+msgstr "Lejár"
+
+msgid "Overdue"
+msgstr "Késedelem"
+
+msgid "(Expired)"
+msgstr "(Lejárt)"
 

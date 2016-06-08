@@ -52,3 +52,16 @@ Email viewer and composer for local emails in GTK
 	- meesage body (```--message "..."```)
 	- attachments (```--attach file1,file2,dir1,dir2```)
 	- full mailto link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```)
+- hotkeys
+	- ```Ctrl-Q``` quit
+	- ```Ctrl-W``` close compose window
+	- ```Ctrl-S``` save attachment(s), save draft
+	- ```Ctrl-Shift-S``` save draft as...
+	- ```Ctrl-O``` open attachment with external programm
+	- ```Ctrl-N``` compose new Email
+	- ```Ctrl-Shift-R``` Reply
+	- ```Ctrl-R``` Reply to All
+	- ```Ctrl-F``` Forward
+	- ```Ctrl-U``` Filter/Unfilter
+	- ```Ctrl-H``` Show/Hide headers
+	- ```F4``` edit draft message with external programm
