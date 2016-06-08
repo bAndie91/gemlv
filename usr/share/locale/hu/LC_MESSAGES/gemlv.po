@@ -146,7 +146,10 @@ msgid "Forward"
 msgstr "Továbbítás"
 
 msgid "Report Spam"
-msgstr "Spam bejelentése"
+msgstr "Spam-jelentés"
+
+msgid "Report Ham"
+msgstr "Ham-jelentés"
 
 msgid "Wrap"
 msgstr "Tördelés"
@@ -205,9 +208,6 @@ msgstr "Szekresztés külső programmal"
 msgid "Unsubscribe Methods"
 msgstr "Leiratkozási módok"
 
-msgid "Select one link to unsubscribe"
-msgstr "Válassz egy linket, amivel leiratkozol"
-
 msgid "New Email's writer's name and address"
 msgstr "Az új Email szerzőjének neve és címe"
 
@@ -249,4 +249,22 @@ msgstr "Késedelem"
 
 msgid "(Expired)"
 msgstr "(Lejárt)"
+
+msgid "Return-Path"
+msgstr "Visszajuttatás"
+
+msgid "Importance"
+msgstr "Fontosság"
+
+msgid "Select a link to unsubscribe"
+msgstr "Válassz egy linket, amivel leiratkozol"
+
+msgid "Reporting Spam"
+msgstr "Spam bejelentése"
+
+msgid "Reporting Ham"
+msgstr "Ham bejelentése"
+
+msgid "exit code: %s"
+msgstr "kilépési kód: %s"
 

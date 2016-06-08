@@ -1262,49 +1262,79 @@ def scroll_textview(tv, rect, scrwin):
 	vadj.set_value(vadj.upper - vadj.page_size)
 
 def act_report_spam(considered_as_spam = True):
+	if considered_as_spam:
+		start_razor_window(_("Reporting Spam"), [['razor-report', '-d', '-f'], ['pyzor', '-d', 'report']])
+	else:
+		start_razor_window(_("Reporting Ham"), [['razor-revoke', '-d', '-f'], ['pyzor', '-d', 'whitelist']])
+
+def start_razor_window(title, cmdargses):
 	win = gtk.Window()
+	bgc = win.get_style().bg[gtk.STATE_NORMAL]
 	vb = gtk.VBox(False, 6)
-	spanel_output = gtk.ScrolledWindow()
-	panel_output = gtk.TextView()
 	hb = gtk.HBox()
 	btn = StockButton(stock=gtk.STOCK_CLOSE)
 	win.add(vb)
-	vb.pack_start(spanel_output, True, True)
-	spanel_output.add(panel_output)
+	panels = []
+	for cmdargs in cmdargses:
+		spanel = gtk.ScrolledWindow()
+		panel = gtk.TextView()
+		panels.append((panel, cmdargs))
+		spanel.add(panel)
+		vb.pack_start(spanel, True, True)
+
+		spanel.set_size_request(420, 42)
+		spanel.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		panel.set_editable(False)
+		panel.set_wrap_mode(gtk.WRAP_NONE)
+		panel.modify_font(pango.FontDescription('monospace'))
+		panel.modify_base(gtk.STATE_NORMAL, bgc)
+		panel.connect('size-allocate', scroll_textview, spanel)
 	vb.pack_start(hb, False, True)
 	hb.pack_start(btn, True, False)
 	
 	win.set_transient_for(win_main)
 	win.set_modal(True)
 	win.set_border_width(4)
-	win.set_title(_("Reporting Spam") if considered_as_spam else _("Reporting Ham"))
-	hid = win.connect('delete-event', lambda w, e: True)
-	win.set_data('delete-event-handler', hid)
-	spanel_output.set_size_request(420, 34)
-	spanel_output.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	panel_output.set_editable(False)
-	panel_output.set_wrap_mode(gtk.WRAP_NONE)
-	panel_output.modify_font(pango.FontDescription('monospace'))
-	bgc = win.get_style().bg[gtk.STATE_NORMAL]
-	panel_output.modify_base(gtk.STATE_NORMAL, bgc)
-	panel_output.connect('size-allocate', scroll_textview, spanel_output)
-	buffer_output = panel_output.get_buffer()
+	win.set_title(title)
+	h = win.connect('delete-event', lambda w, e: True)
+	win.set_data('close-handler-id', h)
+	win.set_data('close-button', btn)
 	btn.set_sensitive(False)
 	btn.connect('clicked', lambda w: win.destroy())
 	win.show_all()
 	
-	razor_cmd = 'razor-report' if considered_as_spam else 'razor-revoke'
-	pipedesc_reader, pipedesc_writer = os.pipe()
-	thrd_feed = threading.Thread(target=spam_feeder_thread, args=(pipedesc_writer,))
-	thrd_feed.start()
-	thrd = threading.Thread(target=runcmd_thread, args=([razor_cmd, '-f', '-d'], pipedesc_reader, buffer_output, win, btn))
-	thrd.start()
+	wait_threads = []
+	for panel, cmdargs in panels:
+		buffer = panel.get_buffer()
+		pipedesc_reader, pipedesc_writer = os.pipe()
+		thrd_feed = threading.Thread(target=spam_feeder_thread, args=(pipedesc_writer,))
+		thrd_feed.start()
+		thrd = threading.Thread(target=runcmd_thread, args=(cmdargs, pipedesc_reader, buffer, win))
+		wait_threads.append(thrd)
+		thrd.start()
+	win.set_data('threads', wait_threads)
+
+def close_razor_window_handler(wnd):
+	h = wnd.get_data('close-handler-id')
+	if h is None:
+		return True
+	wait_threads = wnd.get_data('threads')
+	if wait_threads is None:
+		return True
+	for thread in wait_threads:
+		if thread.is_alive():
+			return True
+	wnd.connect('delete-event', lambda w, e: w.destroy())
+	wnd.disconnect(h)
+	wnd.set_data('close-handler-id', None)
+	wnd.get_data('close-button').set_sensitive(True)
+	return False
 
 def spam_feeder_thread(fd):
 	os.write(fd, Email.as_string())
 	os.close(fd)
 
-def runcmd_thread(args, input_fd, out_buffer, win, btn):
+def runcmd_thread(args, input_fd, out_buffer, win):
 	reader, writer = get_pipe_handlers(1)
 	pid = os.fork()
 	if pid == 0:
@@ -1328,12 +1358,10 @@ def runcmd_thread(args, input_fd, out_buffer, win, btn):
 		gtk.threads_leave()
 	reader.close()
 	status = WaitExecStatus(pid)
-	
+
 	gtk.threads_enter()
 	out_buffer.insert(out_buffer.get_end_iter(), _("exit code: %s") % (status.code))
-	win.connect('delete-event', lambda w, e: w.destroy())
-	win.disconnect(win.get_data('delete-event-handler'))
-	btn.set_sensitive(True)
+	glib.idle_add(lambda: close_razor_window_handler(win), priority=glib.PRIORITY_DEFAULT_IDLE)
 	gtk.threads_leave()
 
 def get_extension_by_mime(mime):
