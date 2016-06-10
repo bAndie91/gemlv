@@ -9,22 +9,26 @@ Email viewer and composer for local emails in GTK
 	- convert Date to local timezone
 	- Reply-By and Expires headers, show warning if time is over
 	- switch to show all of the headers
-- display attachments and other MIME parts in tree view
-	- select first text/plain or text/html part at start
-	- show attached file names, and mime type
 - view plain text message, or a filtered attachment
 	- configure multiple filters for non text attachments
 	- changable font or monospace on/off
 	- wrap lines, wrap letters, no wrap
+- display attachments and other MIME parts in tree view
+	- select first text/plain or text/html part at beginning
+	- show attached filenames, and their mime type
 - undisplayable parts can be opened with external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 - save attachments (MIME parts)
-	- as single files
-	- more files at once in a folder
-	- preserving multipart structure (ie. save in directory tree)
+	-
+		- as single files
+		- more files at once in a folder
+		- preserving multipart structure (ie. save in directory tree)
+	- preverse modification time if available in attachment
 - button for unsubscribe from newsletters, mailing lists
-- report as spam/ham button
-	- razor
-	- pyzor
+- report as spam/ham
+	- supported networks
+		- razor
+		- pyzor
+	- move to / out from ```Spam``` folder
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
 	- edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
@@ -37,9 +41,16 @@ Email viewer and composer for local emails in GTK
 	- Reply To All: reply to sender, to all recipients, to the mailing list, except ourself
 	- Reply To List
 	- Forward: attach original email, not quote
-- attach files and even whole subdirectories
-	- by browsing them
-	- by drag-and-drop
+- attachments in compose mode
+	- attach files and even whole subdirectories
+		- by browsing them
+		- by drag-and-drop
+	- rename attachments in place
+	- cancel attach
+	- use transport encoding which provides smaller encoded data for a given clear data
+		- quoted-printable
+		- base64
+	- store file's modification time in Content-Disposition header
 - CLI options
 	- viewer mode
 	- direct compose mode (```--compose```)

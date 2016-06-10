@@ -268,3 +268,21 @@ msgstr "Ham bejelentése"
 msgid "exit code: %s"
 msgstr "kilépési kód: %s"
 
+msgid "Move it into <tt>%s</tt> folder?"
+msgstr "Átteszed a <tt>%s</tt> mappába?"
+
+msgid "Move in"
+msgstr "Áttenni"
+
+msgid "Move it out from <tt>%s</tt> folder into <tt>%s</tt>?"
+msgstr "Kiveszed a <tt>%s</tt> mappából át a <tt>%s</tt>-ba?"
+
+msgid "Move out"
+msgstr "Kivenni"
+
+msgid "Delivery Report"
+msgstr "Tértivevény"
+
+msgid "Disposition Notification"
+msgstr "Olvasási Értesítés"
+
