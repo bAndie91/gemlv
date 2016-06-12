@@ -28,12 +28,13 @@ Email viewer and composer for local emails in GTK
 	- supported networks
 		- razor
 		- pyzor
-	- move to / out from ```Spam``` folder
+	- move Email file into / out from ```Spam``` folder
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
 	- edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 	- importance buttons influences Importance and Priority headers
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) as arbitrary ones as well
+	- request Disposition Notification by setting Message-Disposition-To header
 - reply options
 	- handle Reply-To field
 	- set References, In-Reply-To headers
@@ -41,6 +42,9 @@ Email viewer and composer for local emails in GTK
 	- Reply To All: reply to sender, to all recipients, to the mailing list, except ourself
 	- Reply To List
 	- Forward: attach original email, not quote
+	- send Disposition Notification on demand
+		- even for messages not requested it
+		- human readable message in language which is declared in Accept-Language header
 - attachments in compose mode
 	- attach files and even whole subdirectories
 		- by browsing them
@@ -52,8 +56,8 @@ Email viewer and composer for local emails in GTK
 		- base64
 	- store file's modification time in Content-Disposition header
 - CLI options
-	- viewer mode
-	- direct compose mode (```--compose```)
+	- viewer mode (```gemlv raw_email.eml```)
+	- compose mode (```gemlv --compose```)
 	- addresses
 		- ```--from '"Anna Ann" <me@example.net>'```
 		- ```--to bud@example.net,Carl\ <carl@example.net>```
