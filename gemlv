@@ -1199,6 +1199,13 @@ def guess_my_address():
 	if Email is None: return None
 	return get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
 
+def guess_reply_address():
+	if Email is None: return None
+	for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
+		if Email[h] is not None:
+			return get_one_header_main(h)
+	return None
+
 def add_composer_from_hidden():
 	addr = guess_my_address()
 	if addr is not None:
@@ -1256,13 +1263,8 @@ def act_reply(recip):
 			if references is not None:
 				add_composer_header('References', references)
 			
-			reply_fulladdress = None
-			reply_address = None
-			for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-				if Email[h] is not None:
-					reply_fulladdress = get_one_header_main(h)
-					reply_address = email.utils.parseaddr(reply_fulladdress)[1]
-					break
+			reply_fulladdress = guess_reply_address()
+			reply_address = email.utils.parseaddr(reply_fulladdress)[1]
 			listaddress = get_listaddress_main()
 			
 			if recip == 'one':
@@ -1271,7 +1273,7 @@ def act_reply(recip):
 				skip_addresses = [my_address, reply_address, '']
 				rcpt_addresses = []
 				
-				if reply_address is not None and reply_address != my_address:
+				if reply_address != '' and reply_address != my_address:
 					add_composer_header('To', reply_fulladdress)
 				for h in 'To', 'Cc':
 					for addrspec in filter_out_addresses(skip_addresses, get_all_headers_main(h)):
@@ -2010,10 +2012,11 @@ def drop_attachment(wdg, context, x, y, data, info, time):
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	eml = Attachments[iterator][0]
-	eml._headers.remove((HDR_CD, eml[HDR_CD]))
-	eml.add_header(HDR_CD, 'attachment', filename=new_text)
-	Attachments[iterator][colnum] = new_text
-	return True
+	if eml[HDR_CD]:
+		eml._headers.remove((HDR_CD, eml[HDR_CD]))
+		eml.add_header(HDR_CD, 'attachment', filename=new_text)
+		Attachments[iterator][colnum] = new_text
+		return True
 
 def on_keypress_attachments(tv, evt):
 	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
@@ -2022,7 +2025,10 @@ def on_keypress_attachments(tv, evt):
 			try:
 				iterator = Attachments.get_iter(itpath)
 			except ValueError:
-				# child deleted in meantime
+				# child was deleted in meantime
+				continue
+			if Attachments[iterator][0].get_content_type() == 'message/disposition-notification':
+				win_comp.get_window().beep()
 				continue
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
@@ -2051,30 +2057,36 @@ def act_dispos_notif():
 		pndr_box['readonly'] = True
 		toggle_rqdn.set_sensitive(False)
 		
-		for realname, addr in email.utils.getaddresses(Email.get_all(HDR_DNT)):
-			add_composer_header('To', email.utils.formataddr((decode_header(realname), addr)))
+		dnt_address = Email.get_all(HDR_DNT)
+		my_address = guess_my_address()
+		if dnt_address:
+			for realname, addr in email.utils.getaddresses(dnt_address):
+				add_composer_header('To', email.utils.formataddr((decode_header(realname), addr)))
+		else:
+			add_composer_header('To', guess_reply_address())
 		lang = get_one_header_main('Accept-Language')
 		if lang:
-		# TODO switch LANG
-			
-		Ltxt_dispntf = _("Disposition Notification")
-		Ltxt_body = _("The message sent on {date} to {me} with subject {subject} "
+			savelang = os.environ['LANGUAGE']
+			os.environ['LANGUAGE'] = lang
+		Ltxt_subj = _("Disposition Notification: {subject}")
+		Ltxt_body = _("The message sent on {date} to {me} with subject \"{subject}\" "
 			"delivered on {delivery_date} and has been displayed. "
 			"This is no guarantee that the message has been read or understood.")
-		# LANG
-		set_composer_subject(Ltxt_dispntf)
+		if lang:
+			os.environ['LANGUAGE'] = savelang
 		prms = {
-			date: get_one_header_main('Date'),
-			me: 
-			subject: get_one_header_main('Subject'),
-			delivery_date: get_one_header_main('Delivery-Date'),
+			'date': get_one_header_main('Date') or '(somewhen)',
+			'me': my_address or '(somewho)',
+			'subject': get_one_header_main('Subject'),
+			'delivery_date': get_one_header_main('Delivery-Date') or '(somewhen)',
 			}
-		set_composer_text('\n'.join(textwrap.wrap(Ltxt_body.format(**prms), 79)))
+		set_composer_subject(Ltxt_subj.format(**prms))
+		message_text = ''.join(map(lambda x: x+'\n', textwrap.wrap(Ltxt_body.format(**prms), 79)))
+		set_composer_text(message_text)
 		
 		dn_part = MIMEBase('message', 'disposition-notification')
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
-		finalrecipient = guess_my_address()
-		# TODO final recipient not known
+		finalrecipient = my_address
 		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]
 		if Email[HDR_OR]:
 			origrcpt = get_one_header_main(HDR_OR)
@@ -2082,9 +2094,10 @@ def act_dispos_notif():
 		if Email[HDR_MI]:
 			messageid = get_one_header_main(HDR_MI)
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
-		dn_part.set_payload('\n'.join(dn_fields))
+		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
+		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, Ltxt_dispntf, 'mail-mark-read', None])
+		Attachments.append(None, [dn_part, Ltxt_subj, 'mail-mark-read', None])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -2401,9 +2414,9 @@ menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 toolbuttons = [
 	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
 	("Send MDN", 'mail-reply-sender', "Send a Message Disposition Notification", act_dispos_notif, None),
-	("Reply", 'mail-reply-sender', None, (act_reply, 'one'), None),
-	("Reply To All", 'mail-reply-all', None, (act_reply, 'all'), None),
-	("Reply To List", 'mail-reply-all', None, (act_reply, 'list'), None),
+	("Reply", 'mail-reply-sender', "Reply\nRight click: Send a Message Disposition Notification", (act_reply, 'one'), act_dispos_notif),
+	("Reply to All", 'mail-reply-all', None, (act_reply, 'all'), None),
+	("Reply to List", 'mail-reply-all', None, (act_reply, 'list'), None),
 	("Forward", 'mail-forward', None, (act_reply, ''), None),
 	(None, None, None, 'separator', None),
 	("Unsubscribe", 'stop', None, act_unsubscribe, None),

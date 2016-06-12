@@ -136,10 +136,10 @@ msgstr "Új írása"
 msgid "Reply"
 msgstr "Válasz"
 
-msgid "Reply To All"
+msgid "Reply to All"
 msgstr "Válasz Mindenkinek"
 
-msgid "Reply To List"
+msgid "Reply to List"
 msgstr "Válasz a Listára"
 
 msgid "Forward"
@@ -280,9 +280,25 @@ msgstr "Kiveszed a <tt>%s</tt> mappából át a <tt>%s</tt>-ba?"
 msgid "Move out"
 msgstr "Kivenni"
 
-msgid "Delivery Report"
+msgid "Disposition Notification"
 msgstr "Tértivevény"
 
-msgid "Disposition Notification"
-msgstr "Olvasási Értesítés"
+msgid "Disposition Notification: {subject}"
+msgstr "Tértivevény: {subject}"
+
+msgid "The message sent on {date} to {me} with subject \"{subject}\" "
+"delivered on {delivery_date} and has been displayed. "
+"This is no guarantee that the message has been read or understood."
+msgstr "Az üzenet, amit {date}-kor {me}-nek \"{subject}\" tárggyal küldtek, "
+"{delivery_date}-kor kézbesítésre, majd megjelenítésre került. "
+"Ez nem garantálja, hogy az üzenetet el is olvasták vagy megértették."
+
+msgid "Send MDN"
+msgstr "MDN küldése"
+
+msgid "Send a Message Disposition Notification"
+msgstr "Tértivevény küldése"
+
+msgid "Reply\nRight click: Send a Message Disposition Notification"
+msgstr "Válasz\njobb klikk: Tértivevény küldése"
 
