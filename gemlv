@@ -156,7 +156,7 @@ class cfgparser:
 						raise StopIteration
 					fh = self.filehandlers[0]
 					continue
-				m = re.match(self.var['regex'], ln)
+				m = re.search(self.var['regex'], ln)
 				if m:
 					grps = []
 					n = 0
@@ -462,7 +462,6 @@ def load_file(filename):
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
-		# need not to decode realname
 		addrs = get_email_addresses_in_main_headers(h)
 		if len(addrs) > 0:
 			senderaddr = addrs[0]
@@ -470,7 +469,8 @@ def load_file(filename):
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
 	if (Email[HDR_DNT] or '').strip():
-		menubutton_mdn.show()
+		if get_xattr(cliArgs.FILE, XATTR_MDNSENT).lower().find('yes')<0:
+			menubutton_mdn.show()
 	
 	if get_listaddress_main() is not None:
 		menubutton_replytolist.show()
@@ -875,6 +875,7 @@ def act_comp_hdr_menuitem(mi, hname=None):
 	box = add_composer_header__direct(hname)
 	if on == False:
 		box.cancel()
+	glib.idle_add(box.scrollfocus, priority=glib.PRIORITY_HIGH_IDLE)
 	return True
 
 def act_all_comp_hdr(mi):
@@ -884,8 +885,10 @@ def show_advanced_comp_hdr(show=True):
 	for n in range(0, len(panel_comp_header.children())):
 		box = panel_comp_header.children()[n]
 		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
-			if show: box.show()
-			else: box.hide()
+			if show:
+				box.show()
+			else:
+				box.hide()
 
 def add_composer_header__direct(hname, hval=None):
 	box = None
@@ -949,6 +952,7 @@ class compose_header_box(gtk.HBox):
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
 			self.wdg_name.connect('changed', set_unsaved)
+			self.wdg_name.connect('changed', self.on_name_changed)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
 			self.wdg_name.set_relief(gtk.RELIEF_NONE)
@@ -959,29 +963,104 @@ class compose_header_box(gtk.HBox):
 		self.pack_start(self.wdg_name, False, True)
 		
 		self.wdg_value = gtk.Entry()
-		self.wdg_value.connect('changed', set_unsaved)
 		self.pack_start(self.wdg_value, True, True)
-		#TODO wdg_value.set_completion()
+		self.wdg_value.connect('changed', set_unsaved)
+		self.wdg_value.connect('changed', self.on_value_changed)
+		self.completer = gtk.EntryCompletion()
+		self.wdg_value.set_completion(self.completer)
+		self.completer.set_model(gtk.ListStore(str))
+		self.completer.set_minimum_key_length(0)
+		self.completer.set_text_column(0)
+		
+		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
+		self.pack_start(self.btn_datetime, False, False)
+		self.btn_datetime.connect('clicked', lambda x, ent: prompt_datetime(ent), self.wdg_value)
 		
 		if plus:
-			self.wdg_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
-			self.pack_start(self.wdg_add, False, False)
-			self.wdg_add.set_relief(gtk.RELIEF_NONE)
-			self.wdg_add.connect('clicked', self.duplicate)
+			self.btn_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+			self.pack_start(self.btn_add, False, False)
+			self.btn_add.set_relief(gtk.RELIEF_NONE)
+			self.btn_add.connect('clicked', self.duplicate)
 		if minus:
-			self.wdg_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
-			self.wdg_del.set_relief(gtk.RELIEF_NONE)
-			self.pack_start(self.wdg_del, False, False)
-			self.wdg_del.connect('clicked', self.cancel)
-		
-		if chname == 'Importance':
-			ninja_toggle(toggle_unimportant, val.lower().find('low')>-1)
-			ninja_toggle(toggle_important, val.lower().find('high')>-1)
-		if chname == HDR_DNT:
-			ninja_toggle(toggle_rqdn, True)
+			self.btn_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_del.set_relief(gtk.RELIEF_NONE)
+			self.pack_start(self.btn_del, False, False)
+			self.btn_del.connect('clicked', self.cancel)
 		
 		self['name'] = chname
 		self['value'] = val
+	
+	def on_name_changed(self, x=None):
+		name = self['name']
+		if name in DateTimeHeaders:
+			self.btn_datetime.show()
+		else:
+			self.btn_datetime.hide()
+		if name in ValidatorHeaders.keys():
+			self['validate'] = ValidatorHeaders[name]
+		else:
+			self['validate'] = None
+		if name == HDR_DNT:
+			ninja_toggle(toggle_rqdn, True)
+		model = self.completer.get_model()
+		model.clear()
+		if type(self['validate']) == list:
+			for text in self['validate']:
+				model.append([text])
+		self.on_changed()
+	
+	def on_value_changed(self, entry=None):
+		if entry is None: entry = self.wdg_value
+		bg_normal = entry.get_data('bg-normal')
+		if not bg_normal:
+			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
+			entry.set_data('bg-normal', bg_normal)
+		valid = self.validate()
+		if valid:
+			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+			self['valid'] = True
+		else:
+			bg_invalid = gtk.gdk.Color('#FFA4A4')
+			entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
+			self['valid'] = False
+			if self.hntype == self.HNTYPE_CUSTOM:
+				menuitem_all_comp_hdr.set_active(True)
+				self.focus()
+				glib.idle_add(self.scrollfocus)
+		self.on_changed()
+		return valid
+
+	def on_changed(self):
+		name = self['name']
+		val = self['value']
+		if name == 'Importance':
+			ninja_toggle(toggle_unimportant, val.lower().find('low')>-1)
+			ninja_toggle(toggle_important, val.lower().find('high')>-1)
+	
+	def validate(self):
+		if not self['validate']:
+			return True
+		text = self['value']
+		if type(self['validate']) == list:
+			return (text in self['validate'] or '' in self['validate'])
+		if self['validate'].has_key('all'):
+			for regexp in self['validate']['all']:
+				if not re.findall(regexp, text):
+					return False
+		if self['validate'].has_key('one'):
+			one = False
+			for regexp in self['validate']['one']:
+				if re.findall(regexp, text):
+					one = True
+					break
+			if not one:
+				return False
+		if self['validate'].has_key('deny'):
+			for regexp in self['validate']['deny']:
+				if re.findall(regexp, text):
+					return False
+		return True
 	
 	def popup_rcpt_menu(self, wdg, evt):
 		wdg.set_relief(gtk.RELIEF_NORMAL)
@@ -1015,6 +1094,7 @@ class compose_header_box(gtk.HBox):
 		super(self.__class__, self).show_all()
 		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_all_comp_hdr.get_active():
 			self.hide()
+		self.on_name_changed()
 	
 	def duplicate(self, evtwdg=None):
 		newbox = self.__class__(self['name'], self['value'], hntype=self.hntype)
@@ -1059,6 +1139,22 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.grab_focus()
 		self.wdg_value.set_position(-1)
 	
+	def scrollfocus(self):
+		scrwin = self.parent.parent
+		cntnr = scrwin.child
+		vadj = scrwin.get_vadjustment()
+		wdg = win_comp.get_focus()
+		
+		wleft, wtop = wdg.translate_coordinates(cntnr, 0, 0)
+		wbottom = wtop + wdg.get_allocation().height
+		top = vadj.value
+		bottom = top + vadj.page_size
+		if wtop < top:
+			vadj.value = wtop
+		elif wbottom > bottom:
+			vadj.value = wbottom - vadj.page_size
+		return False
+	
 	def __getitem__(self, key):
 		if key == 'name':
 			if self.hntype == self.HNTYPE_CUSTOM:
@@ -1071,6 +1167,10 @@ class compose_header_box(gtk.HBox):
 				return self.wdg_name.get_data('name')
 		elif key == 'value':
 			return self.wdg_value.get_text()
+		elif key == 'readonly':
+			return not self.wdg_value.get_sensitive()
+		elif key in ['validate', 'valid']:
+			return self.wdg_value.get_data(key)
 		else:
 			raise IndexError()
 
@@ -1082,6 +1182,7 @@ class compose_header_box(gtk.HBox):
 			else:
 				self.wdg_name.set_data('name', newvalue)
 				self.wdg_name.set_label(_(newvalue))
+			self.on_name_changed()
 		elif key == 'value':
 			self.wdg_value.set_text(newvalue)
 			if newvalue:
@@ -1090,15 +1191,77 @@ class compose_header_box(gtk.HBox):
 			self.wdg_name.set_sensitive(not newvalue)
 			self.wdg_value.set_sensitive(not newvalue)
 		elif key == 'validate':
-			pass # TODO content validator
+			self.wdg_value.set_data(key, newvalue)
+			self.on_value_changed()
+		elif key == 'valid':
+			assert isinstance(newvalue, bool)
+			self.wdg_value.set_data(key, newvalue)
 		else:
 			raise IndexError()
 
 
-def get_composer_headers(hname):
+class Clock(gtk.HBox):
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		self.spin_hour = gtk.SpinButton()
+		self.spin_minute = gtk.SpinButton()
+		self.spin_second = gtk.SpinButton()
+		self.spin_hour.set_range(0, 23)
+		self.spin_minute.set_range(0, 59)
+		self.spin_second.set_range(0, 59)
+		self.spin_hour.set_increments(1, 6)
+		self.spin_minute.set_increments(1, 15)
+		self.spin_second.set_increments(1, 15)
+		self.spin_hour.set_wrap(True)
+		self.spin_minute.set_wrap(True)
+		self.spin_second.set_wrap(True)
+		self.spin_hour.set_numeric(True)
+		self.spin_minute.set_numeric(True)
+		self.spin_second.set_numeric(True)
+		self.select_now()
+		self.pack_start(self.spin_hour, False, False)
+		self.pack_start(gtk.Label(':'), False, False)
+		self.pack_start(self.spin_minute, False, False)
+		self.pack_start(gtk.Label(':'), False, False)
+		self.pack_start(self.spin_second, False, False)
+		self.show_all()
+	
+	def select_now(self):
+		t = time.localtime()
+		self.spin_hour.set_value(t.tm_hour)
+		self.spin_minute.set_value(t.tm_min)
+		self.spin_second.set_value(t.tm_sec)
+	
+	def get_time(self):
+		return (self.spin_hour.get_value_as_int(), self.spin_minute.get_value_as_int(), self.spin_second.get_value_as_int())
+
+def prompt_datetime(entry):
+	def select_today():
+		y, m, d, x, x, x, x, x, x = time.localtime()
+		calendar.select_month(m-1, y)
+		calendar.select_day(d)
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL)
+	calendar = gtk.Calendar()
+	clock = Clock()
+	cbox = dlg.get_content_area()
+	cbox.pack_start(calendar, True, True)
+	cbox.pack_start(clock, True, True)
+	btn_now = StockButton(_("Now"), gtk.STOCK_JUMP_TO)
+	btn_now.connect('clicked', lambda x: select_today() or clock.select_now())
+	abox = dlg.get_action_area()
+	abox.pack_start(btn_now, False, False)
+	dlg.show_all()
+	resp = dlg.run()
+	if resp == gtk.RESPONSE_OK:
+		y, m, d = calendar.get_date()
+		H, M, S = clock.get_time()
+		entry.set_text(email.utils.formatdate(time.mktime((y, m, d, H, M, S, -1, -1, -1)), True))
+	dlg.destroy()
+
+def get_composer_headers(hname, even_if_hidden=False):
 	hlist = []
 	for hbox in panel_comp_header.children():
-		if hbox.get_visible():
+		if even_if_hidden or hbox.get_visible():
 			if hname is None:
 				hlist.append((hbox['name'], hbox['value']))
 			elif type(hname) == type([]) and hbox['name'] in hname:
@@ -1534,6 +1697,15 @@ def act_save():
 				savefile = os.path.join(savedir, basename)
 				save_to_file(eml, savefile)
 
+def get_xattr(file_, attrname):
+	if xattr is not None:
+		try:
+			return xattr.getxattr(file_, attrname)
+		except IOError, e:
+			if e.errno != os.errno.ENODATA:
+				raise e
+	return None
+
 def set_xattrs(fh, attrs, filename='-'):
 	if xattr is not None:
 		for attrname, attrval in attrs.iteritems():
@@ -1595,7 +1767,7 @@ def get_current_font(txtv):
 	pctx = txtv.get_pango_context()
 	fdsc = pctx.get_font_description()
 	s = fdsc.to_string()
-	m = re.match('\s(\d+)(\s|$)', s)
+	m = re.search('\s(\d+)(\s|$)', s)
 	if m: pt = int(m.group(1))
 	else: pt = 12
 	return {'family': fdsc.get_family().lower(), 'string': s.lower(), 'size': pt, 'desc': fdsc,}
@@ -1777,8 +1949,18 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 	tvc.add_attribute(cr_pix, 'pixbuf', 3)
 
 
+def validate_all_comp_headers():
+	for n in range(0, len(panel_comp_header.children())):
+		box = panel_comp_header.children()[n]
+		valid = box.on_value_changed()
+		if not valid:
+			return False
+	return True
+
 def act_send():
 	msg = ''
+	if not validate_all_comp_headers():
+		return
 	if not get_composer_subject():
 		msg += _("No Subject.\n")
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
@@ -1862,6 +2044,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
+			set_xattrs(cliArgs.FILE, {XATTR_MDNSENT: 'yes'}, cliArgs.FILE)
 	else:
 		img.set_from_icon_name(gtk.STOCK_DIALOG_ERROR, gtk.ICON_SIZE_DIALOG)
 		dlg.set_markup(_("Sendmail error %s." % (status.code)) + '\n<tt>' + glib.markup_escape_text(resp) + '</tt>')
@@ -2080,8 +2263,9 @@ def act_dispos_notif():
 			'subject': get_one_header_main('Subject'),
 			'delivery_date': get_one_header_main('Delivery-Date') or '(somewhen)',
 			}
-		set_composer_subject(Ltxt_subj.format(**prms))
+		subject_text = Ltxt_subj.format(**prms)
 		message_text = ''.join(map(lambda x: x+'\n', textwrap.wrap(Ltxt_body.format(**prms), 79)))
+		set_composer_subject(subject_text)
 		set_composer_text(message_text)
 		
 		dn_part = MIMEBase('message', 'disposition-notification')
@@ -2097,7 +2281,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, Ltxt_subj, 'mail-mark-read', None])
+		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -2108,13 +2292,9 @@ def act_req_dispos_notif():
 		box_gdr = add_composer_header(HDR_GDR, 'Yes')
 		box_gdr['readonly'] = True
 		
-		Froms = get_composer_headers('From')
+		Froms = get_composer_headers('From', even_if_hidden=True)
 		From = Froms[0] if len(Froms) > 0 else ''
 		box_dnt = add_composer_header(HDR_DNT, From)
-		box_dnt['validate'] = VAL_EMAIL
-		if not From:
-			show_advanced_comp_hdr()
-			box_dnt.focus()
 	else:
 		clear_composer_headers(HDR_GDR)
 		clear_composer_headers(HDR_DNT)
@@ -2242,10 +2422,25 @@ HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MI = 'Message-ID'
+RE_EMAIL = '[a-zA-Z0-9_\.-]+@[a-zA-Z0-9_\.-]+'
 VAL_EMAIL = {
-	'require': ['^[[:alnum:]_\.-]+@[[:alnum:]_\.-]+$'],
-	'deny': ['\.\.'],
+	'all': ['^' + RE_EMAIL + '$'],
+	'deny': ['\.\.', '(^|@|<)[\.-]', '[\.-](@|>|$)'],
 	}
+VAL_ADDRESS = {
+	'one': [
+		'^\s*"[^"]*"\s*<' + RE_EMAIL + '>\s*$',
+		'^\s*\S*\s*<' + RE_EMAIL + '>\s*$',
+		'^\s*' + RE_EMAIL + '\s*$',
+		],
+	'deny': VAL_EMAIL['deny'],
+	}
+VAL_AGE = {
+	'all': ['^\d+[shmdwy]$'],
+}
+VAL_DATE = {
+	'all': ['^[a-zA-Z]+,\s*\d+\s+[a-zA-Z]+\s+\d\d\d\d\s+\d\d:\d\d:\d\d\s+[+-]\d+$'],
+}
 Email = None
 PartPrimary = None
 PartSecondary = None
@@ -2253,7 +2448,7 @@ LastFolder = os.getcwd()
 OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
-DateTimeHeaders = ['Date', 'Reply-By', 'Expires']
+DateTimeHeaders = ['Date', 'Reply-By', 'Expires', 'Deliver-At-Date']
 PopularHeaders = ['Subject']
 AdvancedHeaders = [
 	'References', 'In-Reply-To', HDR_DNT,
@@ -2261,16 +2456,26 @@ AdvancedHeaders = [
 	'Priority', 'Importance', 'Precedence',
 	'Newsgroups', 'Followup-To', 'Thread-Topic',
 	'Content-Language', 'Accept-Language',
-	'Expires', 'Deliver-At-Age', 'Deliver-At-Date',
+	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 	]
+Importances = ['low','normal','high']
+Priorities = ['non-urgent','normal','urgent']
+ValidatorHeaders = {
+	HDR_DNT: VAL_ADDRESS,
+	'Deliver-At-Age': VAL_AGE,
+	'Priority': Priorities,
+	'Importance': Importances,
+	'Precedence': ['list', 'junk', 'bulk'],
+}
+for h in DateTimeHeaders:
+	ValidatorHeaders[h] = VAL_DATE
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
+XATTR_MDNSENT = 'user.gemlv.mdn_sent'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)
-Importances = ['low','normal','high']
-Priorities = ['non-urgent','normal','urgent']
 
 
 ### Parse Arguments ###
@@ -2502,7 +2707,7 @@ win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=120, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[0]-150)
-spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
 panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -2577,6 +2782,7 @@ Magic.load()
 signal.signal(signal.SIGTERM, sighandler)
 if cliArgs.compose:
 	open_composer()
+	add_composer_agent_headers()
 	if cliArgs.FILE:
 		# TODO load email
 		win_comp.set_data('saved-to-file', cliArgs.FILE)
