@@ -967,6 +967,7 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', set_unsaved)
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.completer = gtk.EntryCompletion()
+		self.wdg_value.connect('focus', lambda widget, direction: self.completer.complete())  # FIXME
 		self.wdg_value.set_completion(self.completer)
 		self.completer.set_model(gtk.ListStore(str))
 		self.completer.set_minimum_key_length(0)
@@ -2098,6 +2099,46 @@ def on_after_save_draft():
 	set_unsaved(False)
 	panel_edit_message.get_buffer().set_modified(False)
 
+def act_addressbook():
+	win = gtk.Window()
+	box = gtk.VBox(False, 3)
+	ent = gtk.Entry()
+	scr = gtk.ScrolledWindow()
+	mod = gtk.ListStore(str)
+	flt = mod.filter_new()
+	trv = gtk.TreeView(flt)
+	sel = trv.get_selection()
+	bbx = gtk.HBox(True, 2)
+	bad = StockButton(stock=gtk.STOCK_ADD)
+	bcl = StockButton(stock=gtk.STOCK_CLOSE)
+	
+	for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
+		mod.append([ln.strip()])
+	
+	win.set_transient_for(win_comp)
+	win.set_modal(True)
+	win.set_default_size(280, 400)
+	win.set_border_width(4)
+	sel.set_mode(gtk.SELECTION_MULTIPLE)
+	scr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	trv.set_headers_visible(False)
+	trv.set_rules_hint(True)
+	trv.insert_column_with_attributes(0, '', gtk.CellRendererText(), text=0)
+	flt.set_visible_func(lambda mo, it, ent: mo[it][0].find(ent.get_text())>-1, ent)
+	win.connect('delete-event', lambda w, x: win.destroy())
+	ent.connect('changed', lambda w: flt.refilter())
+	bcl.connect('clicked', lambda w: win.destroy())
+	bad.connect('clicked', lambda w: add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1])))
+	
+	win.add(box)
+	box.pack_start(ent, False, True)
+	box.pack_start(scr, True, True)
+	scr.add_with_viewport(trv)
+	box.pack_start(bbx, False, True)
+	bbx.pack_start(bad, True, False)
+	bbx.pack_start(bcl, True, False)
+	win.show_all()
+
 def act_attach():
 	filename = choose_open_file()
 	if filename is not None:
@@ -2746,7 +2787,7 @@ menu_add_header.show_all()
 toolbuttons = [
 	("Send", 'mail-send', None, act_send, None),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save As...", act_save_edit, (act_save_edit, True)),
-	("Addressbook", 'x-office-address-book', None, None, None), # TODO
+	("Addressbook", 'x-office-address-book', None, act_addressbook, None),
 	("Attach File", 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
