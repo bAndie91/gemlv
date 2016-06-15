@@ -967,7 +967,6 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', set_unsaved)
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.completer = gtk.EntryCompletion()
-		self.wdg_value.connect('focus', lambda widget, direction: self.completer.complete())  # FIXME
 		self.wdg_value.set_completion(self.completer)
 		self.completer.set_model(gtk.ListStore(str))
 		self.completer.set_minimum_key_length(0)
@@ -1045,21 +1044,36 @@ class compose_header_box(gtk.HBox):
 		text = self['value']
 		if type(self['validate']) == list:
 			return (text in self['validate'] or '' in self['validate'])
+		if self['validate'].has_key('require'):
+			if not re.search(self['validate']['require'], text):
+				return False
+		if self['validate'].has_key('repetative'):
+			remainder = text
+			while True:
+				m = re.match(self['validate']['repetative'], remainder)
+				if m is not None:
+					remainder = remainder[m.end():]
+					if remainder == '':
+						break
+				else:
+					return False
+			if remainder != '':
+				return False
 		if self['validate'].has_key('all'):
 			for regexp in self['validate']['all']:
-				if not re.findall(regexp, text):
+				if not re.search(regexp, text):
 					return False
 		if self['validate'].has_key('one'):
 			one = False
 			for regexp in self['validate']['one']:
-				if re.findall(regexp, text):
+				if re.search(regexp, text):
 					one = True
 					break
 			if not one:
 				return False
 		if self['validate'].has_key('deny'):
 			for regexp in self['validate']['deny']:
-				if re.findall(regexp, text):
+				if re.search(regexp, text):
 					return False
 		return True
 	
@@ -2064,7 +2078,7 @@ def build_newemail():
 			continue
 		idx += 1
 	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
-		if len(hval) > 0:
+		if len(hname) > 0 and len(hval) > 0:
 			mimeheader = make_header([(hval, 'UTF-8')])
 			NewEmail.add_header(hname, str(mimeheader))
 
@@ -2100,6 +2114,17 @@ def on_after_save_draft():
 	panel_edit_message.get_buffer().set_modified(False)
 
 def act_addressbook():
+	def dblclick(wdg, evt):
+		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
+			x = int(evt.x)
+			y = int(evt.y)
+			pathinfo = trv.get_path_at_pos(x, y)
+			if pathinfo is not None:
+				itpath, col, cellx, celly = pathinfo
+				add_composer_header('To', mod[mod.get_iter(itpath)][0])
+	def click_add(btn):
+		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1]))
+	
 	win = gtk.Window()
 	box = gtk.VBox(False, 3)
 	ent = gtk.Entry()
@@ -2127,8 +2152,9 @@ def act_addressbook():
 	flt.set_visible_func(lambda mo, it, ent: mo[it][0].find(ent.get_text())>-1, ent)
 	win.connect('delete-event', lambda w, x: win.destroy())
 	ent.connect('changed', lambda w: flt.refilter())
+	trv.connect('button-press-event', dblclick)
 	bcl.connect('clicked', lambda w: win.destroy())
-	bad.connect('clicked', lambda w: add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1])))
+	bad.connect('clicked', click_add)
 	
 	win.add(box)
 	box.pack_start(ent, False, True)
@@ -2463,25 +2489,22 @@ HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MI = 'Message-ID'
-RE_EMAIL = '[a-zA-Z0-9_\.-]+@[a-zA-Z0-9_\.-]+'
+RE_EMAIL = '(?P<LP>[a-z_][\w\.-]*(?<![\.-]))@(?P<DP>(?:[a-z0-9][a-z0-9-]*(?<!-)\.)*[a-z0-9][a-z0-9-]*(?<!-)\.?)'
 VAL_EMAIL = {
-	'all': ['^' + RE_EMAIL + '$'],
-	'deny': ['\.\.', '(^|@|<)[\.-]', '[\.-](@|>|$)'],
+	'require': '^' + RE_EMAIL + '$',
+	}
+VAL_ADDRESSES = {
+	'repetative': r'^(?i)\s*(?:(?P<DQ>"|)(?P<N>(?<=")(?:[^"\\\n]|\\["\\])*|\w[\w\.-]*)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
 	}
 VAL_ADDRESS = {
-	'one': [
-		'^\s*"[^"]*"\s*<' + RE_EMAIL + '>\s*$',
-		'^\s*\S*\s*<' + RE_EMAIL + '>\s*$',
-		'^\s*' + RE_EMAIL + '\s*$',
-		],
-	'deny': VAL_EMAIL['deny'],
+	'require': VAL_ADDRESSES['repetative'] + '$',
 	}
 VAL_AGE = {
-	'all': ['^\d+[shmdwy]$'],
-}
+	'require': '^\d+[shmdwy]$',
+	}
 VAL_DATE = {
-	'all': ['^[a-zA-Z]+,\s*\d+\s+[a-zA-Z]+\s+\d\d\d\d\s+\d\d:\d\d:\d\d\s+[+-]\d+$'],
-}
+	'require': '^[a-zA-Z]+,\s*([012]\d|3[01]|\d)\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])\d\d(:([0-5]\d)){2}\s+[+-]\d+$',
+	}
 Email = None
 PartPrimary = None
 PartSecondary = None
@@ -2503,7 +2526,12 @@ AdvancedHeaders = [
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
 ValidatorHeaders = {
+	'From': VAL_ADDRESS,
+	'Reply-To': VAL_ADDRESS,
 	HDR_DNT: VAL_ADDRESS,
+	'To': VAL_ADDRESSES,
+	'Cc': VAL_ADDRESSES,
+	'Bcc': VAL_ADDRESSES,
 	'Deliver-At-Age': VAL_AGE,
 	'Priority': Priorities,
 	'Importance': Importances,
