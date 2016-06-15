@@ -2079,8 +2079,14 @@ def build_newemail():
 		idx += 1
 	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
 		if len(hname) > 0 and len(hval) > 0:
-			mimeheader = make_header([(hval, 'UTF-8')])
-			NewEmail.add_header(hname, str(mimeheader))
+			enchunks = []
+			for chunk in hval.split(' '):
+				try:
+					enchunk = make_header([(chunk, None)])
+				except UnicodeDecodeError:
+					enchunk = make_header([(chunk, 'UTF-8')])
+				enchunks.append(str(enchunk))
+			NewEmail.add_header(hname, ' '.join(enchunks))
 
 	text = get_composer_text()
 	text_qp = text.encode('quoted-printable')
@@ -2489,7 +2495,7 @@ HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MI = 'Message-ID'
-RE_EMAIL = '(?P<LP>[a-z_][\w\.-]*(?<![\.-]))@(?P<DP>(?:[a-z0-9][a-z0-9-]*(?<!-)\.)*[a-z0-9][a-z0-9-]*(?<!-)\.?)'
+RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:[a-z0-9][a-z0-9-]*(?<!-)\.)*[a-z0-9][a-z0-9-]*(?<!-)\.?)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
