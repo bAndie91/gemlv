@@ -469,7 +469,7 @@ def load_file(filename):
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
 	if (Email[HDR_DNT] or '').strip():
-		if get_xattr(cliArgs.FILE, XATTR_MDNSENT).lower().find('yes')<0:
+		if get_xattr(cliArgs.FILE, XATTR_MDNSENT) is not None:
 			menubutton_mdn.show()
 	
 	if get_listaddress_main() is not None:
@@ -478,7 +478,7 @@ def load_file(filename):
 		menubutton_unsubscribe.show()
 	
 	panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header_main('Subject', ''))) + PMU_SUBJ_CLOSE)
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header_main('Subject') or '')) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
@@ -642,10 +642,9 @@ def decode_header(s, unfold=False):
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
-def get_one_header_main(hname, dflt=None, unfold=True):
+def get_one_header_main(hname, unfold=True):
 	hval = Email[hname]
-	if hval is None:
-		return dflt
+	if hval is None: return hval
 	return decode_header(hval, unfold=unfold)
 
 def get_all_headers_main(hname):
@@ -926,9 +925,9 @@ def set_composer_headers(hname, hvals):
 	for hval in hvals:
 		add_composer_header(hname, hval)
 
-def clear_composer_headers(hname):
+def clear_composer_headers(hname, content=None):
 	for box in panel_comp_header.children():
-		if hname is None or box['name'] == hname:
+		if (hname is None or box['name'] == hname) and (content is None or content == box['value']):
 			box.cancel(manual=False)
 
 class compose_header_box(gtk.HBox):
@@ -1332,6 +1331,7 @@ def open_composer():
 	set_composer_text('')
 
 	win_comp.set_data('is-an-mdn', False)
+	win_comp.set_data('set-xattr-on-send', [])
 	win_comp.set_data('saved-to-file', None)
 	on_after_save_draft()
 	return True
@@ -1405,11 +1405,12 @@ def act_compose():
 def act_reply(recip):
 	if open_composer():
 		add_composer_agent_headers()
-		subj = get_one_header_main('Subject', '')
+		subj = get_one_header_main('Subject') or ''
 		body = '\n\n' + get_user_signature()
 		my_address = guess_my_address()
 
 		if recip == '':
+			win_comp.set_data('set-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (subj or _("Email")) + '.eml'
 			pre = _("Fwd: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
@@ -1424,7 +1425,8 @@ def act_reply(recip):
 			NewEmail.attach(part)
 			Attachments.append(None, [part, fwdname, 'emblem-mail', None])
 		else:
-			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic', subj))
+			win_comp.set_data('set-xattr-on-send', [XATTR_REPLIED])
+			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or subj)
 			pre = _("Re: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
@@ -1462,6 +1464,7 @@ def act_reply(recip):
 					add_composer_header('To', listaddress)
 			elif recip == 'list':
 				add_composer_header('To', listaddress)
+		
 		set_composer_text(body)
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -1633,6 +1636,8 @@ def close_razor_window_handler(wnd):
 def get_extension_by_mime(mime):
 	if mime is None:
 		e = None
+	elif mime.startswith('multipart/'):
+		e = '.eml'
 	else:
 		e = guess_extension(mime)
 	if e is None:
@@ -1666,7 +1671,7 @@ def calc_attachment_name(part, n=None):
 	if name is None:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s%s" % (get_one_header_main('Subject', _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
+		name = "%s - attachment%s%s" % (get_one_header_main('Subject') or _("Email"), sfx, get_extension_by_mime(part.get_content_type()))
 	return name
 
 def act_save_struct():
@@ -1678,10 +1683,11 @@ def act_save_struct():
 
 def act_save_struct_inner(savedir, iterator):
 	part = Parts[iterator][0]
+	oid = '-'.join(map(str, Parts.get_path(iterator)))
 	myname = part.get_filename()
-	if not myname:
-		myname = 'multipart-%s' % ('-'.join(map(str, Parts.get_path(iterator))))
 	if Parts.iter_has_child(iterator):
+		if not myname:
+			myname = 'multipart-%s' % (oid)
 		mysavedir = os.path.join(savedir, myname)
 		try:
 			mkdir(mysavedir)
@@ -1692,6 +1698,8 @@ def act_save_struct_inner(savedir, iterator):
 				subiter = Parts.iter_nth_child(iterator, nth)
 				act_save_struct_inner(mysavedir, subiter)
 	else:
+		if not myname:
+			myname = 'part-%s%s' % (oid, get_extension_by_mime(part.get_content_type()))
 		savefile = os.path.join(savedir, myname)
 		save_to_file(part, savefile)
 
@@ -1745,7 +1753,11 @@ def save_to_file(eml, filename, ask_overwrite=True):
 		fh = open(filename, 'w')
 		fd = fh.fileno()
 		save_to_filedescriptor(eml, fd)
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: eml.get_content_type()}, filename)
+		if eml.get_content_maintype() == 'multipart':
+			mimetype = 'message/rfc822'
+		else:
+			mimetype = eml.get_content_type()
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype}, filename)
 		fh.flush()
 		moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
 		if moddatetime:
@@ -1967,9 +1979,10 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 def validate_all_comp_headers():
 	for n in range(0, len(panel_comp_header.children())):
 		box = panel_comp_header.children()[n]
-		valid = box.on_value_changed()
-		if not valid:
-			return False
+		if box.get_visible():
+			valid = box.on_value_changed()
+			if not valid:
+				return False
 	return True
 
 def act_send():
@@ -2059,7 +2072,10 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
-			set_xattrs(cliArgs.FILE, {XATTR_MDNSENT: 'yes'}, cliArgs.FILE)
+		if hasattr(cliArgs, 'FILE'):
+			MsgId = NewEmail['Message-ID']
+			for xattrname in win_comp.get_data('set-xattr-on-send'):
+				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
 		img.set_from_icon_name(gtk.STOCK_DIALOG_ERROR, gtk.ICON_SIZE_DIALOG)
 		dlg.set_markup(_("Sendmail error %s." % (status.code)) + '\n<tt>' + glib.markup_escape_text(resp) + '</tt>')
@@ -2087,7 +2103,11 @@ def build_newemail():
 					enchunk = make_header([(chunk, 'UTF-8')])
 				enchunks.append(str(enchunk))
 			NewEmail.add_header(hname, ' '.join(enchunks))
-
+	
+	# if there is not Message-ID but we must set at least one xattr
+	if not NewEmail[HDR_MI] and win_comp.get_data('set-xattr-on-send'):
+		NewEmail.add_header(HDR_MI, email.utils.make_msgid())
+	
 	text = get_composer_text()
 	text_qp = text.encode('quoted-printable')
 	text_b64 = text.encode('base64')
@@ -2127,8 +2147,10 @@ def act_addressbook():
 			pathinfo = trv.get_path_at_pos(x, y)
 			if pathinfo is not None:
 				itpath, col, cellx, celly = pathinfo
+				clear_composer_headers('To', '')
 				add_composer_header('To', mod[mod.get_iter(itpath)][0])
 	def click_add(btn):
+		clear_composer_headers('To', '')
 		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1]))
 	
 	win = gtk.Window()
@@ -2308,6 +2330,7 @@ def act_dispos_notif():
 		NewEmail.set_param('report-type', 'disposition-notification')
 		
 		win_comp.set_data('is-an-mdn', True)
+		win_comp.set_data('set-xattr-on-send', [XATTR_MDNSENT])
 		add_composer_agent_headers()
 		pndr_box = add_composer_header(HDR_PNDR, 'yes')
 		pndr_box['readonly'] = True
@@ -2495,7 +2518,7 @@ HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MI = 'Message-ID'
-RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:[a-z0-9][a-z0-9-]*(?<!-)\.)*[a-z0-9][a-z0-9-]*(?<!-)\.?)'
+RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
@@ -2509,7 +2532,7 @@ VAL_AGE = {
 	'require': '^\d+[shmdwy]$',
 	}
 VAL_DATE = {
-	'require': '^[a-zA-Z]+,\s*([012]\d|3[01]|\d)\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])\d\d(:([0-5]\d)){2}\s+[+-]\d+$',
+	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}$',
 	}
 Email = None
 PartPrimary = None
@@ -2548,6 +2571,8 @@ for h in DateTimeHeaders:
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
 XATTR_MDNSENT = 'user.gemlv.mdn_sent'
+XATTR_REPLIED = 'user.gemlv.replied'
+XATTR_FORWARDED = 'user.gemlv.forwarded'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 Magic = magic.open(magic.MAGIC_MIME_TYPE)

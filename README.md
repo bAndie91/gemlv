@@ -31,10 +31,14 @@ Email viewer and composer for local emails in GTK
 	- move Email file into / out from ```Spam``` folder
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
-	- edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+	- can edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 	- importance buttons influences Importance and Priority headers
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) as arbitrary ones as well
-	- request Disposition Notification by setting Message-Disposition-To header
+	- can request Disposition Notification by setting Message-Disposition-To header
+	- validate email address syntax
+	- pick date and time from a calendar when editing date-like headers
+	- addressbook
+		- read plain email addresses line by line
 - reply options
 	- handle Reply-To field
 	- set References, In-Reply-To headers
@@ -43,8 +47,9 @@ Email viewer and composer for local emails in GTK
 	- Reply To List
 	- Forward: attach original email, not quote
 	- send Disposition Notification on demand
-		- even for messages not requested it
+		- even for messages have not requested it
 		- human readable message in language which is declared in Accept-Language header
+	- store replied/forwarded/mdn-sent state in x-attribute
 - attachments in compose mode
 	- attach files and even whole subdirectories
 		- by browsing them
