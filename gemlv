@@ -1232,7 +1232,7 @@ class Clock(gtk.HBox):
 		self.spin_hour.set_numeric(True)
 		self.spin_minute.set_numeric(True)
 		self.spin_second.set_numeric(True)
-		self.select_now()
+		self.select_time()
 		self.pack_start(self.spin_hour, False, False)
 		self.pack_start(gtk.Label(':'), False, False)
 		self.pack_start(self.spin_minute, False, False)
@@ -1240,8 +1240,8 @@ class Clock(gtk.HBox):
 		self.pack_start(self.spin_second, False, False)
 		self.show_all()
 	
-	def select_now(self):
-		t = time.localtime()
+	def select_time(self, ts=None):
+		t = time.localtime(ts)
 		self.spin_hour.set_value(t.tm_hour)
 		self.spin_minute.set_value(t.tm_min)
 		self.spin_second.set_value(t.tm_sec)
@@ -1250,18 +1250,22 @@ class Clock(gtk.HBox):
 		return (self.spin_hour.get_value_as_int(), self.spin_minute.get_value_as_int(), self.spin_second.get_value_as_int())
 
 def prompt_datetime(entry):
-	def select_today():
-		y, m, d, x, x, x, x, x, x = time.localtime()
+	def select_datetime(ts=None):
+		y, m, d, x, x, x, x, x, x = time.localtime(ts)
 		calendar.select_month(m-1, y)
 		calendar.select_day(d)
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL)
+		clock.select_time(ts)
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
 	calendar = gtk.Calendar()
 	clock = Clock()
+	dt = email.utils.parsedate_tz(entry.get_text())
+	if dt is not None:
+		select_datetime(email.utils.mktime_tz(dt))
 	cbox = dlg.get_content_area()
 	cbox.pack_start(calendar, True, True)
 	cbox.pack_start(clock, True, True)
 	btn_now = StockButton(_("Now"), gtk.STOCK_JUMP_TO)
-	btn_now.connect('clicked', lambda x: select_today() or clock.select_now())
+	btn_now.connect('clicked', lambda x: select_datetime())
 	abox = dlg.get_action_area()
 	abox.pack_start(btn_now, False, False)
 	dlg.show_all()
@@ -1269,7 +1273,7 @@ def prompt_datetime(entry):
 	if resp == gtk.RESPONSE_OK:
 		y, m, d = calendar.get_date()
 		H, M, S = clock.get_time()
-		entry.set_text(email.utils.formatdate(time.mktime((y, m, d, H, M, S, -1, -1, -1)), True))
+		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
 def get_composer_headers(hname, even_if_hidden=False):
