@@ -302,3 +302,18 @@ msgstr "Tértivevény küldése"
 msgid "Reply\nRight click: Send a Message Disposition Notification"
 msgstr "Válasz\njobb klikk: Tértivevény küldése"
 
+msgid "Select Date and Time in local TimeZone"
+msgstr "Válassz helyi időzóna szerinti dátumot és időt"
+
+msgid "Now"
+msgstr "Most"
+
+msgid "No Subject."
+msgstr "Nincs tárgy."
+
+msgid "No any Recipient."
+msgstr "Nincs címzett."
+
+msgid "missing email address"
+msgstr "hiányzó email cím"
+

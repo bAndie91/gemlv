@@ -874,13 +874,15 @@ def act_comp_hdr_menuitem(mi, hname=None):
 	box = add_composer_header__direct(hname)
 	if on == False:
 		box.cancel()
-	glib.idle_add(box.scrollfocus, priority=glib.PRIORITY_HIGH_IDLE)
+	else:
+		glib.idle_add(box.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
 	return True
 
 def act_all_comp_hdr(mi):
 	show_advanced_comp_hdr(mi.active)
 
 def show_advanced_comp_hdr(show=True):
+	clear_composer_headers('', '')
 	for n in range(0, len(panel_comp_header.children())):
 		box = panel_comp_header.children()[n]
 		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
@@ -947,15 +949,16 @@ class compose_header_box(gtk.HBox):
 				hntype = self.HNTYPE_MENU
 			else:
 				hntype = self.HNTYPE_CUSTOM
+		
 		self.hntype = hntype
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
-			self.wdg_name.connect('changed', set_unsaved)
 			self.wdg_name.connect('changed', self.on_name_changed)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
 			self.wdg_name.set_relief(gtk.RELIEF_NONE)
 			self.wdg_name.connect('button-release-event', self.popup_rcpt_menu)
+			self.wdg_name.connect('button-press-event', self.propagate_button_press_event)
 		elif self.hntype == self.HNTYPE_LABEL:
 			plus = False
 			self.wdg_name = gtk.Label()
@@ -974,21 +977,30 @@ class compose_header_box(gtk.HBox):
 		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_datetime, False, False)
-		self.btn_datetime.connect('clicked', lambda x, ent: prompt_datetime(ent), self.wdg_value)
+		self.btn_datetime.connect('clicked', self.pick_datetime)
+		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
 		if plus:
 			self.btn_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
 			self.pack_start(self.btn_add, False, False)
 			self.btn_add.set_relief(gtk.RELIEF_NONE)
 			self.btn_add.connect('clicked', self.duplicate)
+			self.btn_add.connect('button-press-event', self.propagate_button_press_event)
 		if minus:
 			self.btn_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
 			self.btn_del.set_relief(gtk.RELIEF_NONE)
 			self.pack_start(self.btn_del, False, False)
 			self.btn_del.connect('clicked', self.cancel)
+			self.btn_del.connect('button-press-event', self.propagate_button_press_event)
 		
 		self['name'] = chname
 		self['value'] = val
+	
+	def propagate_button_press_event(self, w, evt):
+		self.parent.parent.parent.emit('button-press-event', evt)
+	
+	def pick_datetime(self, w):
+		prompt_datetime(self.wdg_value)
 	
 	def on_name_changed(self, x=None):
 		name = self['name']
@@ -1025,8 +1037,8 @@ class compose_header_box(gtk.HBox):
 			self['valid'] = False
 			if self.hntype == self.HNTYPE_CUSTOM:
 				menuitem_all_comp_hdr.set_active(True)
-				self.focus()
-				glib.idle_add(self.scrollfocus)
+			self.focus()
+			glib.idle_add(self.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
 		self.on_changed()
 		return valid
 
@@ -1041,6 +1053,8 @@ class compose_header_box(gtk.HBox):
 		if not self['validate']:
 			return True
 		text = self['value']
+		if text == '':
+			return True
 		if type(self['validate']) == list:
 			return (text in self['validate'] or '' in self['validate'])
 		if self['validate'].has_key('require'):
@@ -1077,21 +1091,23 @@ class compose_header_box(gtk.HBox):
 		return True
 	
 	def popup_rcpt_menu(self, wdg, evt):
-		wdg.set_relief(gtk.RELIEF_NORMAL)
-		mnu = gtk.Menu()
-		mnu.connect('deactivate', self.popup_rcpt_menu_disappear, wdg)
-		for chname in RecipientHeaders:
-			mi = gtk.MenuItem(label=_(chname))
-			mi.set_data('name', chname)
-			mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
-			mnu.append(mi)
-		mnu.show_all()
-		mnu.popup(None, None, self.bottomleft, evt.button, evt.time, wdg)
+		if evt.button == 1:
+			wdg.set_relief(gtk.RELIEF_NORMAL)
+			mnu = gtk.Menu()
+			mnu.connect('deactivate', self.popup_rcpt_menu_disappear, wdg)
+			for chname in RecipientHeaders:
+				mi = gtk.MenuItem(label=_(chname))
+				mi.set_data('name', chname)
+				mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
+				mnu.append(mi)
+			mnu.show_all()
+			mnu.popup(None, None, self.bottomleft, evt.button, evt.time, wdg)
+			return True
+		return False
 	
 	def popup_rcpt_menuitem_activated(self, mi, wdg):
 		self['name'] = mi.get_data('name')
 		self.popup_rcpt_menu_disappear(mi.parent, wdg)
-		set_unsaved()
 	
 	def popup_rcpt_menu_disappear(self, mnu, wdg):
 		wdg.set_relief(gtk.RELIEF_NONE)
@@ -1120,7 +1136,7 @@ class compose_header_box(gtk.HBox):
 				self.parent.reorder_child(newbox, n)
 	
 	def cancel(self, evtwdg=None, manual=True):
-		if self['value']:
+		if self['name'] and self['value']:
 			set_unsaved()
 		if self.hntype == self.HNTYPE_LABEL:
 			self.hide()
@@ -1134,11 +1150,13 @@ class compose_header_box(gtk.HBox):
 					if x.hntype == self.HNTYPE_MENU: n += 1
 					if n > 1: break
 				if n < 2: return False
+			# FIXME
 			if self['name'] == 'Importance':
 				if self['value'].lower().find('low')>-1:
 					ninja_toggle(toggle_unimportant, False)
 				if self['value'].lower().find('high')>-1: 
 					ninja_toggle(toggle_important, False)
+			# FIXME
 			if self['name'] == HDR_DNT:
 				ninja_toggle(toggle_rqdn, False)
 			self.parent.remove(self)
@@ -1154,20 +1172,21 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.set_position(-1)
 	
 	def scrollfocus(self):
-		scrwin = self.parent.parent
-		cntnr = scrwin.child
-		vadj = scrwin.get_vadjustment()
-		wdg = win_comp.get_focus()
-		
-		wleft, wtop = wdg.translate_coordinates(cntnr, 0, 0)
-		wbottom = wtop + wdg.get_allocation().height
-		top = vadj.value
-		bottom = top + vadj.page_size
-		if wtop < top:
-			vadj.value = wtop
-		elif wbottom > bottom:
-			vadj.value = wbottom - vadj.page_size
-		return False
+		if self.get_visible():
+			scrwin = self.parent.parent
+			cntnr = scrwin.child
+			vadj = scrwin.get_vadjustment()
+			wdg = win_comp.get_focus()
+			
+			if wdg is not None:
+				wleft, wtop = wdg.translate_coordinates(cntnr, 0, 0)
+				wbottom = wtop + wdg.get_allocation().height
+				top = vadj.value
+				bottom = top + vadj.page_size
+				if wtop < top:
+					vadj.value = wtop
+				elif wbottom > bottom:
+					vadj.value = wbottom - vadj.page_size
 	
 	def __getitem__(self, key):
 		if key == 'name':
@@ -1187,16 +1206,18 @@ class compose_header_box(gtk.HBox):
 			return self.wdg_value.get_data(key)
 		else:
 			raise IndexError()
-
+	
 	def __setitem__(self, key, newvalue):
 		if key == 'name':
+			old = self[key]
 			self.wdg_name.set_data('name', newvalue)
 			if self.hntype == self.HNTYPE_CUSTOM:
 				self.wdg_name.children()[0].set_text(newvalue)
 			else:
 				self.wdg_name.set_data('name', newvalue)
 				self.wdg_name.set_label(_(newvalue))
-			self.on_name_changed()
+			if old != newvalue:
+				self.on_name_changed()
 		elif key == 'value':
 			self.wdg_value.set_text(newvalue)
 			if newvalue:
@@ -1328,7 +1349,7 @@ def open_composer():
 	win_comp.show_all()
 	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
-	add_composer_from_hidden()
+	add_composer_From_hidden()
 	for h in SenderHeaders:
 		add_composer_header(h).cancel()
 	set_composer_subject('')
@@ -1388,7 +1409,7 @@ def guess_reply_address():
 			return get_one_header_main(h)
 	return None
 
-def add_composer_from_hidden():
+def add_composer_From_hidden():
 	addr = guess_my_address()
 	if addr is not None:
 		name = get_gecos_name()
@@ -1994,9 +2015,9 @@ def act_send():
 	if not validate_all_comp_headers():
 		return
 	if not get_composer_subject():
-		msg += _("No Subject.\n")
+		msg += _("No Subject." + '\n')
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		msg += _("No any Recipient.\n")
+		msg += _("No any Recipient." + '\n')
 	if msg != '':
 		msg += _("Send anyway?")
 		if not question(msg, (_("Send"), 'mail-send')):
@@ -2393,7 +2414,9 @@ def act_req_dispos_notif():
 		box_gdr['readonly'] = True
 		
 		Froms = get_composer_headers('From', even_if_hidden=True)
-		From = Froms[0] if len(Froms) > 0 else ''
+		From = Froms[0]
+		if From == '':
+			From = '[' + _("missing email address") + ']'
 		box_dnt = add_composer_header(HDR_DNT, From)
 	else:
 		clear_composer_headers(HDR_GDR)
@@ -2527,7 +2550,7 @@ VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
 VAL_ADDRESSES = {
-	'repetative': r'^(?i)\s*(?:(?P<DQ>"|)(?P<N>(?<=")(?:[^"\\\n]|\\["\\])*|\w[\w\.-]*)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
+	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\\\n]|\\[\x22\\])*|\w[\w\.-]*)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
 	}
 VAL_ADDRESS = {
 	'require': VAL_ADDRESSES['repetative'] + '$',
