@@ -966,7 +966,6 @@ class compose_header_box(gtk.HBox):
 		
 		self.wdg_value = gtk.Entry()
 		self.pack_start(self.wdg_value, True, True)
-		self.wdg_value.connect('changed', set_unsaved)
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
@@ -1002,12 +1001,15 @@ class compose_header_box(gtk.HBox):
 	def pick_datetime(self, w):
 		prompt_datetime(self.wdg_value)
 	
-	def on_name_changed(self, x=None):
-		name = self['name']
-		if name in DateTimeHeaders:
+	def showhide_pick_buttons(self):
+		if self['name'] in DateTimeHeaders:
 			self.btn_datetime.show()
 		else:
 			self.btn_datetime.hide()
+	
+	def on_name_changed(self, x=None):
+		name = self['name']
+		self.showhide_pick_buttons()
 		if name in ValidatorHeaders.keys():
 			self['validate'] = ValidatorHeaders[name]
 		else:
@@ -1035,10 +1037,7 @@ class compose_header_box(gtk.HBox):
 			bg_invalid = gtk.gdk.Color('#FFA4A4')
 			entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
 			self['valid'] = False
-			if self.hntype == self.HNTYPE_CUSTOM:
-				menuitem_all_comp_hdr.set_active(True)
-			self.focus()
-			glib.idle_add(self.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
+			self.point_out()
 		self.on_changed()
 		return valid
 
@@ -1048,6 +1047,7 @@ class compose_header_box(gtk.HBox):
 		if name == 'Importance':
 			ninja_toggle(toggle_unimportant, val.lower().find('low')>-1)
 			ninja_toggle(toggle_important, val.lower().find('high')>-1)
+		set_unsaved()
 	
 	def validate(self):
 		if not self['validate']:
@@ -1090,6 +1090,12 @@ class compose_header_box(gtk.HBox):
 					return False
 		return True
 	
+	def point_out(self):
+		if self.hntype == self.HNTYPE_CUSTOM:
+			menuitem_all_comp_hdr.set_active(True)
+		self.focus()
+		glib.idle_add(self.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
+	
 	def popup_rcpt_menu(self, wdg, evt):
 		if evt.button == 1:
 			wdg.set_relief(gtk.RELIEF_NORMAL)
@@ -1124,7 +1130,7 @@ class compose_header_box(gtk.HBox):
 		super(self.__class__, self).show_all()
 		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_all_comp_hdr.get_active():
 			self.hide()
-		self.on_name_changed()
+		self.showhide_pick_buttons()
 	
 	def duplicate(self, evtwdg=None):
 		newbox = self.__class__(self['name'], self['value'], hntype=self.hntype)
@@ -1220,8 +1226,6 @@ class compose_header_box(gtk.HBox):
 				self.on_name_changed()
 		elif key == 'value':
 			self.wdg_value.set_text(newvalue)
-			if newvalue:
-				set_unsaved()
 		elif key == 'readonly':
 			self.wdg_name.set_sensitive(not newvalue)
 			self.wdg_value.set_sensitive(not newvalue)
@@ -1653,6 +1657,7 @@ def close_razor_window_handler(wnd):
 		if thread.is_alive():
 			return True
 	wnd.connect('delete-event', lambda w, e: w.destroy())
+	add_key_binding(wnd, 'Escape', lambda a,b,c,d: wnd.destroy())
 	wnd.disconnect(h)
 	wnd.set_data('close-handler-id', None)
 	wnd.get_data('close-button').set_sensitive(True)
@@ -2005,8 +2010,9 @@ def validate_all_comp_headers():
 	for n in range(0, len(panel_comp_header.children())):
 		box = panel_comp_header.children()[n]
 		if box.get_visible():
-			valid = box.on_value_changed()
+			valid = box.validate()
 			if not valid:
+				box.point_out()
 				return False
 	return True
 
@@ -2204,6 +2210,7 @@ def act_addressbook():
 	trv.insert_column_with_attributes(0, '', gtk.CellRendererText(), text=0)
 	flt.set_visible_func(lambda mo, it, ent: mo[it][0].find(ent.get_text())>-1, ent)
 	win.connect('delete-event', lambda w, x: win.destroy())
+	add_key_binding(win, 'Escape', lambda a,b,c,d: win.destroy())
 	ent.connect('changed', lambda w: flt.refilter())
 	trv.connect('button-press-event', dblclick)
 	bcl.connect('clicked', lambda w: win.destroy())
