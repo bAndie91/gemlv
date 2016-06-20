@@ -1351,6 +1351,7 @@ def open_composer():
 	Attachments.clear()
 	
 	win_comp.show_all()
+	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
 	add_composer_From_hidden()
@@ -1518,7 +1519,7 @@ def act_unsubscribe():
 				else:
 					linktext = escuri
 			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
-		dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
+		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe Methods"))
 		dlg.set_markup(_("Select a link to unsubscribe") + text)
 		try:
@@ -1843,18 +1844,18 @@ def act_font_switch(tv):
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
 	dlg.set_transient_for(get_current_window())
-	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	dlg.set_modal(True)
-	dlg.run()
-	font_name = dlg.get_font_name()
+	dlg.set_font_name(tv.get_data('saved-font')['string'])
+	if dlg.run() == gtk.RESPONSE_OK:
+		font_name = dlg.get_font_name()
+		change_font(tv, font_name)
+		font = get_current_font(tv)
+		if font['family'] == 'monospace':
+			key = 'saved-font-monospace'
+		else:
+			key = 'saved-font'
+		tv.set_data(key, font)
 	dlg.destroy()
-	change_font(tv, font_name)
-	font = get_current_font(tv)
-	if font['family'] == 'monospace':
-		key = 'saved-font-monospace'
-	else:
-		key = 'saved-font'
-	tv.set_data(key, font)
 
 def change_font(tv, s):
 	tv.modify_font(pango.FontDescription(s))
@@ -2030,7 +2031,7 @@ def act_send():
 			return
 	build_newemail()
 	
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
+	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.set_title(_("Sending..."))
 	dlg.set_markup(_("Sending..."))
 	carea = dlg.get_content_area()
@@ -2044,6 +2045,8 @@ def act_send():
 	thrd.start()
 
 def sending_thread(dlg, progressbar, btn_cancel):
+	global StopSending
+	StopSending = False
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
 	pid = os.fork()
 	if pid == 0:
@@ -2063,27 +2066,34 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	sn = btn_cancel.connect('clicked', sending_cancel, pid, parent_write)
 	gtk.threads_leave()
 	
-	child_read.close()
 	child_write.close()
 	resp = ''
 	text = NewEmail.as_string()
 	pos = 0
 	bufsize = 512
 	length = len(text)
-	while pos < length:
+	while pos < length and not StopSending:
 		try:
 			parent_write.write(text[pos:pos+bufsize])
+			parent_write.flush()
+			# wait until data are read out:
+			while not StopSending:
+				ready = select.select([child_read], [], [], 0)
+				if len(ready[0]) == 0:
+					break
 			pos += bufsize
 		except ValueError, e:
-			resp += str(e) + '\n'
+			resp += '>>> ' + str(e) + '\n'
 			break
 		gtk.threads_enter()
 		progressbar.set_fraction((min(pos, length) + 0.0) / length)
 		gtk.threads_leave()
-	try:
-		parent_write.close()
-	except IOError, e:
-		resp += str(e) + '\n'
+	child_read.close()
+	if not StopSending:
+		try:
+			parent_write.close()
+		except IOError, e:
+			resp += '>>> ' + str(e) + '\n'
 	
 	resp += ''.join(parent_read.readlines())
 	parent_read.close()
@@ -2097,9 +2107,10 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
 	img = dlg.get_content_area().children()[0].children()[0]
+	output_mu = '\n<tt>' + glib.markup_escape_text(resp) + '</tt>'
 	if status.code == 0:
 		img.set_from_icon_name(gtk.STOCK_APPLY, gtk.ICON_SIZE_DIALOG)
-		dlg.set_markup(_("Email is sent."))
+		dlg.set_markup(_("Email is sent.") + output_mu)
 		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
@@ -2109,11 +2120,12 @@ def sending_thread(dlg, progressbar, btn_cancel):
 				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
 		img.set_from_icon_name(gtk.STOCK_DIALOG_ERROR, gtk.ICON_SIZE_DIALOG)
-		dlg.set_markup(_("Sendmail error %s." % (status.code)) + '\n<tt>' + glib.markup_escape_text(resp) + '</tt>')
+		dlg.set_markup(_("Sendmail error %s." % (status.code)) + output_mu)
 	gtk.threads_leave()
 
 def sending_cancel(btn, pid, writer_fh):
-	writer_fh.close()
+	global StopSending
+	StopSending = True
 	os.kill(pid, signal.SIGINT)
 
 def build_newemail():
