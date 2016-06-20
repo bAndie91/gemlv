@@ -296,8 +296,8 @@ def display_error(e):
 	dlg.run()
 	dlg.destroy()
 
-def question(msg, stock_yes=None):
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
+def question(msg, stock_yes=None, parent=None):
+	dlg = gtk.MessageDialog(parent or get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
 	dlg.set_markup(msg)
 	dlg.set_title(_("Question"))
 	if stock_yes is not None:
@@ -308,6 +308,10 @@ def question(msg, stock_yes=None):
 	resp = dlg.run()
 	dlg.destroy()
 	return (resp == gtk.RESPONSE_YES)
+
+def set_dialog_icon_name(dlg, icon):
+	img = dlg.get_content_area().children()[0].children()[0]
+	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
 def choose_dialog(action, filename=None):
 	global LastFolder
@@ -351,6 +355,16 @@ def get_pipe_handlers(npairs):
 		pipes.append(os.fdopen(r, 'r'))
 		pipes.append(os.fdopen(w, 'w'))
 	return pipes
+
+def set_blocking(fd, doblock):
+	if type(fd) != int:
+		fd = fd.fileno()
+	fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+	if doblock:
+		fl = fl & ~os.O_NONBLOCK
+	else:
+		fl = fl | os.O_NONBLOCK
+	return fcntl.fcntl(fd, fcntl.F_SETFL, fl)
 
 def which(cmd):
 	def is_executable(p):
@@ -430,6 +444,14 @@ class ExecThreadRunner(threading.Thread):
 		result = self._Thread__target(*self._Thread__args, **self._Thread__kwargs)
 		if self.callback is not None:
 			self.callback[0](result, *self.callback[1:])
+
+def main_thread_alive():
+	alive = None
+	for thr in threading.enumerate():
+		if thr.name == 'MainThread':
+			alive = thr.is_alive()
+			break
+	return alive
 
 def get_header_parameter(text, param):
 	for g1, g2 in re.findall('\\b' + re.escape(param) + '=(?:\x22([^\x22]+)\x22|([^\s;]+))', text or ''):
@@ -829,6 +851,8 @@ def act_quit():
 		act_close_edit()
 	if win_comp.get_visible():
 		return True
+	win_main.hide()
+	win_comp.hide()
 	gtk.main_quit()
 	return False
 
@@ -836,12 +860,13 @@ def act_close_edit():
 	if not win_comp.get_data('email-sent') and not win_comp.get_data('is-saved'):
 		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE)):
 			return True
+	win_comp.hide()
 	if cliArgs.compose:
+		win_main.hide()
 		gtk.main_quit()
 		return False
 	else:
 		toggle_rqdn.set_sensitive(True)
-		win_comp.hide()
 		return True
 
 def act_button(func):
@@ -1547,18 +1572,18 @@ def act_report_spam(considered_as_spam = True):
 	inboxname = os.path.basename(inboxpath)
 	
 	if considered_as_spam:
-		start_razor_window(_("Reporting Spam"), [['razor-report', '-d', '-f'], ['pyzor', '-d', 'report']])
+		razorwin = start_razor_window(_("Reporting Spam"), [['razor-report', '-d', '-f'], ['pyzor', '-d', 'report']])
 		Lqtxt = _("Move it into <tt>%s</tt> folder?" % (spamdirname))
 		btndesc = (_("Move in"), gtk.STOCK_DELETE)
 		targetdir = os.path.join(curdir, spamdirname)
 	else:
-		start_razor_window(_("Reporting Ham"), [['razor-revoke', '-d', '-f'], ['pyzor', '-d', 'whitelist']])
+		razorwin = start_razor_window(_("Reporting Ham"), [['razor-revoke', '-d', '-f'], ['pyzor', '-d', 'whitelist']])
 		Lqtxt = _("Move it out from <tt>%s</tt> folder into <tt>%s</tt>?") % (spamdirname, inboxname)
 		btndesc = (_("Move out"), gtk.STOCK_UNDELETE)
 		targetdir = inboxpath
-
+	
 	if (considered_as_spam and not isin_spam_folder) or (not considered_as_spam and isin_spam_folder):
-		if question(Lqtxt, btndesc):
+		if question(Lqtxt, btndesc, parent=razorwin):
 			try:
 				mkdir(targetdir)
 				os.rename(emailfile, os.path.join(targetdir, os.path.basename(emailfile)))
@@ -1611,6 +1636,7 @@ def start_razor_window(title, cmdargses):
 		wait_threads.append((thrd, buffer))
 		thrd.start()
 	win.set_data('threads', wait_threads)
+	return win
 
 def spam_feeder_thread(fd):
 	os.write(fd, Email.as_string())
@@ -2032,8 +2058,10 @@ def act_send():
 	build_newemail()
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
+	dlg.connect('delete-event', lambda w, e: True)
 	dlg.set_title(_("Sending..."))
 	dlg.set_markup(_("Sending..."))
+	set_dialog_icon_name(dlg, 'mail-send-receive')
 	carea = dlg.get_content_area()
 	aarea = dlg.get_action_area()
 	progressbar = gtk.ProgressBar()
@@ -2066,29 +2094,33 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	sn = btn_cancel.connect('clicked', sending_cancel, pid, parent_write)
 	gtk.threads_leave()
 	
+	child_read.close()
 	child_write.close()
+	set_blocking(parent_write, False)
 	resp = ''
 	text = NewEmail.as_string()
 	pos = 0
-	bufsize = 512
+	bufsize = 4096
 	length = len(text)
 	while pos < length and not StopSending:
 		try:
 			parent_write.write(text[pos:pos+bufsize])
-			parent_write.flush()
-			# wait until data are read out:
-			while not StopSending:
-				ready = select.select([child_read], [], [], 0)
-				if len(ready[0]) == 0:
-					break
 			pos += bufsize
 		except ValueError, e:
 			resp += '>>> ' + str(e) + '\n'
 			break
+		except IOError, e:
+			if e.errno == os.errno.EAGAIN:
+				while not StopSending:
+					ready = select.select([], [parent_write], [], 1.0)
+					if len(ready[1]) > 0:
+						break
+			else:
+				raise e
 		gtk.threads_enter()
 		progressbar.set_fraction((min(pos, length) + 0.0) / length)
 		gtk.threads_leave()
-	child_read.close()
+	set_blocking(parent_write, True)
 	if not StopSending:
 		try:
 			parent_write.close()
@@ -2106,10 +2138,9 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	btn_close.connect('clicked', lambda x: dlg.destroy())
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
-	img = dlg.get_content_area().children()[0].children()[0]
 	output_mu = '\n<tt>' + glib.markup_escape_text(resp) + '</tt>'
 	if status.code == 0:
-		img.set_from_icon_name(gtk.STOCK_APPLY, gtk.ICON_SIZE_DIALOG)
+		set_dialog_icon_name(dlg, gtk.STOCK_APPLY)
 		dlg.set_markup(_("Email is sent.") + output_mu)
 		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
@@ -2119,7 +2150,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 			for xattrname in win_comp.get_data('set-xattr-on-send'):
 				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
-		img.set_from_icon_name(gtk.STOCK_DIALOG_ERROR, gtk.ICON_SIZE_DIALOG)
+		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(_("Sendmail error %s." % (status.code)) + output_mu)
 	gtk.threads_leave()
 
@@ -2493,29 +2524,35 @@ def act_edit_external():
 	if err is not None:
 		display_error(e)
 		os.unlink(tmppath)
-		on_edit_external_done()
+		on_edit_external_done(None)
 		return
 	thread = ExecThreadRunner('mimeopen-gui', [tmppath], [cb_edit_external, tmppath])
 	thread.start()
 
 def cb_edit_external(status, filepath):
-	gtk.threads_enter()
-	filehandler = None
-	try:
-		filehandler = open(filepath, 'r')
-		on_edit_external_done(''.join(filehandler.readlines()))
-	except IOError, e:
-		display_error(e)
-		on_edit_external_done()
-	finally:
-		if filehandler is not None: filehandler.close()
-	try:
-		os.unlink(filepath)
-	except OSError:
-		pass
-	gtk.threads_leave()
+	if main_thread_alive():
+		gtk.threads_enter()
+		filehandler = None
+		try:
+			filehandler = open(filepath, 'r')
+		except IOError, e:
+			display_error(e)
+			on_edit_external_done(None)
+		else:
+			on_edit_external_done(''.join(filehandler.readlines()))
+			filehandler.close()
+		try:
+			os.unlink(filepath)
+		except OSError, e:
+			display_error(e)
+		gtk.threads_leave()
+	else:
+		try:
+			os.unlink(filepath)
+		except OSError, e:
+			print str(e)
 
-def on_edit_external_done(data=None):
+def on_edit_external_done(data):
 	if data is not None:
 		set_composer_text(data)
 	menubutton_send.set_sensitive(True)
@@ -2527,11 +2564,11 @@ def set_unsaved(unsaved=True):
 	win_comp.set_data('email-sent', False)
 	s = menubutton_save_draft.get_label()
 	endmark = '*'
-	endmarkre = re.escape(endmark)
+	endmark_re = re.escape(endmark)
 	if unsaved:
-		s = re.sub('(%s)?$' % (endmarkre), endmark, s)
+		s = re.sub('(%s)?$' % (endmark_re), endmark, s)
 	else:
-		s = re.sub(endmarkre + '$', '', s)
+		s = re.sub(endmark_re + '$', '', s)
 	menubutton_save_draft.set_label(s)
 
 def on_edit_message(tb):
@@ -2970,3 +3007,5 @@ else:
 	panel_content_image.hide()
 
 gtk.main()
+if len(threading.enumerate()) > 1:
+	sys.stderr.write(_("Waiting background threads to complete.") + '\n')
