@@ -734,6 +734,8 @@ def get_headers_markup(eml):
 		"Organization",
 		"Reply-To",
 		"Importance",
+		"X-Priority",
+		"X-MSMail-Priority",
 		"To",
 		"Cc",
 		"Date",
@@ -1068,7 +1070,7 @@ class compose_header_box(gtk.HBox):
 			self['valid'] = False
 			self.point_out()
 		self.on_changed()
-		return valid
+		return False
 
 	def on_changed(self):
 		name = self['name']
@@ -1203,8 +1205,9 @@ class compose_header_box(gtk.HBox):
 				break
 	
 	def focus(self):
-		self.wdg_value.grab_focus()
-		self.wdg_value.set_position(-1)
+		if not self.wdg_value.has_focus():
+			self.wdg_value.grab_focus()
+			self.wdg_value.set_position(-1)
 	
 	def scrollfocus(self):
 		if self.get_visible():
