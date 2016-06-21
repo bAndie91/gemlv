@@ -1715,7 +1715,8 @@ def get_extension_by_mime(mime):
 
 def get_mime_by_filepath(path):
 	t = Magic.file(os.path.realpath(path))
-	if t is None or t.find('/')<1: return 'application/octet-stream'
+	if t is None or t.find('/')<1:
+		return 'application/octet-stream'
 	return t
 
 def act_open():
@@ -2670,7 +2671,6 @@ XATTR_REPLIED = 'user.gemlv.replied'
 XATTR_FORWARDED = 'user.gemlv.forwarded'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
-Magic = magic.open(magic.MAGIC_MIME_TYPE)
 
 
 ### Parse Arguments ###
@@ -2698,6 +2698,14 @@ if cliArgs.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
 if xattr is None:
 	sys.stderr.write(_("Notice: no module xattr loaded") + '\n')
+if hasattr(magic, 'open'):
+	Magic = magic.open(magic.MAGIC_MIME_TYPE)
+	Magic.load()
+else:
+	class magic0:
+		def file(self, path):
+			return magic.from_file(path, mime=True)
+	Magic = magic0()
 gtk.gdk.threads_init()
 
 
@@ -2979,7 +2987,6 @@ toggle_unimportant.connect('toggled', on_toggled)
 toggle_important.connect('toggled', on_toggled)
 
 
-Magic.load()
 signal.signal(signal.SIGTERM, sighandler)
 if cliArgs.compose:
 	open_composer()
