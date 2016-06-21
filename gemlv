@@ -268,17 +268,13 @@ def add_key_binding(widget, keyname, callback):
 
 def get_current_window():
 	for w in gtk.window_list_toplevels():
-		print "DEBUG toplevel", w
 		if w.is_active():
-			print "DEBUG active", w
 			while True:
 				par = w.get_transient_for()
-				print "DEBUG parent", par
 				if par is None:
 					return w
 				else:
 					w = par
-	print "DEBUG no main window found"
 	return None
 
 def display_error(e):
@@ -582,7 +578,15 @@ def load_part(eml, filt=None):
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
 	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
-
+	
+	if eml['Content-Location']:
+		uri = eml['Content-Location']
+		uri_esc = glib.markup_escape_text(uri)
+		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("Read content elsewhere:"), uri_esc, uri_esc))
+		lbl_content_location.show()
+	else:
+		lbl_content_location.hide()
+	
 	if filt is None:
 		filt = get_filter_by_mime(ct_main, ct_sub)
 	
@@ -1524,8 +1528,13 @@ def act_reply(recip):
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
+def shorturl(url, maxlength=72):
+	if len(url) > maxlength:
+		return url[0:maxlength-1] + '…'
+	else:
+		return None
+
 def act_unsubscribe():
-	MAXLEN = 80
 	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
 	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
 		if open_composer():
@@ -1539,10 +1548,11 @@ def act_unsubscribe():
 			if link['split'].scheme == 'mailto':
 				linktext = link['to']
 			else:
-				if len(uri) > MAXLEN:
-					linktext = glib.markup_escape_text(uri[0:MAXLEN-1] + '…')
-				else:
+				short = shorturl(uri, 80)
+				if short is None:
 					linktext = escuri
+				else:
+					linktext = glib.markup_escape_text(short)
 			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe Methods"))
@@ -2718,10 +2728,11 @@ Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
-lbl_right = gtk.Label()
+lbl_content_location = gtk.Label()
 panel_btnbox = gtk.Frame()
 panel_btnbox2 = gtk.VBox()
 panel_btnbox3 = gtk.HBox()
+lbl_right = gtk.Label()
 btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
@@ -2747,6 +2758,7 @@ panel_view.pack2(panel_body, True, True)
 panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
 spanel_parts.add_with_viewport(panel_parts)
+panel_right.pack_start(lbl_content_location, False, True)
 panel_right.pack_start(panel_btnbox, True, True)
 panel_btnbox.add(panel_btnbox2)
 panel_btnbox2.pack_start(panel_btnbox3, True, False)
@@ -2784,6 +2796,8 @@ spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
+lbl_content_location.set_alignment(0, 0)
+lbl_content_location.set_padding(2, 5)
 lbl_right.set_alignment(0, 0)
 lbl_right.set_justify(gtk.JUSTIFY_LEFT)
 btn_open.connect('clicked', lambda wdg: act_open())
@@ -3003,6 +3017,7 @@ else:
 	menubutton_replytolist.hide()
 	menubutton_unsubscribe.hide()
 	panel_view_avatar.hide()
+	lbl_content_location.hide()
 	panel_btnbox.hide()
 	panel_content_image.hide()
 

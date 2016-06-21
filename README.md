@@ -13,6 +13,7 @@ Email viewer and composer for local emails in GTK
 	- configure multiple filters for non text attachments
 	- changable font or monospace on/off
 	- wrap lines, wrap letters, no wrap
+	- show link for Content-Location if applicable
 - display attachments and other MIME parts in tree view
 	- select first text/plain or text/html part at beginning
 	- show attached filenames, and their mime type
@@ -31,6 +32,7 @@ Email viewer and composer for local emails in GTK
 	- move Email file into / out from ```Spam``` folder
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
+		- can interrupt sending process
 	- can edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 	- importance buttons influences Importance and Priority headers
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) as arbitrary ones as well
@@ -38,7 +40,7 @@ Email viewer and composer for local emails in GTK
 	- validate email address syntax
 	- pick date and time from a calendar when editing date-like headers
 	- addressbook
-		- read plain email addresses line by line
+		- read plain email addresses from file line by line
 - reply options
 	- handle Reply-To field
 	- set References, In-Reply-To headers
