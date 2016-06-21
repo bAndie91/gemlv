@@ -26,7 +26,6 @@ import argparse
 try:
 	import xattr
 except ImportError:
-	sys.stderr.write(_("Notice: no module xattr loaded") + '\n')
 	xattr = None
 import urlparse
 import pwd
@@ -2697,6 +2696,8 @@ if not cliArgs.compose and not cliArgs.FILE:
 	os._exit(1)
 if cliArgs.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
+if xattr is None:
+	sys.stderr.write(_("Notice: no module xattr loaded") + '\n')
 gtk.gdk.threads_init()
 
 

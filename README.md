@@ -17,14 +17,14 @@ Email viewer and composer for local emails in GTK
 - display attachments and other MIME parts in tree view
 	- select first text/plain or text/html part at beginning
 	- show attached filenames, and their mime type
-- undisplayable parts can be opened with external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+- undisplayable parts can be opened with external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 - save attachments (MIME parts)
 	-
 		- as single files
 		- more files at once in a folder
 		- preserving multipart structure (ie. save in directory tree)
 	- preverse modification time if available in attachment
-- button for unsubscribe from newsletters, mailing lists
+- button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
 	- supported networks
 		- razor
@@ -33,9 +33,9 @@ Email viewer and composer for local emails in GTK
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
 		- can interrupt sending process
-	- can edit message by external programm ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
-	- importance buttons influences Importance and Priority headers
-	- you can add usual headers (From, Reply-To, To, Cc, Bcc) as arbitrary ones as well
+	- can edit message by external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+	- importance buttons influence Importance and Priority headers
+	- you can add usual headers (From, Reply-To, To, Cc, Bcc) and arbitrary ones as well
 	- can request Disposition Notification by setting Message-Disposition-To header
 	- validate email address syntax
 	- pick date and time from a calendar when editing date-like headers
@@ -50,8 +50,8 @@ Email viewer and composer for local emails in GTK
 	- Forward: attach original email, not quote
 	- send Disposition Notification on demand
 		- even for messages have not requested it
-		- human readable message in language which is declared in Accept-Language header
-	- store replied/forwarded/mdn-sent state in x-attribute
+		- it generates the response message complying with the Accept-Language header (if it is translated)
+	- store replied/forwarded/MDN-sent state in x-attribute
 - attachments in compose mode
 	- attach files and even whole subdirectories
 		- by browsing them
@@ -71,19 +71,19 @@ Email viewer and composer for local emails in GTK
 		- ```--cc ...```
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
-	- meesage body (```--message "..."```)
+	- message body (```--message "..."```)
 	- attachments (```--attach file1,file2,dir1,dir2```)
-	- full mailto link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```)
+	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```)
 - hotkeys
 	- ```Ctrl-Q``` quit
 	- ```Ctrl-W``` close compose window
 	- ```Ctrl-S``` save attachment(s), save draft
 	- ```Ctrl-Shift-S``` save draft as...
-	- ```Ctrl-O``` open attachment with external programm
+	- ```Ctrl-O``` open attachment with external program
 	- ```Ctrl-N``` compose new Email
 	- ```Ctrl-Shift-R``` Reply
 	- ```Ctrl-R``` Reply to All
 	- ```Ctrl-F``` Forward
 	- ```Ctrl-U``` Filter/Unfilter
 	- ```Ctrl-H``` Show/Hide headers
-	- ```F4``` edit draft message with external programm
+	- ```F4``` edit draft message with external program
