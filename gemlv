@@ -189,7 +189,7 @@ class pipereader(object):
 			try:
 				os.execvp(cmd, args)
 			except OSError, e:
-				sys.stderr.write(str(e))
+				stderr(str(e))
 			os._exit(127)
 		else:
 			child_read.close()
@@ -361,6 +361,9 @@ def set_blocking(fd, doblock):
 		fl = fl | os.O_NONBLOCK
 	return fcntl.fcntl(fd, fcntl.F_SETFL, fl)
 
+def stderr(string):
+	sys.stderr.write(string + ('' if string[-1] == '\n' else '\n'))
+
 def which(cmd):
 	def is_executable(p):
 		return (os.path.isfile(p) and os.access(p, os.X_OK))
@@ -430,7 +433,7 @@ class ExecThreadRunner(threading.Thread):
 			try:
 				os.execvp(cmd, [cmd] + args)
 			except OSError, e:
-				sys.stderr.write(str(e))
+				stderr(str(e))
 			os._exit(127)
 		else:
 			return WaitExecStatus(pid)
@@ -1666,7 +1669,7 @@ def runcmd_thread(args, input_fd, out_buffer, win):
 		try:
 			os.execvp(args[0], args)
 		except OSError, e:
-			sys.stderr.write(str(e))
+			stderr(str(e))
 		os._exit(127)
 	
 	writer.close()
@@ -1734,7 +1737,7 @@ def act_open():
 		e.filename = tmppath
 		display_error(e)
 		return
-	run_async('mimeopen-gui', [tmppath], [os.unlink, tmppath])
+	run_async(cliArgs.opener, cliArgs.opener_args + [tmppath], [os.unlink, tmppath])
 
 def calc_attachment_name(part, n=None):
 	name = part.get_filename()
@@ -1812,7 +1815,7 @@ def set_xattrs(fh, attrs, filename='-'):
 				else:
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError, e:
-				sys.stderr.write((_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e))) + '\n')
+				stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
 
 def save_to_file(eml, filename, ask_overwrite=True):
 	if ask_overwrite:
@@ -2100,7 +2103,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		try:
 			os.execvp('sendmail', ['sendmail', '-ti'])
 		except OSError, e:
-			sys.stderr.write(str(e))
+			stderr(str(e))
 		os._exit(127)
 	
 	gtk.threads_enter()
@@ -2543,7 +2546,7 @@ def act_edit_external():
 		os.unlink(tmppath)
 		on_edit_external_done(None)
 		return
-	thread = ExecThreadRunner('mimeopen-gui', [tmppath], [cb_edit_external, tmppath])
+	thread = ExecThreadRunner(cliArgs.opener, cliArgs.opener_args + [tmppath], [cb_edit_external, tmppath])
 	thread.start()
 
 def cb_edit_external(status, filepath):
@@ -2567,7 +2570,7 @@ def cb_edit_external(status, filepath):
 		try:
 			os.unlink(filepath)
 		except OSError, e:
-			sys.stderr.write(str(e) + '\n')
+			stderr(str(e))
 
 def on_edit_external_done(data):
 	if data is not None:
@@ -2679,7 +2682,7 @@ PREAMBLE = _("This is a MIME multipart Email.")
 
 ### Parse Arguments ###
 
-argparser = argparse.ArgumentParser()
+argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
 argparser.add_argument('--from', metavar='FROM', help=_("New Email's writer's name and address"))
 argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
@@ -2690,18 +2693,21 @@ argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
 argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, comma-separated list"))
 argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
+argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
 cliArgs = argparser.parse_args()
 for attr in 'to', 'cc', 'bcc', 'attach':
 	if getattr(cliArgs, attr) is not None:
 		setattr(cliArgs, attr, re.split('\s*,\s*', getattr(cliArgs, attr)))
 if not cliArgs.compose and not cliArgs.FILE:
-	sys.stderr.write(_("Either compose mode or FILE is needed.") + '\n')
+	stderr(_("Either compose mode or FILE is needed."))
 	os._exit(1)
 if cliArgs.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
+openerargs = cliArgs.opener.split()
+cliArgs.opener, cliArgs.opener_args = openerargs[0], openerargs[1:]
 if xattr is None:
-	sys.stderr.write(_("Notice: no module xattr loaded") + '\n')
+	stderr(_("Notice: no module xattr loaded"))
 if hasattr(magic, 'open'):
 	Magic = magic.open(magic.MAGIC_MIME_TYPE)
 	Magic.load()
@@ -3002,7 +3008,7 @@ if cliArgs.compose:
 		try:
 			mailto = get_mailtos('<%s>' % (cliArgs.mailto))[0]
 		except IndexError:
-			sys.stderr.write(_("Can not parse mailto link.") + '\n')
+			stderr(_("Can not parse mailto link."))
 		else:
 			add_composer_mailto(mailto)
 	if getattr(cliArgs, 'from'):
@@ -3038,4 +3044,4 @@ else:
 
 gtk.main()
 if len(threading.enumerate()) > 1:
-	sys.stderr.write(_("Waiting background threads to complete.") + '\n')
+	stderr(_("Waiting background threads to complete."))
