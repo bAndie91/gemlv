@@ -38,7 +38,7 @@ from ctypes.util import find_library
 try:
 	import textwrap
 except ImportError:
-	class textwrap:
+	class textwrap(object):
 		def wrap(self, text, width):
 			return text
 
@@ -120,7 +120,7 @@ class StockButton(gtk.Button):
 			img.set_from_pixbuf(icon)
 			img.props.visible = True
 
-class cfgparser:
+class cfgparser(object):
 	def __init__(self, name, **kvargs):
 		self.var = {'regex': '^\s*([^;#].*)', 'split': [1],}
 		for k in 'regex', 'splitgroups':
@@ -173,7 +173,7 @@ class cfgparser:
 		for fh in self.filehandlers:
 			fh.close()
 
-class pipereader:
+class pipereader(object):
 	def __init__(self, inputstr, cmd, args=[], exitdict=None):
 		self.exitdict = exitdict
 		args = args[:]
@@ -404,7 +404,7 @@ def run_async(cmd, args, postrun):
 	else:
 		os.waitpid(pid1, 0)
 
-class WaitExecStatus:
+class WaitExecStatus(object):
 	def __init__(self, pid):
 		x, status = os.waitpid(pid, 0)
 		self.status = status >> 8
@@ -2252,8 +2252,12 @@ def act_addressbook():
 	bad = StockButton(stock=gtk.STOCK_ADD)
 	bcl = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
-		mod.append([ln.strip()])
+	try:
+		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
+			mod.append([ln.strip()])
+	except IOError, e:
+		display_error(e)
+		return
 	
 	win.set_transient_for(win_comp)
 	win.set_modal(True)
@@ -2563,7 +2567,7 @@ def cb_edit_external(status, filepath):
 		try:
 			os.unlink(filepath)
 		except OSError, e:
-			print str(e)
+			sys.stderr.write(str(e) + '\n')
 
 def on_edit_external_done(data):
 	if data is not None:
@@ -2702,7 +2706,7 @@ if hasattr(magic, 'open'):
 	Magic = magic.open(magic.MAGIC_MIME_TYPE)
 	Magic.load()
 else:
-	class magic0:
+	class magic0(object):
 		def file(self, path):
 			return magic.from_file(path, mime=True)
 	Magic = magic0()
