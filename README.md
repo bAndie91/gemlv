@@ -17,14 +17,15 @@ Email viewer and composer for local emails in GTK
 - display attachments and other MIME parts in tree view
 	- select first text/plain or text/html part at beginning
 	- show attached filenames, and their mime type
+- [Gravatar](http://www.gravatar.com/) support
 - undisplayable parts can be opened with external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 - save attachments (MIME parts)
-	-
-		- as single files
+	- save as:
+		- single files
 		- more files at once in a folder
 		- preserving multipart structure (ie. save in directory tree)
 	- preverse modification time if available in attachment
-- button to unsubscribe from newsletters, mailing lists
+- button to unsubscribe from newsletters, from mailing lists
 - report as spam/ham
 	- supported networks
 		- razor

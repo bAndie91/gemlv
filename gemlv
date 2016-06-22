@@ -1857,7 +1857,7 @@ def act_view_source():
 	load_part(get_part_by_itpath(), filt)
 
 def act_wrap(tv, i=1):
-	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=panel_content.get_wrap_mode())
+	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
 	tv.set_wrap_mode(modes.turn(i))
 
 def get_current_font(txtv):
