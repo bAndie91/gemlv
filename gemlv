@@ -279,7 +279,9 @@ def get_current_window():
 def display_error(e):
 	text = None
 	if isinstance(e, OSError) or isinstance(e, IOError):
-		text = '%s (#%d)\n%s' % (e.strerror, e.errno, e.filename)
+		text = '%s (#%d)' % (e.strerror, e.errno)
+		if e.filename is not None:
+			text += '\n%s' % (e.filename)
 	elif isinstance(e, Exception):
 		text = e.message
 	elif type(e) == type([]):
