@@ -2655,7 +2655,7 @@ VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
 VAL_ADDRESSES = {
-	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\\\n]|\\[\x22\\])*|\w[\w\.-]*)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
+	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\\\n]|\\[\x22\\])*|[^\x22<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
 	}
 VAL_ADDRESS = {
 	'require': VAL_ADDRESSES['repetative'] + '$',
