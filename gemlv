@@ -70,9 +70,9 @@ class StockToolButton(gtk.ToolButton):
 		if tooltip is not None:
 			self.set_tooltip_text(tooltip)
 	def set_pixbuf(self, pxb):
-		a = self.get_children()[0]
-		a = a.get_children()[0]
-		img, a = a.get_children()
+		btn = self.get_children()[0]
+		x = btn.get_children()[0]
+		img, x = x.get_children()
 		img.set_from_pixbuf(pxb)
 		img.props.visible = True
 	def __get_children(self):
@@ -80,7 +80,7 @@ class StockToolButton(gtk.ToolButton):
 		hbox = align.get_children()[0]
 		return hbox.get_children()
 	def set_markup(self, markup):
-		x, lbl = self.__get_children()
+		lbl = self.__get_children()[1]
 		lbl.set_markup(markup)
 
 class StockButton(gtk.Button):
@@ -459,6 +459,9 @@ def get_header_parameter(text, param):
 		if g2 != '': return g2
 	return None
 
+def truish(x):
+	return(str(x).lower() in ['yes', '1', 'true', 'on'])
+
 ### private functions ###
 
 def win_main_show(widget, event):
@@ -491,8 +494,14 @@ def load_file(filename):
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
 	if (Email[HDR_DNT] or '').strip():
-		if get_xattr(cliArgs.FILE, XATTR_MDNSENT) is not None:
+		if get_xattr(cliArgs.FILE, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
+	if truish(get_xattr(cliArgs.FILE, XATTR_MDNSENT)):
+		stck_mdn.show()
+	if truish(get_xattr(cliArgs.FILE, XATTR_REPLIED)):
+		stck_repl.show()
+	if truish(get_xattr(cliArgs.FILE, XATTR_FORWARDED)):
+		stck_fwd.show()
 	
 	if get_listaddress_main() is not None:
 		menubutton_replytolist.show()
@@ -738,6 +747,7 @@ def get_headers_markup(eml):
 		"Organization",
 		"Reply-To",
 		"Importance",
+		"Priority",
 		"X-Priority",
 		"X-MSMail-Priority",
 		"To",
@@ -787,6 +797,17 @@ def get_headers_markup(eml):
 					except NameError: pass
 			else:
 				hval_mu = glib.markup_escape_text(hval)
+			
+			if hname == 'Importance' or hname.find('Priority')>-1:
+				hval_lc = hval.lower()
+				if hval_lc == 'urgent' or hval_lc.find('high')>-1 or re.search('^[12]', hval):
+					# emphasize urgent, high priority headers
+					hval_mu = PMU_WARN + glib.markup_escape_text(hval) + PMU_WARN_CLOSE
+					win_main.set_icon_name('mail-mark-important')
+					stck_imp.show()
+				elif hval_lc == 'non-urgent' or hval_lc.find('low')>-1 or re.search('^[45]', hval):
+					stck_unimp.show()
+			
 			if len(hval_mu):
 				hvals_mu.append(hval_mu)
 		if len(hvals_mu):
@@ -2025,11 +2046,17 @@ def load_toolitems(toolbar, toolitems):
 					Ltip = Llabel
 				else:
 					Ltip = Lstocklabel
-			tbi = StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
-			tbi.set_data('stock', stock)
-			tbi.set_data('label', label)
-			hid = tbi.connect('clicked', on_click_button, fnc_left)
-			tbi.child.connect('button-press-event', on_press_button, fnc_right)
+			if fnc_left is None and fnc_right is None:
+				tbi = gtk.ToolItem()
+				tbi.set_border_width(3)
+				tbi.add(gtk.image_new_from_icon_name(stock, toolbar.get_icon_size()))
+				tbi.set_tooltip_text(Ltip)
+			else:
+				tbi = StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
+				tbi.set_data('stock', stock)
+				tbi.set_data('label', label)
+				hid = tbi.connect('clicked', on_click_button, fnc_left)
+				tbi.child.connect('button-press-event', on_press_button, fnc_right)
 		tbi.set_data('clicked-handler', hid)
 		toolbar.insert(tbi, -1)
 		items.append(tbi)
@@ -2742,7 +2769,7 @@ toolbar = gtk.Toolbar()
 spanel_view_header = gtk.ScrolledWindow()
 panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
-panel_view_upper_2 = gtk.HBox()
+panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
@@ -2772,9 +2799,9 @@ win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
 box_main.pack_start(panel_view, True, True)
 panel_view.pack1(panel_view_upper, False, True)
-panel_view_upper.pack_start(panel_view_upper_2, True, True)
-panel_view_upper_2.pack_start(spanel_view_header, True, True)
-panel_view_upper_2.pack_start(panel_view_avatar, False, False)
+panel_view_upper.pack_start(panel_view_headerbox, True, True)
+panel_view_headerbox.pack_start(spanel_view_header, True, True)
+panel_view_headerbox.pack_start(panel_view_avatar, False, False)
 panel_view_avatar.pack_start(gtk.Image(), False, False)
 spanel_view_header.add_with_viewport(panel_view_header)
 panel_view_upper.pack_start(panel_view_subject, False, True)
@@ -2864,6 +2891,12 @@ def ToolItemDeclaration_font(tv):
 	return (None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace", (act_font, tv), (act_font_switch, tv))
 
 toolbuttons = [
+	(None, 'emblem-generic', "Unimportant", None, None),
+	(None, 'emblem-important', "Important", None, None),
+	(None, 'mail-reply-sender', "Replied", None, None),
+	(None, 'mail-forward', "Forwarded", None, None),
+	(None, 'mail-mark-read', "MDN is sent", None, None),
+	(None, 'mail-mark-junk', "Spam", None, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save to Structure", act_save, act_save_struct),
@@ -2872,7 +2905,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-x_, btn_open2, btn_save2, x_, x, x, x \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, x_, btn_open2, btn_save2, x_, x, x, x \
 = load_toolitems(tb_controls, toolbuttons)
 
 
@@ -3043,6 +3076,12 @@ else:
 	lbl_content_location.hide()
 	panel_btnbox.hide()
 	panel_content_image.hide()
+	stck_unimp.hide()
+	stck_imp.hide()
+	stck_repl.hide()
+	stck_fwd.hide()
+	stck_mdn.hide()
+	stck_spam.hide()
 
 gtk.main()
 if len(threading.enumerate()) > 1:
