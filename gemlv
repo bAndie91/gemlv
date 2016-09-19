@@ -473,17 +473,22 @@ def win_main_show(widget, event):
 def get_email_addresses_in_main_headers(h):
 	return map(lambda x: x[1], email.utils.getaddresses(Email.get_all(h) or []))
 
-def load_file(filename):
-	global Email
-	global LeafParts
+def email_from_file(filename):
 	try:
 		fh = open(filename, 'r')
 	except IOError, e:
 		display_error(e)
 		act_quit()
 		return
-	Email = email.message_from_file(fh)
+	eml = email.message_from_file(fh)
 	fh.close()
+	return eml
+
+def load_file(filename):
+	global Email
+	global LeafParts
+	Email = email_from_file(filename)
+	win_main.set_title(os.path.basename(filename) + ' - ' + PROGNAME)
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
@@ -936,6 +941,11 @@ def act_comp_hdr_menuitem(mi, hname=None):
 
 def act_all_comp_hdr(mi):
 	show_advanced_comp_hdr(mi.active)
+
+def act_tgl_comp_hdr():
+	on = menuitem_all_comp_hdr.get_active()
+	menuitem_all_comp_hdr.set_active(not on)
+	show_advanced_comp_hdr(not on)
 
 def show_advanced_comp_hdr(show=True):
 	clear_composer_headers('', '')
@@ -1399,7 +1409,7 @@ def open_composer():
 	
 	global NewEmail
 	NewEmail = MIMEMultipart('mixed')
-	win_comp.set_data('preserve-headers', map(lambda x: x[0], NewEmail._headers))
+	win_comp.set_data('preserve-headers', map(lambda x: x[0].lower(), NewEmail._headers))
 	NewEmail.preamble = PREAMBLE
 	part0 = MIMEText('')
 	part0.set_charset('UTF-8')
@@ -1853,7 +1863,7 @@ def save_to_file(eml, filename, ask_overwrite=True):
 			mimetype = 'message/rfc822'
 		else:
 			mimetype = eml.get_content_type()
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype}, filename)
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: eml[HDR_MID] or Email[HDR_MID]}, filename)
 		fh.flush()
 		moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
 		if moddatetime:
@@ -2208,7 +2218,7 @@ def build_newemail():
 	preserve_headers = win_comp.get_data('preserve-headers')
 	idx = 0
 	for hname, hval in NewEmail._headers:
-		if hname not in preserve_headers:
+		if hname.lower() not in preserve_headers:
 			del(NewEmail._headers[idx])
 			continue
 		idx += 1
@@ -2224,8 +2234,8 @@ def build_newemail():
 			NewEmail.add_header(hname, ' '.join(enchunks))
 	
 	# if there is not Message-ID but we must set at least one xattr
-	if not NewEmail[HDR_MI] and win_comp.get_data('set-xattr-on-send'):
-		NewEmail.add_header(HDR_MI, email.utils.make_msgid())
+	if not NewEmail[HDR_MID] and win_comp.get_data('set-xattr-on-send'):
+		NewEmail.add_header(HDR_MID, email.utils.make_msgid())
 	
 	text = get_composer_text()
 	text_qp = text.encode('quoted-printable')
@@ -2495,8 +2505,8 @@ def act_dispos_notif():
 		if Email[HDR_OR]:
 			origrcpt = get_one_header_main(HDR_OR)
 			dn_fields += ['%s: RFC822;%s' % (HDR_OR, origrcpt)]
-		if Email[HDR_MI]:
-			messageid = get_one_header_main(HDR_MI)
+		if Email[HDR_MID]:
+			messageid = get_one_header_main(HDR_MID)
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
@@ -2649,13 +2659,13 @@ HDR_DNT = 'Disposition-Notification-To'
 HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
-HDR_MI = 'Message-ID'
+HDR_MID = 'Message-ID'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
 VAL_ADDRESSES = {
-	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\\\n]|\\[\x22\\])*|[^\x22<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
+	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
 	}
 VAL_ADDRESS = {
 	'require': VAL_ADDRESSES['repetative'] + '$',
@@ -2702,6 +2712,7 @@ for h in DateTimeHeaders:
 	ValidatorHeaders[h] = VAL_DATE
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
+XATTR_ORIGIN = 'user.xdg.origin.email.message-id'
 XATTR_MDNSENT = 'user.gemlv.mdn_sent'
 XATTR_REPLIED = 'user.gemlv.replied'
 XATTR_FORWARDED = 'user.gemlv.forwarded'
@@ -2745,6 +2756,7 @@ else:
 		def file(self, path):
 			return magic.from_file(path, mime=True)
 	Magic = magic0()
+signal.signal(signal.SIGTERM, sighandler)
 gtk.gdk.threads_init()
 
 
@@ -2918,6 +2930,7 @@ add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda 
 add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
 add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
 add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
+add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
 
 box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()
@@ -3032,13 +3045,28 @@ toggle_unimportant.connect('toggled', on_toggled)
 toggle_important.connect('toggled', on_toggled)
 
 
-signal.signal(signal.SIGTERM, sighandler)
 if cliArgs.compose:
 	open_composer()
-	add_composer_agent_headers()
 	if cliArgs.FILE:
-		# TODO load email
 		win_comp.set_data('saved-to-file', cliArgs.FILE)
+		Email = email_from_file(cliArgs.FILE)
+		supersedes = []
+		for hname, hval in Email._headers:
+			hname_lc = hname.lower()
+			hval = decode_header(hval)
+			if hname_lc == 'subject':
+				set_composer_subject(hval)
+			elif hname_lc in ['auto-submitted', 'message-id', 'content-type', 'domainkey-signature', 'dkim-signature']:
+				# do not include these headers in incompleted email
+				if hname_lc == 'message-id':
+					supersedes.append(hval)
+			else:
+				add_composer_header(hname, hval)
+		set_composer_headers('Supersedes', [', '.join(supersedes)])
+	else:
+		add_composer_agent_headers()
+		if not cliArgs.message:
+			set_composer_text('\n\n' + get_user_signature())
 	if cliArgs.mailto:
 		try:
 			mailto = get_mailtos('<%s>' % (cliArgs.mailto))[0]
@@ -3060,8 +3088,6 @@ if cliArgs.compose:
 		set_composer_subject(cliArgs.subject)
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
-	else:
-		set_composer_text('\n\n' + get_user_signature())
 	if cliArgs.attach:
 		for path in cliArgs.attach:
 			attach_path(path)
