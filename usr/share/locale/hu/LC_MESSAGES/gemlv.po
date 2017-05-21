@@ -268,30 +268,23 @@ msgstr "Ham bejelentése"
 msgid "exit code: %s"
 msgstr "kilépési kód: %s"
 
-msgid "Move it into <tt>%s</tt> folder?"
-msgstr "Átteszed a <tt>%s</tt> mappába?"
+msgid "Put into <tt>%s</tt> folder?"
+msgstr "Beleteszed a <tt>%s</tt> mappába?"
 
-msgid "Move in"
-msgstr "Áttenni"
+msgid "Put"
+msgstr "Bele"
 
-msgid "Move it out from <tt>%s</tt> folder into <tt>%s</tt>?"
+msgid "Take out from <tt>%s</tt> folder into <tt>%s</tt>?"
 msgstr "Kiveszed a <tt>%s</tt> mappából át a <tt>%s</tt>-ba?"
 
-msgid "Move out"
-msgstr "Kivenni"
+msgid "Take out"
+msgstr "Ki"
 
 msgid "Disposition Notification"
 msgstr "Tértivevény"
 
 msgid "Disposition Notification: {subject}"
 msgstr "Tértivevény: {subject}"
-
-msgid "The message sent on {date} to {me} with subject \"{subject}\" "
-"delivered on {delivery_date} and has been displayed. "
-"This is no guarantee that the message has been read or understood."
-msgstr "Az üzenet, amit {date}-kor {me}-nek \"{subject}\" tárggyal küldtek, "
-"{delivery_date}-kor kézbesítésre, majd megjelenítésre került. "
-"Ez nem garantálja, hogy az üzenetet el is olvasták vagy megértették."
 
 msgid "Send MDN"
 msgstr "MDN küldése"
@@ -323,3 +316,21 @@ msgstr "Tartalom elérése máshonnan:"
 msgid "Waiting background threads to complete."
 msgstr "Várakozás a háttérfolyamatok befejeztére."
 
+msgid "The message was sent on {date} to {me} with subject \"{subject}\" "
+"delivered on {delivery_date} and has been displayed. "
+"This is no guarantee that the message has been read or understood."
+msgstr "Az üzenet, amit {date}-kor {me}-nek \"{subject}\" tárggyal küldtek, "
+"{delivery_date}-kor kézbesítésre, majd megjelenítésre került. "
+"Ez nem garantálja, hogy az üzenetet el is olvasták vagy megértették."
+
+msgid "File opener command"
+msgstr "Fájl megnyitó parancs"
+
+msgid "Replied"
+msgstr "Megválaszolva"
+
+msgid "Forwarded"
+msgstr "Továbbítva"
+
+msgid "MDN is sent"
+msgstr "MDN küldve"

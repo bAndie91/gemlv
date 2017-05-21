@@ -1621,13 +1621,13 @@ def act_report_spam(considered_as_spam = True):
 	
 	if considered_as_spam:
 		razorwin = start_razor_window(_("Reporting Spam"), [['razor-report', '-d', '-f'], ['pyzor', '-d', 'report']])
-		Lqtxt = _("Move it into <tt>%s</tt> folder?" % (spamdirname))
-		btndesc = (_("Move in"), gtk.STOCK_DELETE)
+		Lqtxt = _("Put into <tt>%s</tt> folder?" % (spamdirname))
+		btndesc = (_("Put"), gtk.STOCK_DELETE)
 		targetdir = os.path.join(curdir, spamdirname)
 	else:
 		razorwin = start_razor_window(_("Reporting Ham"), [['razor-revoke', '-d', '-f'], ['pyzor', '-d', 'whitelist']])
-		Lqtxt = _("Move it out from <tt>%s</tt> folder into <tt>%s</tt>?") % (spamdirname, inboxname)
-		btndesc = (_("Move out"), gtk.STOCK_UNDELETE)
+		Lqtxt = _("Take out from <tt>%s</tt> folder into <tt>%s</tt>?") % (spamdirname, inboxname)
+		btndesc = (_("Take out"), gtk.STOCK_UNDELETE)
 		targetdir = inboxpath
 	
 	if (considered_as_spam and not isin_spam_folder) or (not considered_as_spam and isin_spam_folder):
@@ -2482,14 +2482,14 @@ def act_dispos_notif():
 			savelang = os.environ['LANGUAGE']
 			os.environ['LANGUAGE'] = lang
 		Ltxt_subj = _("Disposition Notification: {subject}")
-		Ltxt_body = _("The message sent on {date} to {me} with subject \"{subject}\" "
+		Ltxt_body = _("The message was sent on {date} to {me} with subject \"{subject}\" "
 			"delivered on {delivery_date} and has been displayed. "
 			"This is no guarantee that the message has been read or understood.")
 		if lang:
 			os.environ['LANGUAGE'] = savelang
 		prms = {
 			'date': get_one_header_main('Date') or '(somewhen)',
-			'me': my_address or '(somewho)',
+			'me': my_address or '(someone)',
 			'subject': get_one_header_main('Subject'),
 			'delivery_date': get_one_header_main('Delivery-Date') or '(somewhen)',
 			}
