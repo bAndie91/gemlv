@@ -648,6 +648,9 @@ def load_part(eml, filt=None):
 		panel_btnbox.hide()
 		panel_content_image.hide()
 		spanel_content.show()
+	if spanel_content.get_data('loaded-part') != eml:
+		spanel_content.get_vadjustment().set_value(0.0)
+	spanel_content.set_data('loaded-part', eml)
 
 def on_allocate_panel_content_image(wdg, alloc):
 	pxb = wdg.get_data('pixbuf')
