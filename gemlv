@@ -1377,10 +1377,10 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headers(hname, even_if_hidden=False):
+def get_composer_headers(hname, evenif_hidden=True):
 	hlist = []
 	for hbox in panel_comp_header.children():
-		if even_if_hidden or hbox.get_visible():
+		if hbox.get_visible() or evenif_hidden:
 			if hname is None:
 				hlist.append((hbox['name'], hbox['value']))
 			elif type(hname) == type([]) and hbox['name'] in hname:
@@ -1508,13 +1508,24 @@ def act_compose():
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
+def composer_maintain_references_headers():
+	references = get_one_header_main(HDR_REF)
+	messageid = get_one_header_main(HDR_MID)
+	if messageid is not None:
+		if references is not None:
+			references = references + ' ' + messageid
+		else:
+			references = messageid
+	if references is not None:
+		add_composer_header(HDR_REF, references)
+
 def act_reply(recip):
 	if open_composer():
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
 		body = '\n\n' + get_user_signature()
 		my_address = guess_my_address()
-
+		
 		if recip == '':
 			win_comp.set_data('set-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (subj or _("Email")) + '.eml'
@@ -1522,9 +1533,7 @@ def act_reply(recip):
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
 			add_composer_header('To', '')
-			references = get_one_header_main('References')
-			if references is not None:
-				add_composer_header('References', references)
+			composer_maintain_references_headers
 			
 			part = MIMEMessage(Email)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
@@ -1537,17 +1546,10 @@ def act_reply(recip):
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
 			body += '\n' + _("Quote:") + '\n\n' + quote_message_plain()
-
-			messageid = get_one_header_main('Message-ID')
-			references = get_one_header_main('References')
-			if messageid is not None:
-				add_composer_header('In-Reply-To', messageid)
-				if references is not None:
-					references = references + ' ' + messageid
-				else:
-					references = messageid
-			if references is not None:
-				add_composer_header('References', references)
+			
+			messageid = get_one_header_main(HDR_MID)
+			add_composer_header('In-Reply-To', messageid)
+			composer_maintain_references_headers()
 			
 			reply_fulladdress = guess_reply_address()
 			reply_address = email.utils.parseaddr(reply_fulladdress)[1]
@@ -1878,7 +1880,10 @@ def save_to_file(eml, filename, ask_overwrite=True):
 			mimetype = 'message/rfc822'
 		else:
 			mimetype = eml.get_content_type()
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: eml[HDR_MID] or Email[HDR_MID]}, filename)
+		messageid = eml[HDR_MID]
+		if not messageid and hasattr(Email, '__getitem__'):
+			messageid = Email[HDR_MID]
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 		fh.flush()
 		moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
 		if moddatetime:
@@ -2216,7 +2221,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		if hasattr(cliArgs, 'FILE'):
-			MsgId = NewEmail['Message-ID']
+			MsgId = NewEmail[HDR_MID]
 			for xattrname in win_comp.get_data('set-xattr-on-send'):
 				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
@@ -2363,8 +2368,8 @@ def attach_path(path, parent_part=None, parent_iter=None):
 		part.set_payload('')
 		enc = None
 		try:
-			fh = open(path, 'r')
 			moddatetime = email.utils.formatdate(os.stat(path).st_mtime, True)
+			fh = open(path, 'r')
 		except IOError, e:
 			display_error(e)
 			return False
@@ -2392,6 +2397,16 @@ def attach_path(path, parent_part=None, parent_iter=None):
 	
 	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime)
 	parent_part.attach(part)
+	if ct_main == 'message' and ct_sub == 'rfc822':
+		attached_email = email.message_from_file(open(path, 'r'))
+		attached_email_messageid = attached_email.get(HDR_MID)
+		if attached_email_messageid:
+			references_headers = get_composer_headers(HDR_REF)
+			if len(references_headers) == 0:
+				set_composer_headers(HDR_REF, [attached_email_messageid])
+			else:
+				references_headers[-1] += ' ' + attached_email_messageid
+				set_composer_headers(HDR_REF, references_headers)
 	set_unsaved()
 	stock = get_stock_by_mime(ct_main, ct_sub)
 	pixb = None
@@ -2504,10 +2519,10 @@ def act_dispos_notif():
 		if lang:
 			os.environ['LANGUAGE'] = savelang
 		prms = {
-			'date': get_one_header_main('Date') or '(somewhen)',
-			'me': my_address or '(someone)',
+			'date': get_one_header_main('Date') or '[somewhen]',
+			'me': my_address or '[someone]',
 			'subject': get_one_header_main('Subject'),
-			'delivery_date': get_one_header_main('Delivery-Date') or '(somewhen)',
+			'delivery_date': get_one_header_main('Delivery-Date') or '[somewhen]',
 			}
 		subject_text = Ltxt_subj.format(**prms)
 		message_text = ''.join(map(lambda x: x+'\n', textwrap.wrap(Ltxt_body.format(**prms), 79)))
@@ -2538,7 +2553,7 @@ def act_req_dispos_notif():
 		box_gdr = add_composer_header(HDR_GDR, 'Yes')
 		box_gdr['readonly'] = True
 		
-		Froms = get_composer_headers('From', even_if_hidden=True)
+		Froms = get_composer_headers('From')
 		From = Froms[0]
 		if From == '':
 			From = '[' + _("missing email address") + ']'
@@ -2676,6 +2691,7 @@ HDR_GDR = 'Generate-Delivery-Report'
 HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MID = 'Message-ID'
+HDR_REF = 'References'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
@@ -2702,7 +2718,7 @@ RecipientHeaders = ['To', 'Cc', 'Bcc']
 DateTimeHeaders = ['Date', 'Reply-By', 'Expires', 'Deliver-At-Date']
 PopularHeaders = ['Subject']
 AdvancedHeaders = [
-	'References', 'In-Reply-To', HDR_DNT,
+	HDR_REF, 'In-Reply-To', HDR_DNT,
 	'Generate-Delivery-Report', 'Prevent-NonDelivery-Report',
 	'Priority', 'Importance', 'Precedence',
 	'Newsgroups', 'Followup-To', 'Thread-Topic',
@@ -3075,7 +3091,7 @@ if cliArgs.compose:
 			if hname_lc == 'subject':
 				set_composer_subject(hval)
 			elif hname_lc in ['auto-submitted', 'message-id', 'content-type', 'domainkey-signature', 'dkim-signature']:
-				# do not include these headers in incompleted email
+				# Do not include these headers in an incompleted email.
 				if hname_lc == 'message-id':
 					supersedes.append(hval)
 			else:
