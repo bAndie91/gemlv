@@ -1830,9 +1830,15 @@ def act_save_struct_inner(savedir, iterator):
 	part = Parts[iterator][0]
 	oid = '-'.join(map(str, Parts.get_path(iterator)))
 	myname = part.get_filename()
+	if myname is not None:
+		myname = os.path.basename(myname)
 	if Parts.iter_has_child(iterator):
-		if not myname:
+		if myname is None:
 			myname = 'multipart-%s' % (oid)
+		body = part.get_payload(decode=1)
+		if body is None and (part.preamble is not None or part.epilogue is not None):
+			savefile = os.path.join(savedir, 'part-%s.txt' % (oid))
+			save_to_file(part, savefile, consider_preamble=True)
 		mysavedir = os.path.join(savedir, myname)
 		try:
 			mkdir(mysavedir)
@@ -1843,7 +1849,11 @@ def act_save_struct_inner(savedir, iterator):
 				subiter = Parts.iter_nth_child(iterator, nth)
 				act_save_struct_inner(mysavedir, subiter)
 	else:
-		if not myname:
+		if myname is None:
+			body = part.get_payload(decode=1)
+			if body is None or len(body) == 0:
+				# Skip empty, noname parts.
+				return
 			myname = 'part-%s%s' % (oid, get_extension_by_mime(part.get_content_type()))
 		savefile = os.path.join(savedir, myname)
 		save_to_file(part, savefile)
@@ -1889,7 +1899,7 @@ def set_xattrs(fh, attrs, filename='-'):
 			except IOError, e:
 				stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
 
-def save_to_file(eml, filename, ask_overwrite=True):
+def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	if ask_overwrite:
 		if os.path.exists(filename):
 			if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
@@ -1897,7 +1907,7 @@ def save_to_file(eml, filename, ask_overwrite=True):
 	try:
 		fh = open(filename, 'w')
 		fd = fh.fileno()
-		save_to_filedescriptor(eml, fd)
+		save_to_filedescriptor(eml, fd, consider_preamble)
 		if eml.get_content_maintype() == 'multipart':
 			mimetype = MIMETYPE_EMAIL
 		else:
@@ -1919,10 +1929,13 @@ def save_to_file(eml, filename, ask_overwrite=True):
 		display_error(e)
 	return False
 
-def save_to_filedescriptor(eml, fd):
+def save_to_filedescriptor(eml, fd, consider_preamble=False):
 	s = eml.get_payload(decode=1)
 	if s is None:
-		s = eml.as_string()
+		if consider_preamble:
+			s = '\n'.join([eml.preamble or '', eml.epilogue or ''])
+		else:
+			s = eml.as_string()
 	written = os.write(fd, s)
 	if written != len(s):
 		raise OSError(5, 'Write Error')
@@ -2376,12 +2389,15 @@ def act_attach():
 
 def attach_path(path, parent_part=None, parent_iter=None):
 	global NewEmail
-	if not os.path.exists(path):
-		return False
 	if parent_part is None:
 		parent_part = NewEmail
 	basename = os.path.basename(path)
-	ct_main, ct_sub = get_mime_by_filepath(path).split('/')
+	try:
+		ct_main, ct_sub = get_mime_by_filepath(path).split('/')
+		moddatetime = email.utils.formatdate(os.stat(path).st_mtime, True)
+	except OSError, e:
+		display_error(e)
+		return False
 	
 	if os.path.isdir(path):
 		part = MIMEMultipart('related')
@@ -2390,7 +2406,6 @@ def attach_path(path, parent_part=None, parent_iter=None):
 		part.set_payload('')
 		enc = None
 		try:
-			moddatetime = email.utils.formatdate(os.stat(path).st_mtime, True)
 			fh = open(path, 'r')
 		except IOError, e:
 			display_error(e)
