@@ -966,7 +966,7 @@ def show_advanced_comp_hdr(show=True):
 			else:
 				box.hide()
 
-def add_composer_header__direct(hname, hval=None):
+def add_composer_header__direct(hname, hval=None, manual_call=True):
 	box = None
 	for thisbox in panel_comp_header.children():
 		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox['name'] == hname:
@@ -978,34 +978,67 @@ def add_composer_header__direct(hname, hval=None):
 		box = compose_header_box(hname, hval)
 		panel_comp_header.pack_start(box, False, True)
 		if box.hntype == compose_header_box.HNTYPE_MENU:
-			for n in range(0, len(panel_comp_header.children())):
+			for n in range(len(panel_comp_header.children())):
 				if panel_comp_header.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
 					panel_comp_header.reorder_child(box, n)
 					break
+				# Ignore every 2nd child.
 				n += 1
-	box.focus()
+	if manual_call: box.focus()
 	box.show_all()
 	return box
 
-def add_composer_header(hname, hval=None):
-	box = add_composer_header__direct(hname, hval)
+def add_composer_header(hname, hval=None, manual_call=True):
+	box = add_composer_header__direct(hname, hval, manual_call)
 	box.tick_my_menuitem(1)
 	return box
 
-def add_composer_headers(hname, hvals):
+def add_composer_headers(hname, hvals, manual_call=True):
 	for hval in hvals:
-		box = add_composer_header__direct(hname, hval)
-		box.tick_my_menuitem(1)
+		add_composer_header(hname, hval, manual_call)
 
-def set_composer_headers(hname, hvals):
+def set_composer_headers(hname, hvals, manual_call=True):
 	clear_composer_headers(hname)
 	for hval in hvals:
-		add_composer_header(hname, hval)
+		add_composer_header(hname, hval, manual_call)
 
 def clear_composer_headers(hname, content=None):
 	for box in panel_comp_header.children():
 		if (hname is None or box['name'] == hname) and (content is None or content == box['value']):
 			box.cancel(manual=False)
+
+def composer_maintain_references_headers():
+	references = get_one_header_main(HDR_REF)
+	messageid = get_one_header_main(HDR_MID)
+	if messageid is not None:
+		if references is not None:
+			references = references + ' ' + messageid
+		else:
+			references = messageid
+	if references is not None:
+		add_composer_header(HDR_REF, references, manual_call=False)
+
+def composer_append_to_list_header(hname, hvals, delimiter=' '):
+	hval = delimiter.join(filter(lambda x: x is not None, hvals))
+	headers = get_composer_headers(hname)
+	if len(headers) == 0:
+		set_composer_headers(hname, [hval])
+	else:
+		headers[-1] = delimiter.join(headers[-1], hval)
+		set_composer_headers(HDR_REF, headers, manual_call=False)
+
+def composer_substract_from_list_header(hname, hvals, delimiter=' '):
+	hvals = filter(lambda x: x is not None, hvals)
+	headers = get_composer_headers(hname)
+	for idx in reversed(range(len(headers))):
+		newvalue = []
+		for word in headers[idx].split(delimiter):
+			if word in hvals:
+				hvals.remove(word)
+			else:
+				newvalue.append(word)
+		headers[idx] = delimiter.join(newvalue)
+	set_composer_headers(hname, headers, manual_call=False)
 
 class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
@@ -1508,17 +1541,6 @@ def act_compose():
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-def composer_maintain_references_headers():
-	references = get_one_header_main(HDR_REF)
-	messageid = get_one_header_main(HDR_MID)
-	if messageid is not None:
-		if references is not None:
-			references = references + ' ' + messageid
-		else:
-			references = messageid
-	if references is not None:
-		add_composer_header(HDR_REF, references)
-
 def act_reply(recip):
 	if open_composer():
 		add_composer_agent_headers()
@@ -1877,7 +1899,7 @@ def save_to_file(eml, filename, ask_overwrite=True):
 		fd = fh.fileno()
 		save_to_filedescriptor(eml, fd)
 		if eml.get_content_maintype() == 'multipart':
-			mimetype = 'message/rfc822'
+			mimetype = MIMETYPE_EMAIL
 		else:
 			mimetype = eml.get_content_type()
 		messageid = eml[HDR_MID]
@@ -2397,16 +2419,12 @@ def attach_path(path, parent_part=None, parent_iter=None):
 	
 	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime)
 	parent_part.attach(part)
-	if ct_main == 'message' and ct_sub == 'rfc822':
+	if part.get_content_type() == MIMETYPE_EMAIL:
 		attached_email = email.message_from_file(open(path, 'r'))
-		attached_email_messageid = attached_email.get(HDR_MID)
-		if attached_email_messageid:
-			references_headers = get_composer_headers(HDR_REF)
-			if len(references_headers) == 0:
-				set_composer_headers(HDR_REF, [attached_email_messageid])
-			else:
-				references_headers[-1] += ' ' + attached_email_messageid
-				set_composer_headers(HDR_REF, references_headers)
+		amid = attached_email.get(HDR_MID)
+		if amid is not None:
+			composer_append_to_list_header(HDR_REF, [amid])
+			part.add_header(HDR_MID, amid)
 	set_unsaved()
 	stock = get_stock_by_mime(ct_main, ct_sub)
 	pixb = None
@@ -2468,17 +2486,20 @@ def on_keypress_attachments(tv, evt):
 			try:
 				iterator = Attachments.get_iter(itpath)
 			except ValueError:
-				# child was deleted in meantime
+				# Child was deleted in meantime.
 				continue
 			if Attachments[iterator][0].get_content_type() == 'message/disposition-notification':
 				win_comp.get_window().beep()
 				continue
+			part = Attachments[iterator][0]
+			if part.get_content_type() == MIMETYPE_EMAIL:
+				composer_substract_from_list_header(HDR_REF, [part.get(HDR_MID)])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
 				parent_part = NewEmail
 			else:
 				parent_part = Attachments[parent_iter][0]
-			parent_part._payload.remove(Attachments[iterator][0])
+			parent_part._payload.remove(part)
 			del(Attachments[iterator])
 		return True
 	return False
@@ -2692,6 +2713,7 @@ HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MID = 'Message-ID'
 HDR_REF = 'References'
+MIMETYPE_EMAIL = 'message/rfc822'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
@@ -3007,18 +3029,21 @@ box_compose.pack_start(tb_comp_controls, False, True)
 win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=120, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
-panel_upper.set_position(win_comp.get_default_size()[0]-150)
+panel_upper.set_position(win_comp.get_default_size()[1]-150)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
 panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_attachments.get_selection().set_mode(gtk.SELECTION_MULTIPLE)
-panel_attachments.drag_dest_set(0, [], 0)
-panel_attachments.connect('drag-motion', drop_attachment_motion)
-panel_attachments.connect('drag-drop', drop_attachment_accept)
-panel_attachments.connect('drag-data-received', drop_attachment)
+for wdg in spanel_attachments, panel_edit_message:
+ wdg.drag_dest_set(0, [], 0)
+ wdg.connect('drag-motion', drop_attachment_motion)
+ wdg.connect('drag-drop', drop_attachment_accept)
+ wdg.connect('drag-data-received', drop_attachment)
+panel_attachments.set_reorderable(True)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
+panel_upper.set_position(win_comp.get_default_size()[0]-182)
 panel_compose.set_position(125)
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
