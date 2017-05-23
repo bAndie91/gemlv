@@ -188,7 +188,7 @@ class pipereader(object):
 			os.closerange(3, 255)
 			try:
 				os.execvp(cmd, args)
-			except OSError, e:
+			except OSError as e:
 				stderr(str(e))
 			os._exit(127)
 		else:
@@ -434,7 +434,7 @@ class ExecThreadRunner(threading.Thread):
 			os.closerange(0, 255)
 			try:
 				os.execvp(cmd, [cmd] + args)
-			except OSError, e:
+			except OSError as e:
 				stderr(str(e))
 			os._exit(127)
 		else:
@@ -462,6 +462,13 @@ def get_header_parameter(text, param):
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
+
+def get_iterator_from_pos(treeview, x, y):
+	pathinfo = treeview.get_path_at_pos(x, y)
+	if pathinfo is None: return None
+	return treeview.get_model().get_iter(pathinfo[0])
+
+
 ### private functions ###
 
 def win_main_show(widget, event):
@@ -476,7 +483,7 @@ def get_email_addresses_in_main_headers(h):
 def email_from_file(filename):
 	try:
 		fh = open(filename, 'r')
-	except IOError, e:
+	except IOError as e:
 		display_error(e)
 		act_quit()
 		return
@@ -579,7 +586,8 @@ def get_content_readably(eml):
 	return decode_readably(get_content_any(eml), eml)
 
 def get_content_any(eml):
-	s = eml.get_payload(decode=1)
+	s = eml.get_payload(decode=True)
+	# TODO preamble+epilogue instead of as_string?
 	if s is None: s = eml.as_string()
 	return s
 
@@ -614,7 +622,7 @@ def load_part(eml, filt=None):
 		else:
 			if ct_main == 'image':
 				loader = gtk.gdk.PixbufLoader()
-				loader.write(eml.get_payload(decode=1))
+				loader.write(eml.get_payload(decode=True))
 				loader.close()
 				pxb = loader.get_pixbuf()
 				panel_content_image.set_data('last-alloc', None)
@@ -725,7 +733,7 @@ def load_gravatar(addr, container):
 		try:
 			loader.write(web.read())
 			loader.close()
-		except glib.GError, e:
+		except glib.GError as e:
 			if e.code != 3:   # 'Unrecognized image file format'
 				raise e
 		else:
@@ -1024,7 +1032,7 @@ def composer_append_to_list_header(hname, hvals, delimiter=' '):
 	if len(headers) == 0:
 		set_composer_headers(hname, [hval])
 	else:
-		headers[-1] = delimiter.join(headers[-1], hval)
+		headers[-1] = delimiter.join([headers[-1], hval])
 		set_composer_headers(HDR_REF, headers, manual_call=False)
 
 def composer_substract_from_list_header(hname, hvals, delimiter=' '):
@@ -1668,7 +1676,7 @@ def act_report_spam(considered_as_spam = True):
 			try:
 				mkdir(targetdir)
 				os.rename(emailfile, os.path.join(targetdir, os.path.basename(emailfile)))
-			except OSError, e:
+			except OSError as e:
 				display_error(e)
 
 def start_razor_window(title, cmdargses):
@@ -1739,7 +1747,7 @@ def runcmd_thread(args, input_fd, out_buffer, vb):
 		os.closerange(3, 255)
 		try:
 			os.execvp(args[0], args)
-		except OSError, e:
+		except OSError as e:
 			stderr(str(e))
 		os._exit(127)
 	
@@ -1804,7 +1812,7 @@ def act_open():
 		fh = os.fdopen(fd, 'r')
 		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mime}, tmppath)
 		fh.close()
-	except OSError, e:
+	except OSError as e:
 		os.unlink(tmppath)
 		e.filename = tmppath
 		display_error(e)
@@ -1835,14 +1843,14 @@ def act_save_struct_inner(savedir, iterator):
 	if Parts.iter_has_child(iterator):
 		if myname is None:
 			myname = 'multipart-%s' % (oid)
-		body = part.get_payload(decode=1)
+		body = part.get_payload(decode=True)
 		if body is None and (part.preamble is not None or part.epilogue is not None):
 			savefile = os.path.join(savedir, 'part-%s.txt' % (oid))
 			save_to_file(part, savefile, consider_preamble=True)
 		mysavedir = os.path.join(savedir, myname)
 		try:
 			mkdir(mysavedir)
-		except OSError, e:
+		except OSError as e:
 			display_error(e)
 		else:
 			for nth in range(0, Parts.iter_n_children(iterator)):
@@ -1850,7 +1858,7 @@ def act_save_struct_inner(savedir, iterator):
 				act_save_struct_inner(mysavedir, subiter)
 	else:
 		if myname is None:
-			body = part.get_payload(decode=1)
+			body = part.get_payload(decode=True)
 			if body is None or len(body) == 0:
 				# Skip empty, noname parts.
 				return
@@ -1879,7 +1887,7 @@ def get_xattr(file_, attrname):
 	if xattr is not None:
 		try:
 			return xattr.getxattr(file_, attrname)
-		except IOError, e:
+		except IOError as e:
 			if e.errno != os.errno.ENODATA:
 				raise e
 	return None
@@ -1891,12 +1899,12 @@ def set_xattrs(fh, attrs, filename='-'):
 				if attrval is None:
 					try:
 						xattr.removexattr(fh, attrname)
-					except IOError, e:
+					except IOError as e:
 						if e.errno != os.errno.ENODATA:
 							raise e
 				else:
 					xattr.setxattr(fh, attrname, attrval)
-			except IOError, e:
+			except IOError as e:
 				stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
@@ -1922,15 +1930,15 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			futimes(fd, (-1, email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))))
 		fh.close()
 		return True
-	except IOError, e:
+	except IOError as e:
 		display_error(e)
-	except OSError, e:
+	except OSError as e:
 		e.filename = filename
 		display_error(e)
 	return False
 
 def save_to_filedescriptor(eml, fd, consider_preamble=False):
-	s = eml.get_payload(decode=1)
+	s = eml.get_payload(decode=True)
 	if s is None:
 		if consider_preamble:
 			s = '\n'.join([eml.preamble or '', eml.epilogue or ''])
@@ -1939,6 +1947,7 @@ def save_to_filedescriptor(eml, fd, consider_preamble=False):
 	written = os.write(fd, s)
 	if written != len(s):
 		raise OSError(5, 'Write Error')
+	os.fdatasync(fd)
 
 def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
@@ -2196,7 +2205,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		os.closerange(3, 255)
 		try:
 			os.execvp('sendmail', ['sendmail', '-ti'])
-		except OSError, e:
+		except OSError as e:
 			stderr(str(e))
 		os._exit(127)
 	
@@ -2216,10 +2225,10 @@ def sending_thread(dlg, progressbar, btn_cancel):
 		try:
 			parent_write.write(text[pos:pos+bufsize])
 			pos += bufsize
-		except ValueError, e:
+		except ValueError as e:
 			resp += '>>> ' + str(e) + '\n'
 			break
-		except IOError, e:
+		except IOError as e:
 			if e.errno == os.errno.EAGAIN:
 				while not StopSending:
 					ready = select.select([], [parent_write], [], 1.0)
@@ -2234,7 +2243,7 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	if not StopSending:
 		try:
 			parent_write.close()
-		except IOError, e:
+		except IOError as e:
 			resp += '>>> ' + str(e) + '\n'
 	
 	resp += ''.join(parent_read.readlines())
@@ -2328,11 +2337,10 @@ def act_addressbook():
 		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
 			x = int(evt.x)
 			y = int(evt.y)
-			pathinfo = trv.get_path_at_pos(x, y)
-			if pathinfo is not None:
-				itpath, col, cellx, celly = pathinfo
+			iterator = get_iterator_from_pos(trv, x, y)
+			if iterator is not None:
 				clear_composer_headers('To', '')
-				add_composer_header('To', mod[mod.get_iter(itpath)][0])
+				add_composer_header('To', mod[iterator][0])
 	def click_add(btn):
 		clear_composer_headers('To', '')
 		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1]))
@@ -2352,7 +2360,7 @@ def act_addressbook():
 	try:
 		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
 			mod.append([ln.strip()])
-	except IOError, e:
+	except IOError as e:
 		display_error(e)
 		return
 	
@@ -2382,20 +2390,31 @@ def act_addressbook():
 	bbx.pack_start(bcl, True, False)
 	win.show_all()
 
+def debug_multipart(eml, indent=0):
+	print "%s- [%s] %s" % (indent*2*' ', eml.get_content_type(), eml.get_filename())
+	if type(eml._payload) == list:
+		for e in eml._payload:
+			debug_multipart(e, indent+1)
+
 def act_attach():
 	filename = choose_open_file()
 	if filename is not None:
 		attach_path(filename)
 
-def attach_path(path, parent_part=None, parent_iter=None):
+def attach_path(path, parent_iter=None):
 	global NewEmail
-	if parent_part is None:
+	if parent_iter is None:
 		parent_part = NewEmail
+	else:
+		while True:
+			parent_part = Attachments[parent_iter][0]
+			if type(parent_part.get_payload()) == list: break
+			parent_iter = Attachments.iter_parent(parent_iter)
 	basename = os.path.basename(path)
 	try:
 		ct_main, ct_sub = get_mime_by_filepath(path).split('/')
 		moddatetime = email.utils.formatdate(os.stat(path).st_mtime, True)
-	except OSError, e:
+	except OSError as e:
 		display_error(e)
 		return False
 	
@@ -2407,14 +2426,12 @@ def attach_path(path, parent_part=None, parent_iter=None):
 		enc = None
 		try:
 			fh = open(path, 'r')
-		except IOError, e:
-			display_error(e)
-			return False
-		except OSError, e:
+		except (IOError, OSError) as e:
 			display_error(e)
 			return False
 		while True:
-			buf = fh.read(4096)
+			# Encode n*3 bytes to avoid base64 padding.
+			buf = fh.read(4096*3)
 			if buf == '': break
 			if enc is None:
 				# Guess the optimal transfer encoding from the first 4k chunk of data.
@@ -2444,10 +2461,12 @@ def attach_path(path, parent_part=None, parent_iter=None):
 	stock = get_stock_by_mime(ct_main, ct_sub)
 	pixb = None
 	iterator = Attachments.append(parent_iter, [part, basename, stock, pixb])
+	if parent_iter is not None:
+		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
 	if os.path.isdir(path):
 		for entry in os.listdir(path):
-			if not attach_path(os.path.join(path, entry), part, iterator):
+			if not attach_path(os.path.join(path, entry), iterator):
 				return False
 	return True
 
@@ -2456,35 +2475,86 @@ def drop_attachment_motion(wdg, context, x, y, time):
 	context.drag_status(gtk.gdk.ACTION_COPY, time)
 	return True
 
-def drop_attachment_accept(wdg, context, x, y, time):
-	accepted = False
-	for desired in ['text/uri-list']:
-		if desired in context.targets:
-			wdg.drag_get_data(context, desired, time)
-			accepted = True
+def drop_attachment_drop(wdg, context, x, y, time):
+	accept = False
+	for expect_type in 'text/uri-list',:
+		# TODO more expect types
+		if expect_type in context.targets:
+			accept = True
+			wdg.drag_get_data(context, expect_type, time)
 			break
-	context.drop_reply(accepted, time)
+	context.drop_reply(accept, time)
 	wdg.drag_unhighlight()
-	return True
+	if not accept: context.finish(False, False, time)
+	return accept
 
-def drop_attachment(wdg, context, x, y, data, info, time):
-	success = None
+def drop_attachment_data(wdg, context, x, y, data, info, time):
+	success = False
 	if data.get_length() > -1:
 		typ = data.get_data_type()
 		if typ == 'text/uri-list':
+			success = None
+			parent_iter = context.get_data('treeview-drop-dest-iterator')
 			for uri in data.get_uris():
 				if uri.startswith('file:///'):
-					if not attach_path(uri[7:]):
+					if not attach_path(uri[7:], parent_iter):
 						success = False
 						break
 			if success is None:
+				# All uri are attached successfuly.
 				success = True
-		else:
-			success = False
-	else:
-		success = False
 	context.finish(success, False, time)
 	return True
+
+def drop_attachment_reorder_data(wdg, context, x, y, data, info, time):
+	treestore, iterator_path = data.tree_get_row_drag_data()
+	context.set_data('treeview-iterator-path', iterator_path)
+	return False
+
+def drop_attachment_reorder_drop(wdg, context, x, y, time):
+	if 'GTK_TREE_MODEL_ROW' in context.targets:
+		subject_path = context.get_data('treeview-iterator-path')
+		if subject_path is not None:
+			relative_iterator_path, relation = wdg.get_dest_row_at_pos(x, y)
+			relative_iterator = Attachments.get_iter(relative_iterator_path)
+			relative_part = Attachments[relative_iterator][0]
+			if relation in [gtk.TREE_VIEW_DROP_BEFORE, gtk.TREE_VIEW_DROP_AFTER]:
+				parent_iter = Attachments.iter_parent(relative_iterator)
+				if parent_iter is None:
+					parent_part = NewEmail
+				else:
+					parent_part = Attachments[parent_iter][0]
+				if relation == gtk.TREE_VIEW_DROP_BEFORE:
+					newindex = parent_part._payload.index(relative_part)
+				elif relation == gtk.TREE_VIEW_DROP_AFTER:
+					newindex = parent_part._payload.index(relative_part) + 1
+			elif relation in [gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER]:
+				parent_part = relative_part
+				newindex = 0
+			if type(parent_part.get_payload()) == list:
+				# Reorder subject_part attachment.
+				subject_part = Attachments[subject_path][0]
+				old_parent_iter = Attachments.iter_parent(Attachments.get_iter(subject_path))
+				if old_parent_iter is None:
+					old_parent_part = NewEmail
+				else:
+					old_parent_part = Attachments[old_parent_iter][0]
+				if old_parent_part == parent_part:
+					idx = old_parent_part._payload.index(subject_part)
+					if idx < newindex:
+						newindex -= 1
+				old_parent_part._payload.remove(subject_part)
+				parent_part._payload.insert(newindex, subject_part)
+				# Report the event in unhandled. This make the Reorder success.
+				return 0
+			# Report the event is handled. This makes the Reorder failed.
+			return True
+	else:
+		# We assume this is an external drop.
+		# Save TreeView-relative coordinates.
+		context.set_data('treeview-drop-dest-iterator', get_iterator_from_pos(wdg, x, y))
+	# Report the event is unhandled.
+	return False
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	eml = Attachments[iterator][0]
@@ -2642,9 +2712,9 @@ def act_edit_external():
 		filehandler.write(get_composer_text())
 		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: 'text/plain'}, tmppath)
 		filehandler.close()
-	except IOError, e:
+	except IOError as e:
 		err = e
-	except OSError, e:
+	except OSError as e:
 		e.filename = tmppath
 		err = e
 	if err is not None:
@@ -2661,7 +2731,7 @@ def cb_edit_external(status, filepath):
 		filehandler = None
 		try:
 			filehandler = open(filepath, 'r')
-		except IOError, e:
+		except IOError as e:
 			display_error(e)
 			on_edit_external_done(None)
 		else:
@@ -2669,13 +2739,13 @@ def cb_edit_external(status, filepath):
 			filehandler.close()
 		try:
 			os.unlink(filepath)
-		except OSError, e:
+		except OSError as e:
 			display_error(e)
 		gtk.threads_leave()
 	else:
 		try:
 			os.unlink(filepath)
-		except OSError, e:
+		except OSError as e:
 			stderr(str(e))
 
 def on_edit_external_done(data):
@@ -3049,13 +3119,15 @@ spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
 panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+spanel_attachments.drag_dest_set(0, [], 0)
+#spanel_attachments.drag_dest_set(gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT, [('text/uri-list', 0, 0), ('GTK_TEXT_BUFFER_CONTENTS', 0, 0)], gtk.gdk.ACTION_COPY)
+spanel_attachments.connect('drag-motion', drop_attachment_motion)
+spanel_attachments.connect('drag-drop', drop_attachment_drop)
+spanel_attachments.connect('drag-data-received', drop_attachment_data)
 panel_attachments.get_selection().set_mode(gtk.SELECTION_MULTIPLE)
-for wdg in spanel_attachments, panel_edit_message:
- wdg.drag_dest_set(0, [], 0)
- wdg.connect('drag-motion', drop_attachment_motion)
- wdg.connect('drag-drop', drop_attachment_accept)
- wdg.connect('drag-data-received', drop_attachment)
 panel_attachments.set_reorderable(True)
+panel_attachments.connect('drag-data-received', drop_attachment_reorder_data)
+panel_attachments.connect('drag-drop', drop_attachment_reorder_drop)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
 panel_upper.set_position(win_comp.get_default_size()[0]-182)
