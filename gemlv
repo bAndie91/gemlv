@@ -1831,7 +1831,7 @@ def act_save_struct():
 	itpaths = selection_parts.get_selected_rows()[1]
 	savedir = choose_save_folder()
 	if savedir is not None:
-		for n in range(0, len(itpaths)):
+		for n in range(len(itpaths)):
 			act_save_struct_inner(savedir, Parts.get_iter(itpaths[n]))
 
 def act_save_struct_inner(savedir, iterator):
@@ -1856,6 +1856,16 @@ def act_save_struct_inner(savedir, iterator):
 			for nth in range(0, Parts.iter_n_children(iterator)):
 				subiter = Parts.iter_nth_child(iterator, nth)
 				act_save_struct_inner(mysavedir, subiter)
+			moddatetime = get_header_parameter(part[HDR_CD], 'modification-date')
+			posixmode = get_header_parameter(part[HDR_CD], 'posix-mode')
+			try:
+				if moddatetime:
+					mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
+					os.utime(mysavedir, (-1, mod_timestamp))
+				if posixmode:
+					os.chmod(mysavedir, int(posixmode, 8))
+			except OSError as e:
+				display_error(e)
 	else:
 		if myname is None:
 			body = part.get_payload(decode=True)
@@ -1909,26 +1919,34 @@ def set_xattrs(fh, attrs, filename='-'):
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	if ask_overwrite:
-		if os.path.exists(filename):
+		if os.path.lexists(filename):
 			if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
 				return None
 	try:
-		fh = open(filename, 'w')
-		fd = fh.fileno()
-		save_to_filedescriptor(eml, fd, consider_preamble)
-		if eml.get_content_maintype() == 'multipart':
-			mimetype = MIMETYPE_EMAIL
+		if eml.get_content_type() == 'inode/symlink':
+			link_target = eml.get_payload(decode=True)
+			os.symlink(link_target, filename)
 		else:
-			mimetype = eml.get_content_type()
-		messageid = eml[HDR_MID]
-		if not messageid and hasattr(Email, '__getitem__'):
-			messageid = Email[HDR_MID]
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
-		fh.flush()
-		moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
-		if moddatetime:
-			futimes(fd, (-1, email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))))
-		fh.close()
+			fh = open(filename, 'w')
+			fd = fh.fileno()
+			save_to_filedescriptor(eml, fd, consider_preamble)
+			if eml.get_content_maintype() == 'multipart':
+				mimetype = MIMETYPE_EMAIL
+			else:
+				mimetype = eml.get_content_type()
+			messageid = eml[HDR_MID]
+			if not messageid and hasattr(Email, '__getitem__'):
+				messageid = Email[HDR_MID]
+			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
+			fh.flush()
+			moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
+			posixmode = get_header_parameter(eml[HDR_CD], 'posix-mode')
+			if moddatetime:
+				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
+				futimes(fd, (-1, mod_timestamp))
+			if posixmode:
+				os.fchmod(fd, int(posixmode, 8))
+			fh.close()
 		return True
 	except IOError as e:
 		display_error(e)
@@ -2412,13 +2430,19 @@ def attach_path(path, parent_iter=None):
 			parent_iter = Attachments.iter_parent(parent_iter)
 	basename = os.path.basename(path)
 	try:
-		ct_main, ct_sub = get_mime_by_filepath(path).split('/')
-		moddatetime = email.utils.formatdate(os.stat(path).st_mtime, True)
+		if os.path.islink(path):
+			ct_main, ct_sub = 'inode', 'symlink'
+		else:
+			ct_main, ct_sub = get_mime_by_filepath(path).split('/')
+		moddatetime = email.utils.formatdate(os.lstat(path).st_mtime, True)
 	except OSError as e:
 		display_error(e)
 		return False
 	
-	if os.path.isdir(path):
+	if os.path.islink(path):
+		part = MIMEBase(ct_main, ct_sub)
+		part.set_payload(os.readlink(path))
+	elif os.path.isdir(path):
 		part = MIMEMultipart('related')
 	else:
 		part = MIMEBase(ct_main, ct_sub)
@@ -2449,7 +2473,7 @@ def attach_path(path, parent_iter=None):
 			part._payload += buf
 		fh.close()
 	
-	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime)
+	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime, posix_mode=("%04o" % (os.lstat(path).st_mode & 07777,)))
 	parent_part.attach(part)
 	if part.get_content_type() == MIMETYPE_EMAIL:
 		attached_email = email.message_from_file(open(path, 'r'))
@@ -2464,7 +2488,7 @@ def attach_path(path, parent_iter=None):
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
-	if os.path.isdir(path):
+	if os.path.isdir(path) and not os.path.islink(path):
 		for entry in os.listdir(path):
 			if not attach_path(os.path.join(path, entry), iterator):
 				return False
