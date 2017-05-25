@@ -1563,7 +1563,7 @@ def act_reply(recip):
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
 			add_composer_header('To', '')
-			composer_maintain_references_headers
+			composer_maintain_references_headers()
 			
 			part = MIMEMessage(Email)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
@@ -1797,9 +1797,11 @@ def get_extension_by_mime(mime):
 	return e
 
 def get_mime_by_filepath(path):
-	t = Magic.file(os.path.realpath(path))
+	t = get_xattr(path, XATTR_TYPE)
 	if t is None or t.find('/')<1:
-		return 'application/octet-stream'
+		t = Magic.file(os.path.realpath(path))
+		if t is None or t.find('/')<1:
+			return 'application/octet-stream'
 	return t
 
 def act_open():
@@ -2439,60 +2441,79 @@ def attach_path(path, parent_iter=None):
 		display_error(e)
 		return False
 	
+	attachment_email = None
 	if os.path.islink(path):
 		part = MIMEBase(ct_main, ct_sub)
 		part.set_payload(os.readlink(path))
 	elif os.path.isdir(path):
 		part = MIMEMultipart('related')
 	else:
-		part = MIMEBase(ct_main, ct_sub)
-		part.set_payload('')
-		enc = None
-		try:
-			fh = open(path, 'r')
-		except (IOError, OSError) as e:
-			display_error(e)
-			return False
-		while True:
-			# Encode n*3 bytes to avoid base64 padding.
-			buf = fh.read(4096*3)
-			if buf == '': break
-			if enc is None:
-				# Guess the optimal transfer encoding from the first 4k chunk of data.
-				qp = buf.encode('quoted-printable')
-				b64 = buf.encode('base64')
-				if len(qp) < len(b64):
-					buf = qp
-					enc = 'quoted-printable'
+		attachment_email = email.message_from_file(open(path, 'r'))
+		if ct_main+'/'+ct_sub == MIMETYPE_EMAIL or attachment_email.is_multipart():
+			# Attachend file is an Email (according to mime type or by detected multipart)
+			part = MIMEBase(ct_main, ct_sub)
+			part.attach(attachment_email)
+		else:
+			attachment_email = None
+			part = MIMEBase(ct_main, ct_sub)
+			part.set_payload('')
+			enc = None
+			try:
+				fh = open(path, 'r')
+			except (IOError, OSError) as e:
+				display_error(e)
+				return False
+			while True:
+				# Encode n*3 bytes to avoid base64 padding.
+				buf = fh.read(4096*3)
+				if buf == '': break
+				if enc is None:
+					# Guess the optimal transfer encoding from the first 4k chunk of data.
+					qp = buf.encode('quoted-printable')
+					b64 = buf.encode('base64')
+					if len(qp) < len(b64):
+						buf = qp
+						enc = 'quoted-printable'
+					else:
+						buf = b64
+						enc = 'base64'
+					part.add_header(HDR_CTE, enc)
 				else:
-					buf = b64
-					enc = 'base64'
-				part.add_header(HDR_CTE, enc)
-			else:
-				buf = buf.encode(enc)
-			part._payload += buf
-		fh.close()
+					buf = buf.encode(enc)
+				part._payload += buf
+			fh.close()
 	
 	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime, posix_mode=("%04o" % (os.lstat(path).st_mode & 07777,)))
 	parent_part.attach(part)
-	if part.get_content_type() == MIMETYPE_EMAIL:
-		attached_email = email.message_from_file(open(path, 'r'))
-		amid = attached_email.get(HDR_MID)
+	set_unsaved()
+	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None])
+	if parent_iter is not None:
+		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
+	
+	if attachment_email is not None:
+		# Add Message-ID to main email's References.
+		amid = attachment_email.get(HDR_MID)
 		if amid is not None:
 			composer_append_to_list_header(HDR_REF, [amid])
 			part.add_header(HDR_MID, amid)
-	set_unsaved()
-	stock = get_stock_by_mime(ct_main, ct_sub)
-	pixb = None
-	iterator = Attachments.append(parent_iter, [part, basename, stock, pixb])
-	if parent_iter is not None:
-		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
+		# Add parts to the attachments panel which are already attached to this email file.
+		add_already_attached_parts(iterator, attachment_email)
 	
 	if os.path.isdir(path) and not os.path.islink(path):
 		for entry in os.listdir(path):
 			if not attach_path(os.path.join(path, entry), iterator):
 				return False
 	return True
+
+def add_already_attached_parts(root_iter, eml):
+	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
+	name = eml.get_filename() or '[%s/%s]' % (ct_main, ct_sub)
+	icon = get_stock_by_mime(ct_main, ct_sub)
+	iterator = Attachments.append(root_iter, [eml, name, icon, None])
+	subparts = eml.get_payload()
+	if type(subparts) == list:
+		for subpart in subparts:
+			add_already_attached_parts(iterator, subpart)
 
 def drop_attachment_motion(wdg, context, x, y, time):
 	wdg.drag_highlight()
@@ -2582,11 +2603,14 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	eml = Attachments[iterator][0]
+	header_params = {}
 	if eml[HDR_CD]:
+		header_params = dict(eml.get_params(header=HDR_CD))
 		eml._headers.remove((HDR_CD, eml[HDR_CD]))
-		eml.add_header(HDR_CD, 'attachment', filename=new_text)
-		Attachments[iterator][colnum] = new_text
-		return True
+	header_params['filename'] = new_text
+	eml.add_header(HDR_CD, 'attachment', **header_params)
+	Attachments[iterator][colnum] = new_text
+	return True
 
 def on_keypress_attachments(tv, evt):
 	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
@@ -2962,7 +2986,7 @@ lbl_right = gtk.Label()
 btnbox_right = gtk.VBox(True, 10)
 btn_open = StockButton(stock=gtk.STOCK_OPEN)
 btn_save = StockButton(stock=gtk.STOCK_SAVE)
-btn_save_struct = StockButton(label=_("Save to Structure"), stock=gtk.STOCK_SAVE)
+btn_save_struct = StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
@@ -3076,7 +3100,7 @@ toolbuttons = [
 	(None, 'mail-mark-junk', "Spam", None, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
-	(None, gtk.STOCK_SAVE, "Save\nRight click: Save to Structure", act_save, act_save_struct),
+	(None, gtk.STOCK_SAVE, "Save\nRight click: Save and Keep Structure", act_save, act_save_struct),
 	(None, None, None, 'separator', None),
 	("Unfilter", menubutton_filters, "Filter / Unfilter", act_view_source, None),
 	ToolItemDeclaration_wrap(panel_content),
