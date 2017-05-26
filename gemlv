@@ -2025,6 +2025,15 @@ def act_font(tv):
 		tv.set_data(key, font)
 	dlg.destroy()
 
+def on_scroll_on_button_font(wdg, evt, textview, modmask):
+	if modmask is None or (evt.state & modmask) != 0:
+		delta = +1 if evt.direction == gtk.gdk.SCROLL_UP else -1
+		pctx = textview.get_pango_context()
+		font = pctx.get_font_description()
+		font.set_size(font.get_size() + delta * pango.SCALE)
+		textview.modify_font(font)
+		return True
+
 def change_font(tv, s):
 	tv.modify_font(pango.FontDescription(s))
 
@@ -3053,6 +3062,7 @@ panel_view_header.set_alignment(0, 0)
 panel_view_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_view_header.set_selectable(True)
 panel_view_header.connect('populate-popup', populate_header_menu)
+panel_view_header.connect('scroll-event', on_scroll_on_button_font, panel_view_header, gtk.gdk.CONTROL_MASK)
 panel_view_avatar.children()[0].set_padding(6, 1)
 panel_view_subject.set_selectable(True)
 panel_view_subject.set_padding(5, 4)
@@ -3074,6 +3084,7 @@ btn_save_struct.connect('clicked', lambda wdg: act_save_struct())
 panel_content_image.connect('size-allocate', on_allocate_panel_content_image)
 panel_content.set_editable(False)
 panel_content.set_wrap_mode(gtk.WRAP_WORD)
+panel_content.connect('scroll-event', on_scroll_on_button_font, panel_content, gtk.gdk.CONTROL_MASK)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
 menubutton_filters.set_homogeneous(False)
@@ -3106,7 +3117,7 @@ setup_treeview__icon_label(panel_parts)
 def ToolItemDeclaration_wrap(tv):
 	return ("Wrap", gtk.STOCK_JUSTIFY_LEFT, "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap", (act_wrap, tv), (act_wrap, tv, -1))
 def ToolItemDeclaration_font(tv):
-	return (None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace", (act_font, tv), (act_font_switch, tv))
+	return (None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace\nScroll: zoom +/-", (act_font, tv), (act_font_switch, tv))
 
 toolbuttons = [
 	(None, 'emblem-generic', "Unimportant", None, None),
@@ -3123,8 +3134,9 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, x_, btn_open2, btn_save2, x_, x, x, x \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, x_, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
+btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
 
 ### Build Composer GUI ###
@@ -3200,6 +3212,7 @@ panel_compose.set_position(125)
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_edit_message.get_buffer().connect('modified-changed', on_edit_message)
+panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
@@ -3249,11 +3262,12 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_edit_message),
 	ToolItemDeclaration_font(panel_edit_message),
 ]
-x_, x, x, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, x \
+x_, x, x, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
 = load_toolitems(tb_comp_controls, toolbuttons)
 toggle_rqdn.connect('toggled', on_toggled)
 toggle_unimportant.connect('toggled', on_toggled)
 toggle_important.connect('toggled', on_toggled)
+btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, None)
 
 
 if cliArgs.compose:
