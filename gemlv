@@ -1810,7 +1810,7 @@ def get_mime_by_filepath(path):
 	if t is None or t.find('/')<1:
 		t = Magic.file(os.path.realpath(path))
 		if t is None or t.find('/')<1:
-			return 'application/octet-stream'
+			return MIMETYPE_OCTETSTREAM
 	return t
 
 def act_open():
@@ -1881,7 +1881,7 @@ def act_save_struct_inner(savedir, iterator):
 		if myname is None:
 			body = part.get_payload(decode=True)
 			if body is None or len(body) == 0:
-				# Skip empty, noname parts.
+				# Skip empty noname parts.
 				return
 			myname = 'part-%s%s' % (oid, get_extension_by_mime(part.get_content_type()))
 		savefile = os.path.join(savedir, myname)
@@ -2551,7 +2551,7 @@ def drop_attachment_drop(wdg, context, x, y, time):
 	if not accept: context.finish(False, False, time)
 	return accept
 
-def drop_attachment_data(wdg, context, x, y, data, info, time):
+def drop_attachment_data(wdg, context, x, y, data, intid, time):
 	success = False
 	if data.get_length() > -1:
 		typ = data.get_data_type()
@@ -2569,7 +2569,7 @@ def drop_attachment_data(wdg, context, x, y, data, info, time):
 	context.finish(success, False, time)
 	return True
 
-def drop_attachment_reorder_data(wdg, context, x, y, data, info, time):
+def drop_attachment_reorder_data(wdg, context, x, y, data, intid, time):
 	treestore, iterator_path = data.tree_get_row_drag_data()
 	context.set_data('treeview-iterator-path', iterator_path)
 	return False
@@ -2657,6 +2657,67 @@ def on_keypress_attachments(tv, evt):
 			del(Attachments[iterator])
 		return True
 	return False
+
+def drag_part_begin(wdg, context):
+	targets = wdg.drag_source_get_target_list()
+	dragged_parts = []
+	common_mime = None
+	for itpath in selection_parts.get_selected_rows()[1]:
+		part = Parts[itpath][0]
+		mime = part.get_content_type()
+		dragged_parts.append(part)
+		if common_mime is not False:
+			if common_mime is None:
+				common_mime = mime
+			elif common_mime != mime:
+				common_mime = False
+	if common_mime:
+		targets.insert(0, (common_mime, 0, len(targets)))
+	if len(dragged_parts) > 1:
+		context.set_icon_stock(gtk.STOCK_DND_MULTIPLE, 0, 0)
+	
+	atom_xds = gtk.gdk.atom_intern('XdndDirectSave0')
+	atom_filename = gtk.gdk.atom_intern('text/plain')
+	# TODO support multiple files
+	part0 = dragged_parts[0]
+	filename0 = part0.get_filename() or ('attachment%s' % (get_extension_by_mime(part0.get_content_type()),))  #TODO
+	stderr("Dragging [%s] %s" % (','.join(x[0] for x in targets), filename0))
+	
+	# Put dragged file's name into XWindow property. XDirectSave requirement.
+	context.source_window.property_change(atom_xds, atom_filename, 8, gtk.gdk.PROP_MODE_REPLACE, filename0)
+	context.set_data('dragged-parts', dragged_parts)
+	context.set_data('atom-xds', atom_xds)
+	context.set_data('atom-filename', atom_filename)
+
+def drag_part_data(wdg, context, data, intid, time):
+	targettype = data.get_target()
+	dragged_parts = context.get_data('dragged-parts')
+	part0 = dragged_parts[0]
+	stderr("Dropping [%s]" % (targettype,))
+	if targettype == MIMETYPE_OCTETSTREAM:
+		filedata = part0.get_payload(decode=True)
+		if filedata is None:
+			filedata = part0.as_string()
+		atom = gtk.gdk.atom_intern('STRING')
+		data.set(atom, 8, filedata)
+	elif targettype == 'XdndDirectSave0':
+		typ, fmt, dest_filename = context.source_window.property_get(context.get_data('atom-xds'), context.get_data('atom-filename'))
+		if dest_filename is not None:
+			xds_return_code = 'F'
+			# Don't handle XDirectSave. We pretended to support it, the remote app just to read our filename.
+			if False:
+				# TODO support GIO
+				if dest_filename.startswith('file:///'):
+					dest_filename = dest_filename[7:]
+					saved = save_to_file(part0, dest_filename)
+					xds_return_code = 'S' if saved else 'E'
+			# Fail XDirectSave, remote app will ask other target type.
+			data.set(data.target, 8, xds_return_code)
+	else:
+		stderr("Unknown drop target: "+targettype)
+
+def drag_part_end(wdg, context):
+	context.source_window.property_delete(context.get_data('atom-xds'))
 
 def act_encrypt():
 	pass
@@ -2867,6 +2928,7 @@ HDR_PNDR = 'Prevent-NonDelivery-Report'
 HDR_OR = 'Original-Recipient'
 HDR_MID = 'Message-ID'
 HDR_REF = 'References'
+MIMETYPE_OCTETSTREAM = 'application/octet-stream'
 MIMETYPE_EMAIL = 'message/rfc822'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
@@ -3072,6 +3134,10 @@ panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
+panel_parts.drag_source_set(gtk.gdk.BUTTON1_MASK, [(MIMETYPE_OCTETSTREAM, 0, 0), ('XdndDirectSave0', 0, 1)], gtk.gdk.ACTION_COPY)
+panel_parts.connect('drag-begin', drag_part_begin)
+panel_parts.connect('drag-data-get', drag_part_data)
+panel_parts.connect('drag-end', drag_part_end)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
 lbl_content_location.set_alignment(0, 0)
