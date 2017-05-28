@@ -304,8 +304,8 @@ msgstr "Nincs címzett."
 msgid "missing email address"
 msgstr "hiányzó email cím"
 
-msgid "Read content elsewhere:"
-msgstr "Tartalom elérése máshonnan:"
+msgid "See Content here:"
+msgstr "A tartalmat lásd itt:"
 
 msgid "Waiting background threads to complete."
 msgstr "Várakozás a háttérfolyamatok befejeztére."

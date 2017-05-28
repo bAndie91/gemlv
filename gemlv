@@ -120,6 +120,24 @@ class StockButton(gtk.Button):
 			img.set_from_pixbuf(icon)
 			img.props.visible = True
 
+class Marquee(gtk.ScrolledWindow):
+	def __init__(self, child):
+		assert isinstance(child, gtk.Widget)
+		super(self.__class__, self).__init__()
+		self.set_policy(gtk.POLICY_NEVER, gtk.POLICY_NEVER)
+		self.add_with_viewport(child)
+		viewport = self.get_child()
+		viewport.set_shadow_type(gtk.SHADOW_NONE)
+		viewport.connect('scroll-event', self.scroll_viewport)
+	def scroll_viewport(self, viewport, event):
+		hadj = self.get_hadjustment()
+		delta = +10 if event.direction in [gtk.gdk.SCROLL_DOWN, gtk.gdk.SCROLL_LEFT] else -10
+		newvalue = hadj.value + delta
+		width = self.get_allocation().width
+		if newvalue + width > hadj.upper:
+			newvalue = hadj.upper - width
+		hadj.set_value(newvalue)
+
 class cfgparser(object):
 	def __init__(self, name, **kvargs):
 		self.var = {'regex': '^\s*([^;#].*)', 'split': [1],}
@@ -617,7 +635,7 @@ def load_part(eml, filt=None):
 	if eml['Content-Location']:
 		uri = eml['Content-Location']
 		uri_esc = glib.markup_escape_text(uri)
-		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("Read content elsewhere:"), uri_esc, uri_esc))
+		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
 		lbl_content_location.show()
 	else:
 		lbl_content_location.hide()
@@ -3142,6 +3160,7 @@ panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
+spanel_view_subject = Marquee(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
 Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
@@ -3174,7 +3193,7 @@ panel_view_headerbox.pack_start(spanel_view_header, True, True)
 panel_view_headerbox.pack_start(panel_view_avatar, False, False)
 panel_view_avatar.pack_start(gtk.Image(), False, False)
 spanel_view_header.add_with_viewport(panel_view_header)
-panel_view_upper.pack_start(panel_view_subject, False, True)
+panel_view_upper.pack_start(spanel_view_subject, False, True)
 panel_view.pack2(panel_body, True, True)
 panel_body.pack1(spanel_parts, True, True)
 panel_body.pack2(panel_right, True, True)
