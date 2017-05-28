@@ -58,6 +58,9 @@ msgstr "Tárgy"
 msgid "Date"
 msgstr "Dátum"
 
+msgid "Priority"
+msgstr "Elsőbbség"
+
 msgid "Message is not saved.\nClose anyway?"
 msgstr "Az üzenet nincs mentve.\nMégis bezárod?"
 
@@ -157,9 +160,6 @@ msgstr "Tördelés"
 msgid "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap"
 msgstr "Tördelés: szó / betű / nincs\njobb klikk: nincs / szó / betű"
 
-msgid "Change Font\nRight click: monospace"
-msgstr "Betűtípus-váltás\njobb klikk: monospace"
-
 msgid "Unfilter"
 msgstr "ne legyen szűrés"
 
@@ -231,12 +231,6 @@ msgstr "Email elküldve."
 
 msgid "Sendmail error %s."
 msgstr "Sendmail hiba %s."
-
-msgid "Save to Structure"
-msgstr "Mentés Strukturáltan"
-
-msgid "Save\nRight click: Save to Structure"
-msgstr "Mentés\njobb klikk: Mentés Strukturáltan"
 
 msgid "Reply-By"
 msgstr "Válasz Eddig"
@@ -334,3 +328,18 @@ msgstr "Továbbítva"
 
 msgid "MDN is sent"
 msgstr "MDN küldve"
+
+msgid "Can not manage any of these types: %s"
+msgstr "Egyik tipust sem kezelem ezek közül: %s"
+
+msgid "Unrecognized URI:"
+msgstr "Értelmezetlen URI:"
+
+msgid "Keep Structure"
+msgstr "Struktúrát Megőrizve"
+
+msgid "Change Font\nRight click: monospace\nScroll: zoom +/-"
+msgstr "Betűtípus-váltás\njobb klikk: monospace\ngörgetés: nagyít/kicsinyít"
+
+msgid "Save\nRight click: Save and Keep Structure"
+msgstr "Mentés\njobb klikk: Mentés Struktúrát Megőrizve"
