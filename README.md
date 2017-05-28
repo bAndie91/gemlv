@@ -4,19 +4,20 @@ Email viewer and composer for local emails in GTK
 ## Features
 
 - display headers
-	- only which are significant for users
+	- only which are significant for end-users
 	- highlight email addresses
 	- convert Date to local timezone
 	- Reply-By and Expires headers, show warning if time is over
 	- switch to show all of the headers
 - view plain text message, or a filtered attachment
-	- configure multiple filters for non text attachments
-	- changable font or monospace on/off
+	- configure multiple filters for non-text attachments
+	- changable font or monospace on/off, font zoom
 	- wrap lines, wrap letters, no wrap
 	- show link for Content-Location if applicable
 - display attachments and other MIME parts in tree view
 	- select first text/plain or text/html part at beginning
 	- show attached filenames, and their mime type
+	- Drag-and-Drop from attachment panel
 - [Gravatar](http://www.gravatar.com/) support
 - undisplayable parts can be opened with external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 - save attachments (MIME parts)
@@ -24,8 +25,10 @@ Email viewer and composer for local emails in GTK
 		- single files
 		- more files at once in a folder
 		- preserving multipart structure (ie. save in directory tree)
-	- preverse modification time if available in attachment
-- button to unsubscribe from newsletters, from mailing lists
+	- preverse modification time, permissions if specified in attachment
+	- preserve symlinks
+	- save Message-ID, Content-Type in Extended Attributes
+- button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
 	- supported networks
 		- razor
@@ -34,12 +37,13 @@ Email viewer and composer for local emails in GTK
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
 		- can interrupt sending process
-	- can edit message by external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
-	- importance buttons influence Importance and Priority headers
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) and arbitrary ones as well
-	- can request Disposition Notification by setting Message-Disposition-To header
-	- validate email address syntax
-	- pick date and time from a calendar when editing date-like headers
+		- email address syntax is validated
+		- pick date and time from calendar when adding date-time headers
+	- can edit message by external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+	- options
+		- set Importance and Priority by tool buttons
+		- ask Disposition Notification by tool button
 	- addressbook
 		- read plain email addresses from file line by line
 - reply options
@@ -51,18 +55,20 @@ Email viewer and composer for local emails in GTK
 	- Forward: attach original email, not quote
 	- send Disposition Notification on demand
 		- even for messages have not requested it
-		- it generates the response message complying with the Accept-Language header (if it is translated)
-	- store replied/forwarded/MDN-sent state in x-attribute
+		- it generates the response message conforming to the Accept-Language header (if it is translated)
+	- store replied/forwarded/MDN-sent state in Extended Attribute
 - attachments in compose mode
-	- attach files and even whole subdirectories
+	- attach files, symlinks and even whole directories
 		- by browsing them
 		- by drag-and-drop
+	- attach data blobs by drag-and-drop
 	- rename attachments in place
-	- cancel attach
-	- use transport encoding which provides smaller encoded data for a given clear data
+	- remove attachments
+	- reorder attachments
+	- use that Transport Encoding which provides smaller encoded data for a given clear data
 		- quoted-printable
 		- base64
-	- store file's modification time in Content-Disposition header
+	- store file's modification time, permissions in Content-Disposition header
 - CLI options
 	- viewer mode (```gemlv raw_email.eml```)
 	- compose mode (```gemlv --compose```)
