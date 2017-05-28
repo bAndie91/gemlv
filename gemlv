@@ -2451,6 +2451,16 @@ def act_attach():
 	if filename is not None:
 		attach_path(filename)
 
+def analyze_for_optimal_encoding(buf):
+	# Guess the optimal transfer encoding from the first 4k chunk of data.
+	qp = buf.encode('quoted-printable')
+	b64 = buf.encode('base64')
+	if len(qp) < len(b64):
+		enc = 'quoted-printable'
+	else:
+		enc = 'base64'
+	return enc
+
 def attach_blob(data, parent_iter=None):
 	mime = get_mime_by_data(data)
 	ct_main, ct_sub = mime.split('/')
@@ -2461,7 +2471,9 @@ def attach_blob(data, parent_iter=None):
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
 	else:
-		part.set_payload(data)  # TODO transfer encoding
+		enc = analyze_for_optimal_encoding(data[0:2048])
+		part.add_header(HDR_CTE, enc)
+		part.set_payload(data.encode(enc))
 	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
 	return True
 
@@ -2501,23 +2513,13 @@ def attach_path(path, parent_iter=None):
 				display_error(e)
 				return False
 			while True:
-				# Encode n*3 bytes to avoid base64 padding.
+				# Encode n*3 bytes to avoid base64 paddings.
 				buf = fh.read(4096*3)
 				if buf == '': break
 				if enc is None:
-					# Guess the optimal transfer encoding from the first 4k chunk of data.
-					qp = buf.encode('quoted-printable')
-					b64 = buf.encode('base64')
-					if len(qp) < len(b64):
-						buf = qp
-						enc = 'quoted-printable'
-					else:
-						buf = b64
-						enc = 'base64'
+					enc = analyze_for_optimal_encoding(buf)
 					part.add_header(HDR_CTE, enc)
-				else:
-					buf = buf.encode(enc)
-				part._payload += buf
+				part._payload += buf.encode(enc)
 			fh.close()
 	
 	iterator = attach__internal(parent_iter=parent_iter, content_disposition_params=content_disposition_params, basename=basename, part=part, mime=mime)
@@ -2739,7 +2741,7 @@ def drag_part_begin(wdg, context):
 	filename0 = part0.get_filename() or ('attachment%s' % (get_extension_by_mime(part0.get_content_type()),))  #TODO
 	stderr("Dragging [%s] %s" % (','.join(x[0] for x in targets), filename0))
 	
-	# Put dragged file's name into XWindow property. XDirectSave requirement.
+	# Put dragged file's name into XWindow property (XDirectSave standard)
 	context.source_window.property_change(atom_xds, atom_filename, 8, gtk.gdk.PROP_MODE_REPLACE, filename0)
 	context.set_data('dragged-parts', dragged_parts)
 	context.set_data('atom-xds', atom_xds)
@@ -2760,14 +2762,15 @@ def drag_part_data(wdg, context, data, intid, time):
 		typ, fmt, dest_filename = context.source_window.property_get(context.get_data('atom-xds'), context.get_data('atom-filename'))
 		if dest_filename is not None:
 			xds_return_code = 'F'
-			# Don't handle XDirectSave. We pretended to support it just to have the remote app read our filename.
+			# Don't handle XDirectSave.
+			# We pretended to support it just to have the remote app read our filename.
 			if False:
 				# TODO support GIO
 				filepath = file_uri_to_path(dest_filename)
 				if filepath is not None:
 					saved = save_to_file(part0, filepath)
 					xds_return_code = 'S' if saved else 'E'
-			# Fail XDirectSave, remote app will ask other target type.
+			# Fail XDirectSave, remote app should ask us for other target type.
 			data.set(data.target, 8, xds_return_code)
 	else:
 		stderr("Unknown drop target: "+targettype)
