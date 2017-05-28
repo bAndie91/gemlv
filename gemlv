@@ -462,6 +462,15 @@ def get_header_parameter(text, param):
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
+def file_uri_to_path(uri):
+	if uri.startswith('file:///'):
+		return uri[7:]
+	elif uri.startswith('file://'):
+		return uri[6:]
+	elif uri.startswith('file:/'):
+		return uri[5:]
+	return None
+
 
 def get_iterator_from_pos(treeview, x, y):
 	pathinfo = treeview.get_path_at_pos(x, y)
@@ -1813,6 +1822,9 @@ def get_mime_by_filepath(path):
 			return MIMETYPE_OCTETSTREAM
 	return t
 
+def get_mime_by_data(data):
+	return Magic.buffer(data)
+
 def act_open():
 	eml = get_part_by_itpath()
 	if eml is None: return
@@ -2321,7 +2333,7 @@ def build_newemail():
 	idx = 0
 	for hname, hval in NewEmail._headers:
 		if hname.lower() not in preserve_headers:
-			del(NewEmail._headers[idx])
+			del NewEmail._headers[idx]
 			continue
 		idx += 1
 	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
@@ -2429,7 +2441,7 @@ def act_addressbook():
 	win.show_all()
 
 def debug_multipart(eml, indent=0):
-	print "%s- [%s] %s" % (indent*2*' ', eml.get_content_type(), eml.get_filename())
+	stderr("%s- [%s] %s" % (indent*2*' ', eml.get_content_type(), eml.get_filename()))
 	if type(eml._payload) == list:
 		for e in eml._payload:
 			debug_multipart(e, indent+1)
@@ -2439,41 +2451,48 @@ def act_attach():
 	if filename is not None:
 		attach_path(filename)
 
-def attach_path(path, parent_iter=None):
-	global NewEmail
-	if parent_iter is None:
-		parent_part = NewEmail
+def attach_blob(data, parent_iter=None):
+	mime = get_mime_by_data(data)
+	ct_main, ct_sub = mime.split('/')
+	basename = 'file%s' % (get_extension_by_mime(mime),)
+	
+	part = MIMEBase(ct_main, ct_sub)
+	attachment_email = email.message_from_string(data)
+	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
+		part.attach(attachment_email)
 	else:
-		while True:
-			parent_part = Attachments[parent_iter][0]
-			if type(parent_part.get_payload()) == list: break
-			parent_iter = Attachments.iter_parent(parent_iter)
+		part.set_payload(data)  # TODO transfer encoding
+	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
+	return True
+
+def attach_path(path, parent_iter=None):
 	basename = os.path.basename(path)
 	try:
 		if os.path.islink(path):
-			ct_main, ct_sub = 'inode', 'symlink'
+			mime = 'inode/symlink'
 		else:
-			ct_main, ct_sub = get_mime_by_filepath(path).split('/')
-		moddatetime = email.utils.formatdate(os.lstat(path).st_mtime, True)
+			mime = get_mime_by_filepath(path)
+		content_disposition_params = {
+			'modification_date': email.utils.formatdate(os.lstat(path).st_mtime, True),
+			'posix_mode': "%04o" % (os.lstat(path).st_mode & 07777,),
+		}
 	except OSError as e:
 		display_error(e)
 		return False
 	
-	attachment_email = None
+	ct_main, ct_sub = mime.split('/')
+	part = MIMEBase(ct_main, ct_sub)
 	if os.path.islink(path):
-		part = MIMEBase(ct_main, ct_sub)
 		part.set_payload(os.readlink(path))
 	elif os.path.isdir(path):
 		part = MIMEMultipart('related')
 	else:
 		attachment_email = email.message_from_file(open(path, 'r'))
-		if ct_main+'/'+ct_sub == MIMETYPE_EMAIL or attachment_email.is_multipart():
-			# Attachend file is an Email (according to mime type or by detected multipart)
-			part = MIMEBase(ct_main, ct_sub)
+		if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
+			# File being attached is an Email (according to mime type or by detected multipart)
 			part.attach(attachment_email)
 		else:
-			attachment_email = None
-			part = MIMEBase(ct_main, ct_sub)
+			del attachment_email
 			part.set_payload('')
 			enc = None
 			try:
@@ -2501,27 +2520,47 @@ def attach_path(path, parent_iter=None):
 				part._payload += buf
 			fh.close()
 	
-	part.add_header(HDR_CD, 'attachment', filename=basename, modification_date=moddatetime, posix_mode=("%04o" % (os.lstat(path).st_mode & 07777,)))
-	parent_part.attach(part)
-	set_unsaved()
-	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None])
-	if parent_iter is not None:
-		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
-	
-	if attachment_email is not None:
-		# Add Message-ID to main email's References.
-		amid = attachment_email.get(HDR_MID)
-		if amid is not None:
-			composer_append_to_list_header(HDR_REF, [amid])
-			part.add_header(HDR_MID, amid)
-		# Add parts to the attachments panel which are already attached to this email file.
-		add_already_attached_parts(iterator, attachment_email)
+	iterator = attach__internal(parent_iter=parent_iter, content_disposition_params=content_disposition_params, basename=basename, part=part, mime=mime)
 	
 	if os.path.isdir(path) and not os.path.islink(path):
 		for entry in os.listdir(path):
 			if not attach_path(os.path.join(path, entry), iterator):
 				return False
 	return True
+
+def attach__internal(parent_iter=None, content_disposition_params={}, basename=None, part=None, mime=None):
+	global NewEmail
+	if parent_iter is None:
+		parent_part = NewEmail
+	else:
+		while True:
+			parent_part = Attachments[parent_iter][0]
+			if type(parent_part.get_payload()) == list: break
+			parent_iter = Attachments.iter_parent(parent_iter)
+	
+	ct_main, ct_sub = mime.split('/')
+	part.add_header(HDR_CD, 'attachment', filename=basename, **content_disposition_params)
+	parent_part.attach(part)
+	set_unsaved()
+	
+	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None])
+	if parent_iter is not None:
+		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
+	
+	debug_multipart(NewEmail)
+	subparts = part.get_payload(decode=False)
+	if mime == MIMETYPE_EMAIL or (type(subparts) == list and len(subparts) > 0):
+		attachment_email = subparts[0]
+		if isinstance(attachment_email, email.message.Message):
+			amid = attachment_email.get(HDR_MID)
+			if amid is not None:
+				# Add Message-ID to main email's References.
+				composer_append_to_list_header(HDR_REF, [amid])
+				part.add_header(HDR_MID, amid)
+			# Add parts to the attachments panel which are already attached to this email file.
+			add_already_attached_parts(iterator, attachment_email)
+	
+	return iterator
 
 def add_already_attached_parts(root_iter, eml):
 	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
@@ -2533,39 +2572,56 @@ def add_already_attached_parts(root_iter, eml):
 		for subpart in subparts:
 			add_already_attached_parts(iterator, subpart)
 
+def drop_attachment_acceptable(targets):
+	acceptable_types = MIMETYPE_URILIST, MIMETYPE_OCTETSTREAM
+	for expect_type in acceptable_types:
+		if expect_type in targets:
+			return expect_type
+	return False
+
 def drop_attachment_motion(wdg, context, x, y, time):
-	wdg.drag_highlight()
-	context.drag_status(gtk.gdk.ACTION_COPY, time)
+	#stderr("Dropping %s" % (context.targets,))
+	if drop_attachment_acceptable(context.targets):
+		wdg.drag_highlight()
+		context.drag_status(gtk.gdk.ACTION_COPY, time)
+	else:
+		context.drag_abort(time)
 	return True
 
 def drop_attachment_drop(wdg, context, x, y, time):
-	accept = False
-	for expect_type in 'text/uri-list',:
-		# TODO more expect types
-		if expect_type in context.targets:
-			accept = True
-			wdg.drag_get_data(context, expect_type, time)
-			break
+	target = drop_attachment_acceptable(context.targets)
+	accept = bool(target)
 	context.drop_reply(accept, time)
-	wdg.drag_unhighlight()
-	if not accept: context.finish(False, False, time)
+	if accept:
+		wdg.drag_get_data(context, target, time)
+		wdg.drag_unhighlight()
+	else:
+		display_error(_("Can not manage any of these types: %s") % (context.targets,))
+		context.finish(accept, False, time)
 	return accept
 
 def drop_attachment_data(wdg, context, x, y, data, intid, time):
+	#print map(lambda x: (x, getattr(data, 'get_'+x)()), ['target', 'format', 'data_type', 'selection', 'text'])
 	success = False
 	if data.get_length() > -1:
 		typ = data.get_data_type()
-		if typ == 'text/uri-list':
+		parent_iter = context.get_data('treeview-drop-dest-iterator')
+		if typ == MIMETYPE_URILIST:
 			success = None
-			parent_iter = context.get_data('treeview-drop-dest-iterator')
 			for uri in data.get_uris():
-				if uri.startswith('file:///'):
-					if not attach_path(uri[7:], parent_iter):
+				filepath = file_uri_to_path(uri)
+				if filepath is not None:
+					if not attach_path(filepath, parent_iter):
 						success = False
 						break
+				else:
+					display_error(_("Unrecognized URI:\n%s") % (uri,))
 			if success is None:
 				# All uri are attached successfuly.
 				success = True
+		elif typ == MIMETYPE_OCTETSTREAM:
+			# TODO get filename from somewhere
+			success = bool(attach_blob(data.data, parent_iter))
 	context.finish(success, False, time)
 	return True
 
@@ -2654,7 +2710,7 @@ def on_keypress_attachments(tv, evt):
 			else:
 				parent_part = Attachments[parent_iter][0]
 			parent_part._payload.remove(part)
-			del(Attachments[iterator])
+			del Attachments[iterator]
 		return True
 	return False
 
@@ -2698,18 +2754,18 @@ def drag_part_data(wdg, context, data, intid, time):
 		filedata = part0.get_payload(decode=True)
 		if filedata is None:
 			filedata = part0.as_string()
-		atom = gtk.gdk.atom_intern('STRING')
+		atom = gtk.gdk.atom_intern(MIMETYPE_OCTETSTREAM)
 		data.set(atom, 8, filedata)
 	elif targettype == 'XdndDirectSave0':
 		typ, fmt, dest_filename = context.source_window.property_get(context.get_data('atom-xds'), context.get_data('atom-filename'))
 		if dest_filename is not None:
 			xds_return_code = 'F'
-			# Don't handle XDirectSave. We pretended to support it, the remote app just to read our filename.
+			# Don't handle XDirectSave. We pretended to support it just to have the remote app read our filename.
 			if False:
 				# TODO support GIO
-				if dest_filename.startswith('file:///'):
-					dest_filename = dest_filename[7:]
-					saved = save_to_file(part0, dest_filename)
+				filepath = file_uri_to_path(dest_filename)
+				if filepath is not None:
+					saved = save_to_file(part0, filepath)
 					xds_return_code = 'S' if saved else 'E'
 			# Fail XDirectSave, remote app will ask other target type.
 			data.set(data.target, 8, xds_return_code)
@@ -2930,6 +2986,7 @@ HDR_MID = 'Message-ID'
 HDR_REF = 'References'
 MIMETYPE_OCTETSTREAM = 'application/octet-stream'
 MIMETYPE_EMAIL = 'message/rfc822'
+MIMETYPE_URILIST = 'text/uri-list'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
