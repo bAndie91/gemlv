@@ -588,9 +588,9 @@ def load_parts(eml, model, parent):
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb])
-	if PartPrimary is None and eml.get_content_type() == 'text/plain':
+	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
 		PartPrimary = iterator
-	if PartSecondary is None and eml.get_content_type() == 'text/html':
+	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
 		PartSecondary = iterator
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
@@ -914,7 +914,7 @@ def get_stock_by_mime(main, sub):
 	elif assoc_main.has_key(main):
 		return assoc_main[main]
 	
-	if full in ['text/html']:
+	if full in [MIMETYPE_HTML]:
 		return main + '-' + sub
 	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
 		return main + '-x-generic'
@@ -2421,6 +2421,12 @@ def act_save_edit(save_as=False):
 def on_after_save_draft():
 	set_unsaved(False)
 	panel_edit_message.get_buffer().set_modified(False)
+	s = win_comp.get_data('saved-to-file')
+	if s is None:
+		s = PROGNAME
+	else:
+		s = os.path.basename(s) + ' - ' + PROGNAME
+	win_comp.set_title(s)
 
 def act_addressbook():
 	def dblclick(wdg, evt):
@@ -2604,15 +2610,16 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	
 	return iterator
 
-def add_already_attached_parts(root_iter, eml):
-	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
-	name = eml.get_filename() or '[%s/%s]' % (ct_main, ct_sub)
-	icon = get_stock_by_mime(ct_main, ct_sub)
-	iterator = Attachments.append(root_iter, [eml, name, icon, None])
-	subparts = eml.get_payload()
-	if type(subparts) == list:
-		for subpart in subparts:
-			add_already_attached_parts(iterator, subpart)
+def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
+	if callback(eml):
+		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
+		name = eml.get_filename() or '[%s/%s]' % (ct_main, ct_sub)
+		icon = get_stock_by_mime(ct_main, ct_sub)
+		iterator = Attachments.append(root_iter, [eml, name, icon, None])
+		subparts = eml.get_payload()
+		if type(subparts) == list:
+			for subpart in subparts:
+				add_already_attached_parts(iterator, subpart, callback=callback)
 
 def drop_attachment_acceptable(targets):
 	acceptable_types = MIMETYPE_URILIST, MIMETYPE_OCTETSTREAM
@@ -2776,7 +2783,7 @@ def drag_part_begin(wdg, context):
 		context.set_icon_stock(gtk.STOCK_DND_MULTIPLE, 0, 0)
 	
 	atom_xds = gtk.gdk.atom_intern('XdndDirectSave0')
-	atom_filename = gtk.gdk.atom_intern('text/plain')
+	atom_filename = gtk.gdk.atom_intern(MIMETYPE_TEXT)
 	# TODO support multiple files
 	filename0 = part_filename_by_iteratorpath(itpaths[0], add_extension=True, add_subject=True)
 	stderr("Dragging [%s] %s" % (','.join(x[0] for x in targets), repr(filename0)))
@@ -2827,7 +2834,7 @@ def act_sign():
 def act_dispos_notif():
 	if open_composer():
 		NewEmail.set_type('multipart/report')
-		NewEmail.set_param('report-type', 'disposition-notification')
+		NewEmail.set_param('report-type', 'disposition-notification', header='Content-Type')
 		
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('set-xattr-on-send', [XATTR_MDNSENT])
@@ -2939,7 +2946,7 @@ def act_edit_external():
 	try:
 		filehandler = os.fdopen(fd, 'w')
 		filehandler.write(get_composer_text())
-		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: 'text/plain'}, tmppath)
+		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
 	except IOError as e:
 		err = e
@@ -3030,6 +3037,8 @@ HDR_REF = 'References'
 MIMETYPE_OCTETSTREAM = 'application/octet-stream'
 MIMETYPE_EMAIL = 'message/rfc822'
 MIMETYPE_URILIST = 'text/uri-list'
+MIMETYPE_TEXT = 'text/plain'
+MIMETYPE_HTML = 'text/html'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
@@ -3044,7 +3053,7 @@ VAL_AGE = {
 	'require': '^\d+[shmdwy]$',
 	}
 VAL_DATE = {
-	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}$',
+	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}(\s+\([A-Z]+\))?$',
 	}
 Email = None
 PartPrimary = None
@@ -3066,6 +3075,20 @@ AdvancedHeaders = [
 	]
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
+EditExcludedHeaders = [
+	'Auto-Submitted',
+	'Delivered-To',
+	'DKIM-Signature',
+	'Domainkey-Signature',
+	'Message-ID',
+	'Received',
+	'Received-*',
+	'X-Originating-IP',
+	# TODO
+	#'Content-Type',
+	#'X-MS-*',
+	#'X-*',
+]
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
@@ -3440,25 +3463,52 @@ btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, 
 if cliArgs.compose:
 	open_composer()
 	if cliArgs.FILE:
+		# Open existing Email for edit.
 		win_comp.set_data('saved-to-file', cliArgs.FILE)
-		Email = email_from_file(cliArgs.FILE)
+		on_after_save_draft()
+		edit_eml = email_from_file(cliArgs.FILE)
+		
+		# Import headers.
 		supersedes = []
-		for hname, hval in Email._headers:
+		for hname, hval in edit_eml._headers:
 			hname_lc = hname.lower()
 			hval = decode_header(hval)
-			if hname_lc == 'subject':
+			if hname_lc == 'message-id':
+				supersedes.append(hval)
+			elif hname_lc == 'subject':
 				set_composer_subject(hval)
-			elif hname_lc in ['auto-submitted', 'message-id', 'content-type', 'domainkey-signature', 'dkim-signature']:
+			if any(fnmatch(hname_lc, hdr.lower()) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
-				if hname_lc == 'message-id':
-					supersedes.append(hval)
+				pass
 			else:
 				add_composer_header(hname, hval)
 		set_composer_headers('Supersedes', [', '.join(supersedes)])
+		
+		body_found = False
+		def detect_body_part(part):
+			if not body_found and part.get_content_type() == MIMETYPE_TEXT:
+				set_composer_text(decode_readably(part.get_payload(decode=True), part))
+				# Prevent this part to be treated as attachment. This is the body part.
+				return False
+			# Attach this part.
+			NewEmail.attach(part)
+			# Allow this part to be appeared in attachments panel.
+			return True
+		
+		# Import attachments.
+		parts = edit_eml.get_payload(decode=False)
+		if type(parts) == list:
+			for part in parts:
+				add_already_attached_parts(None, part, detect_body_part)
+		else:
+			# Not a multipart email, set body to payload.
+			set_composer_text(decode_readably(edit_eml.get_payload(decode=True), edit_eml))
 	else:
+		# Open a clear composer window.
 		add_composer_agent_headers()
 		if not cliArgs.message:
 			set_composer_text('\n\n' + get_user_signature())
+	
 	if cliArgs.mailto:
 		try:
 			mailto = get_mailtos('<%s>' % (cliArgs.mailto))[0]
@@ -3475,6 +3525,7 @@ if cliArgs.compose:
 	if cliArgs.bcc:
 		add_composer_headers('Bcc', cliArgs.bcc)
 	if len(get_composer_headers(RecipientHeaders)) < 1:
+		# Add an empty To header unless any recipient was given.
 		add_composer_header('To')
 	if cliArgs.subject:
 		set_composer_subject(cliArgs.subject)
