@@ -1961,24 +1961,25 @@ def get_xattr(file_, attrname):
 		try:
 			return xattr.getxattr(file_, attrname)
 		except IOError as e:
-			if e.errno != os.errno.ENODATA:
+			if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
 				raise e
 	return None
 
 def set_xattrs(fh, attrs, filename='-'):
+	allok = True
 	if xattr is not None:
 		for attrname, attrval in attrs.iteritems():
 			try:
 				if attrval is None:
-					try:
-						xattr.removexattr(fh, attrname)
-					except IOError as e:
-						if e.errno != os.errno.ENODATA:
-							raise e
+					xattr.removexattr(fh, attrname)
 				else:
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError as e:
 				stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
+				allok = False
+				if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
+					raise e
+	return allok
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	if ask_overwrite:
