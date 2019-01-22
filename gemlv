@@ -2272,17 +2272,30 @@ def act_send():
 	dlg.set_title(_("Sending..."))
 	dlg.set_markup(_("Sending..."))
 	set_dialog_icon_name(dlg, 'mail-send-receive')
-	carea = dlg.get_content_area()
-	aarea = dlg.get_action_area()
-	progressbar = gtk.ProgressBar()
-	carea.pack_start(progressbar, False, True)
-	btn_cancel = aarea.children()[0]
-	dlg.show_all()
 	
-	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel))
+	carea = dlg.get_content_area()
+	progressbar = gtk.ProgressBar()
+	details = gtk.ScrolledWindow()
+	details_text = gtk.Label()
+	details.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	details.add_with_viewport(details_text)
+	carea.pack_start(progressbar, False, True)
+	carea.pack_start(details, True, True)
+	
+	aarea = dlg.get_action_area()
+	btn_cancel = aarea.children()[0]
+	btn_show_details = StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
+	btn_show_details.connect('clicked', act_show_details_on_send_panel, dlg, details)
+	
+	aarea.pack_start(btn_show_details, False, True)
+	dlg.show_all()
+	details.hide()
+	btn_show_details.hide()
+	
+	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details_text))
 	thrd.start()
 
-def sending_thread(dlg, progressbar, btn_cancel):
+def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text):
 	global StopSending
 	StopSending = False
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -2348,10 +2361,9 @@ def sending_thread(dlg, progressbar, btn_cancel):
 	btn_close.connect('clicked', lambda x: dlg.destroy())
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
-	output_mu = '\n<tt>' + glib.markup_escape_text(resp) + '</tt>'
 	if status.code == 0:
 		set_dialog_icon_name(dlg, gtk.STOCK_APPLY)
-		dlg.set_markup(_("Email is sent.") + output_mu)
+		dlg.set_markup(_("Email is sent."))
 		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
@@ -2361,8 +2373,21 @@ def sending_thread(dlg, progressbar, btn_cancel):
 				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
-		dlg.set_markup(_("Sendmail error %s." % (status.code)) + output_mu)
+		dlg.set_markup(_("Sendmail error %s.") % (status.code,))
+	btn_show_details.show()
+	details_text.set_markup('<tt>' + glib.markup_escape_text(resp) + '</tt>')
 	gtk.threads_leave()
+	
+def act_show_details_on_send_panel(btn, dlg, details):
+	# display sendemail output in details box
+	if details.get_visible():
+		btn.set_label(_("Show Details"))
+		details.hide()
+		dlg.set_resizable(False)
+	else:
+		btn.set_label(_("Hide Details"))
+		dlg.set_resizable(True)
+		details.show()
 
 def sending_cancel(btn, pid, writer_fh):
 	global StopSending
