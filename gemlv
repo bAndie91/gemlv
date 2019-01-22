@@ -26,6 +26,7 @@ import argparse
 try:
 	import xattr
 except ImportError:
+	sys.stderr.write("No module named xattr. Degrading extended attribute management.\n")
 	xattr = None
 import urlparse
 import pwd
@@ -38,14 +39,18 @@ from ctypes.util import find_library
 try:
 	import textwrap
 except ImportError:
+	sys.stderr.write("No module named textwrap. Degrading.\n")
 	class textwrap(object):
+		@classmethod
 		def wrap(self, text, width):
-			return text
+			return [text]
 try:
 	import setproctitle
 except ImportError:
+	sys.stderr.write("No module named setproctitle. Degrading.\n")
 	class setproctitle(object):
-		def setproctitle(**kv):
+		@classmethod
+		def setproctitle(self, *x, **kv):
 			pass
 
 
@@ -733,7 +738,7 @@ def decode_header(s, unfold=False, eml=None):
 			encodings = ['utf-8']
 			if eml:
 				for _, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'], re.I)
+					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'] or '', re.I)
 					if m:
 						encodings.append(m.group(1))
 			for encoding in encodings:
