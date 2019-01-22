@@ -714,23 +714,40 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
-def decode_header(s, unfold=False):
+def decode_header(s, unfold=False, eml=None):
 	chunks = []
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			if unfold:
 				chars = re.sub('\r?\n\s*', ' ', chars)
-			encoding = 'utf-8'
+			# encoding is not specified in this header
+			# first try to decode in UTF-8
+			# then guess by other available encodings in the email
+			# lastly fall back to UTF-8 but mask unrecognizable chars
+			encodings = ['utf-8']
+			if eml:
+				for _, part in walk_multipart(eml):
+					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'], re.I)
+					if m:
+						encodings.append(m.group(1))
+			for encoding in encodings:
+				try:
+					chars.decode(encoding, 'strict')
+					break
+				except UnicodeDecodeError:
+					encoding = None
+			if encoding is None:
+				encoding = 'utf-8'
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
 def get_one_header_main(hname, unfold=True):
 	hval = Email[hname]
 	if hval is None: return None
-	return decode_header(hval, unfold=unfold)
+	return decode_header(hval, unfold=unfold, eml=Email)
 
 def get_all_headers_main(hname):
-	return map(decode_header, Email.get_all(hname) or [])
+	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
 
 def get_mailtos(s, schemata=['mailto']):
 	l = []
@@ -809,7 +826,7 @@ def get_headers_markup(eml):
 	for hname in hdrs:
 		hvals_mu = []
 		for hval in eml.get_all(hname) or []:
-			hval = decode_header(hval)
+			hval = decode_header(hval, eml=eml)
 			if hname != 'From' and hname in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
 				addr = email.utils.parseaddr(hval)[1]
@@ -817,7 +834,7 @@ def get_headers_markup(eml):
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
 				for realname, addr in email.utils.getaddresses([hval]):
-					realname = decode_header(realname)
+					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (addr_mu, addr_mu)
 					if realname: mu = realname + ' ' + mu
@@ -2130,7 +2147,7 @@ def show_view_headers(show=True):
 		panel_view_header.set_line_wrap(False)
 		s = ''
 		for hname, hval in Email._headers:
-			hval = decode_header(hval)
+			hval = decode_header(hval, eml=Email)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
 		panel_view_header.set_markup(s)
 	else:
@@ -2512,11 +2529,20 @@ def act_addressbook():
 	bbx.pack_start(bcl, True, False)
 	win.show_all()
 
-def debug_multipart(eml, indent=0):
-	stderr("%s- [%s] %s" % (indent*2*' ', eml.get_content_type(), eml.get_filename()))
+def walk_multipart(eml, leaf_only=False, depth=0):
+	if not leaf_only:
+		yield (depth, eml)
 	if type(eml._payload) == list:
-		for e in eml._payload:
-			debug_multipart(e, indent+1)
+		for part in eml._payload:
+			for x in walk_multipart(part, leaf_only, depth+1):
+				yield x
+	else:
+		if leaf_only:
+			yield (depth, eml)
+
+def debug_multipart(eml):
+	for depth, part in walk_multipart(eml):
+		stderr("%s- [%s] %s" % (depth*2*' ', part.get_content_type(), part.get_filename()))
 
 def act_attach():
 	filename = choose_open_file()
@@ -2880,7 +2906,7 @@ def act_dispos_notif():
 		my_address = guess_my_address()
 		if dnt_address:
 			for realname, addr in email.utils.getaddresses(dnt_address):
-				add_composer_header('To', email.utils.formataddr((decode_header(realname), addr)))
+				add_composer_header('To', email.utils.formataddr((decode_header(realname, eml=Email), addr)))
 		else:
 			add_composer_header('To', guess_reply_address())
 		lang = get_one_header_main('Accept-Language')
@@ -3505,7 +3531,7 @@ if cliArgs.compose:
 		supersedes = []
 		for hname, hval in edit_eml._headers:
 			hname_lc = hname.lower()
-			hval = decode_header(hval)
+			hval = decode_header(hval, eml=edit_eml)
 			if hname_lc == 'message-id':
 				supersedes.append(hval)
 			elif hname_lc == 'subject':
