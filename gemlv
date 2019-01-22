@@ -2498,15 +2498,22 @@ def act_attach():
 	if filename is not None:
 		attach_path(filename)
 
+def byte_is_identical_qp(b):
+	if ord(b) < ord('!') or ord(b) > ord('~') or b == '=':
+		return False
+	return True
+
 def analyze_for_optimal_encoding(buf):
-	# Guess the optimal transfer encoding from the first 4k chunk of data.
-	qp = buf.encode('quoted-printable')
-	b64 = buf.encode('base64')
-	if len(qp) < len(b64):
-		enc = 'quoted-printable'
+	# Guess the optimal transfer encoding.
+	approx_encoded_size_b64 = len(buf) * 1.37
+	approx_encoded_size_qp = sum(map(lambda b: 1 if byte_is_identical_qp(b) else 3, buf))
+	# add an extra equal mark and a linefeed for each 76th output byte
+	approx_encoded_size_qp += 2 * (approx_encoded_size_qp / 76)
+	
+	if approx_encoded_size_b64 < approx_encoded_size_qp:
+		return 'base64'
 	else:
-		enc = 'base64'
-	return enc
+		return 'quoted-printable'
 
 def attach_blob(data, parent_iter=None):
 	mime = get_mime_by_data(data)
