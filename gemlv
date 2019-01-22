@@ -1632,6 +1632,7 @@ def act_reply(recip):
 			
 			part = MIMEMessage(Email)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
+			# TODO - remove sensitive headers?
 			NewEmail.attach(part)
 			Attachments.append(None, [part, fwdname, 'emblem-mail', None])
 		else:
@@ -2620,6 +2621,7 @@ def attach_path(path, parent_iter=None):
 		attachment_email = email.message_from_file(open(path, 'r'))
 		if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 			# File being attached is an Email (according to mime type or by detected multipart)
+			# TODO - remove sensitive headers?
 			part.attach(attachment_email)
 		else:
 			del attachment_email
@@ -2631,7 +2633,7 @@ def attach_path(path, parent_iter=None):
 				display_error(e)
 				return False
 			while True:
-				# Encode n*3 bytes to avoid base64 paddings.
+				# Encode n*3 bytes at once to avoid base64 paddings.
 				buf = fh.read(4096*3)
 				if buf == '': break
 				if enc is None:
