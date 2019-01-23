@@ -2556,12 +2556,12 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 
 def debug_multipart(eml):
 	for depth, part in walk_multipart(eml):
-		stderr("%s- [%s] %s" % (depth*2*' ', part.get_content_type(), part.get_filename()))
+		stderr("%s- [%s] %d %s" % (depth*2*' ', part.get_content_type(), len(part.get_payload()), part.get_filename()))
 
 def act_attach():
 	filename = choose_open_file()
 	if filename is not None:
-		attach_path(filename)
+		attach_path(filename, filename)
 
 def byte_is_identical_qp(b):
 	if ord(b) < ord('!') or ord(b) > ord('~') or b == '=':
@@ -2596,57 +2596,105 @@ def attach_blob(data, parent_iter=None):
 	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
 	return True
 
-def attach_path(path, parent_iter=None):
-	basename = os.path.basename(path)
+def is_safe_symlink(target, root):
+	# Return True if target is within root or target itself is root.
+	# target and root are absolute paths
+	assert os.path.isabs(target)
+	assert os.path.isabs(root)
+	sep = re.escape(os.path.sep)
+	par = re.escape(os.path.pardir)
+	return not bool(re.search('(^|'+sep+')'+par+'('+sep+'|$)', os.path.relpath(target, root)))
+
+def read_symlink_target_abs(symlink):
+	assert os.path.isabs(symlink)
+	target = os.readlink(symlink)
+	if os.path.isabs(target):
+		return target
+	else:
+		return os.path.normpath(os.path.join(symlink, os.path.pardir, target))
+
+def attach_path(original_path, root_attachment_path, parent_iter=None):
+	root_attachment_path = os.path.abspath(root_attachment_path)
+	attachment_path = original_path
+	mime = None
 	try:
-		if os.path.islink(path):
-			mime = 'inode/symlink'
-		else:
-			mime = get_mime_by_filepath(path)
+		if os.path.islink(original_path):
+			symlink_target_raw = os.readlink(original_path)
+			symlink_target_abs = read_symlink_target_abs(os.path.abspath(original_path))
+			while True:
+				if is_safe_symlink(symlink_target_abs, root_attachment_path):
+					# it's a symlink pointing to a (maybe transitive) target which is inside the base directory we are attaching recursively at the moment.
+					# attach it as a symlink.
+					mime = 'inode/symlink'
+					# generate a symlink target to point directly to the first safe transitive target.
+					symlink_content = os.path.relpath(symlink_target_abs, os.path.join(original_path, os.path.pardir))
+					break
+				if not os.path.exists(symlink_target_abs):
+					# it's a broken symlink. attach it as a symlink pointing to the nonexistent target.
+					mime = 'inode/symlink'
+					symlink_content = symlink_target_raw
+					break
+				if os.path.islink(symlink_target_abs):
+					# it's a symlink, let's follow further.
+					symlink_target_raw = os.readlink(symlink_target_abs)
+					symlink_target_abs = read_symlink_target_abs(symlink_target_abs)
+				else:
+					# it's a symlink (transitively) pointing to not a "safe" file (in sense of not being within the directory currently being attached),
+					# neither an other symlink but something which exists (likely a normal file or a directory),
+					# so attach the resolved "unsafe" file instead of the original symlink.
+					attachment_path = symlink_target_abs
+					break
+		
 		content_disposition_params = {
-			'modification_date': email.utils.formatdate(os.lstat(path).st_mtime, True),
-			'posix_mode': '%04o' % (os.lstat(path).st_mode & 07777,),
+			'modification_date': email.utils.formatdate(os.lstat(attachment_path).st_mtime, True),
+			'posix_mode': '%05o' % (os.lstat(attachment_path).st_mode & 07777,),
 		}
 	except OSError as e:
 		display_error(e)
 		return False
 	
+	if mime is None:
+		mime = get_mime_by_filepath(attachment_path)
 	ct_main, ct_sub = mime.split('/')
-	part = MIMEBase(ct_main, ct_sub)
-	if os.path.islink(path):
-		part.set_payload(os.readlink(path))
-	elif os.path.isdir(path):
+	
+	if os.path.isdir(attachment_path):
 		part = MIMEMultipart('related')
 	else:
-		attachment_email = email.message_from_file(open(path, 'r'))
-		if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
-			# File being attached is an Email (according to mime type or by detected multipart)
-			# TODO - remove sensitive headers?
-			part.attach(attachment_email)
+		part = MIMEBase(ct_main, ct_sub)
+		
+		if mime == 'inode/symlink':
+			part.set_payload(symlink_content)
 		else:
-			del attachment_email
-			part.set_payload('')
-			enc = None
-			try:
-				fh = open(path, 'r')
-			except (IOError, OSError) as e:
-				display_error(e)
-				return False
-			while True:
-				# Encode n*3 bytes at once to avoid base64 paddings.
-				buf = fh.read(4096*3)
-				if buf == '': break
-				if enc is None:
-					enc = analyze_for_optimal_encoding(buf)
-					part.add_header(HDR_CTE, enc)
-				part._payload += buf.encode(enc)
-			fh.close()
+			attachment_email = email.message_from_file(open(attachment_path, 'r'))
+			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
+				# File being attached is an Email (according to mime type or by detected multipart)
+				# TODO - remove sensitive headers?
+				part.attach(attachment_email)
+			else:
+				del attachment_email
+				part.set_payload('')
+				enc = None
+				try:
+					fh = open(attachment_path, 'r')
+				except (IOError, OSError) as e:
+					display_error(e)
+					return False
+				while True:
+					# Encode n*3 bytes at once to avoid base64 paddings.
+					buf = fh.read(4096*3)
+					if buf == '': break
+					if enc is None:
+						enc = analyze_for_optimal_encoding(buf)
+						part.add_header(HDR_CTE, enc)
+					part._payload += buf.encode(enc)
+				fh.close()
 	
+	basename = os.path.basename(original_path)
 	iterator = attach__internal(parent_iter=parent_iter, content_disposition_params=content_disposition_params, basename=basename, part=part, mime=mime)
 	
-	if os.path.isdir(path) and not os.path.islink(path):
-		for entry in os.listdir(path):
-			if not attach_path(os.path.join(path, entry), iterator):
+	if os.path.isdir(attachment_path):
+		for entry in os.listdir(attachment_path):
+			if not attach_path(os.path.join(path, entry), root_attachment_path, iterator):
 				return False
 	return True
 
@@ -2734,7 +2782,7 @@ def drop_attachment_data(wdg, context, x, y, data, intid, time):
 			for uri in data.get_uris():
 				filepath = file_uri_to_path(uri)
 				if filepath is not None:
-					if not attach_path(filepath, parent_iter):
+					if not attach_path(filepath, filepath, parent_iter):
 						success = False
 						break
 				else:
@@ -3616,7 +3664,7 @@ if cliArgs.compose:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
 		for path in cliArgs.attach:
-			attach_path(path)
+			attach_path(path, path)
 	on_after_save_draft()
 	panel_edit_message.grab_focus()
 else:
