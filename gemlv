@@ -2017,7 +2017,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
 				return None
 	try:
-		if eml.get_content_type() == 'inode/symlink':
+		if eml.get_content_type() == MIMETYPE_SYMLINK:
 			link_target = eml.get_payload(decode=True)
 			os.symlink(link_target, filename)
 		else:
@@ -2613,6 +2613,10 @@ def read_symlink_target_abs(symlink):
 	else:
 		return os.path.normpath(os.path.join(symlink, os.path.pardir, target))
 
+def make_relative_symlink(point_to, symlink_path):
+	assert os.path.isabs(point_to)
+	return os.path.relpath(point_to, os.path.join(symlink_path, os.path.pardir))
+
 def attach_path(original_path, root_attachment_path, parent_iter=None):
 	root_attachment_path = os.path.abspath(root_attachment_path)
 	attachment_path = original_path
@@ -2621,23 +2625,31 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 		if os.path.islink(original_path):
 			symlink_target_raw = os.readlink(original_path)
 			symlink_target_abs = read_symlink_target_abs(os.path.abspath(original_path))
+			visited_paths = [symlink_target_abs]
 			while True:
 				if is_safe_symlink(symlink_target_abs, root_attachment_path):
 					# it's a symlink pointing to a (maybe transitive) target which is inside the base directory we are attaching recursively at the moment.
 					# attach it as a symlink.
-					mime = 'inode/symlink'
+					mime = MIMETYPE_SYMLINK
 					# generate a symlink target to point directly to the first safe transitive target.
-					symlink_content = os.path.relpath(symlink_target_abs, os.path.join(original_path, os.path.pardir))
+					symlink_content = make_relative_symlink(symlink_target_abs, original_path)
 					break
 				if not os.path.exists(symlink_target_abs):
 					# it's a broken symlink. attach it as a symlink pointing to the nonexistent target.
-					mime = 'inode/symlink'
+					mime = MIMETYPE_SYMLINK
 					symlink_content = symlink_target_raw
 					break
 				if os.path.islink(symlink_target_abs):
 					# it's a symlink, let's follow further.
+					symlink_target_abs_prev = symlink_target_abs
 					symlink_target_raw = os.readlink(symlink_target_abs)
 					symlink_target_abs = read_symlink_target_abs(symlink_target_abs)
+					if symlink_target_abs in visited_paths:
+						# it's a loopy symlink. attach it as a symlink pointing to the last transitive target before the cycle.
+						mime = MIMETYPE_SYMLINK
+						symlink_content = make_relative_symlink(symlink_target_abs_prev, original_path)
+						break
+					visited_paths.append(symlink_target_abs)
 				else:
 					# it's a symlink (transitively) pointing to not a "safe" file (in sense of not being within the directory currently being attached),
 					# neither an other symlink but something which exists (likely a normal file or a directory),
@@ -2662,7 +2674,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 	else:
 		part = MIMEBase(ct_main, ct_sub)
 		
-		if mime == 'inode/symlink':
+		if mime == MIMETYPE_SYMLINK:
 			part.set_payload(symlink_content)
 		else:
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
@@ -2694,7 +2706,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 	
 	if os.path.isdir(attachment_path):
 		for entry in os.listdir(attachment_path):
-			if not attach_path(os.path.join(path, entry), root_attachment_path, iterator):
+			if not attach_path(os.path.join(attachment_path, entry), root_attachment_path, iterator):
 				return False
 	return True
 
@@ -3162,6 +3174,7 @@ MIMETYPE_EMAIL = 'message/rfc822'
 MIMETYPE_URILIST = 'text/uri-list'
 MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
+MIMETYPE_SYMLINK = 'inode/symlink'
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
@@ -3665,6 +3678,7 @@ if cliArgs.compose:
 	if cliArgs.attach:
 		for path in cliArgs.attach:
 			attach_path(path, path)
+		del path
 	on_after_save_draft()
 	panel_edit_message.grab_focus()
 else:
