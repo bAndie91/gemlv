@@ -1226,8 +1226,6 @@ class compose_header_box(gtk.HBox):
 			self['validate'] = ValidatorHeaders[name]
 		else:
 			self['validate'] = None
-		if name == HDR_DNT:
-			ninja_toggle(toggle_rqdn, True)
 		model = self.completer.get_model()
 		model.clear()
 		if type(self['validate']) == list:
@@ -1256,9 +1254,7 @@ class compose_header_box(gtk.HBox):
 	def on_changed(self):
 		name = self['name']
 		val = self['value']
-		if name == 'Importance':
-			ninja_toggle(toggle_unimportant, val.lower().find('low')>-1)
-			ninja_toggle(toggle_important, val.lower().find('high')>-1)
+		update_composer_toolbar_toggle_buttons()
 		set_unsaved()
 	
 	def validate(self):
@@ -1368,16 +1364,8 @@ class compose_header_box(gtk.HBox):
 					if x.hntype == self.HNTYPE_MENU: n += 1
 					if n > 1: break
 				if n < 2: return False
-			# FIXME
-			if self['name'] == 'Importance':
-				if self['value'].lower().find('low')>-1:
-					ninja_toggle(toggle_unimportant, False)
-				if self['value'].lower().find('high')>-1: 
-					ninja_toggle(toggle_important, False)
-			# FIXME
-			if self['name'] == HDR_DNT:
-				ninja_toggle(toggle_rqdn, False)
 			self.parent.remove(self)
+			update_composer_toolbar_toggle_buttons()
 	
 	def tick_my_menuitem(self, on):
 		for mi in menu_add_header.children():
@@ -2467,6 +2455,11 @@ def sending_cancel(btn, pid, writer_fh):
 	StopSending = True
 	os.kill(pid, signal.SIGINT)
 
+def iterate_composer_headers():
+	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
+		if len(hname) > 0 and len(hval) > 0:
+			yield (hname, hval)
+
 def build_newemail():
 	preserve_headers = win_comp.get_data('preserve-headers')
 	idx = 0
@@ -2475,16 +2468,15 @@ def build_newemail():
 			del NewEmail._headers[idx]
 			continue
 		idx += 1
-	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
-		if len(hname) > 0 and len(hval) > 0:
-			enchunks = []
-			for chunk in hval.split(' '):
-				try:
-					enchunk = make_header([(chunk, None)])
-				except UnicodeDecodeError:
-					enchunk = make_header([(chunk, 'UTF-8')])
-				enchunks.append(str(enchunk))
-			NewEmail.add_header(hname, ' '.join(enchunks))
+	for hname, hval in iterate_composer_headers():
+		enchunks = []
+		for chunk in hval.split(' '):
+			try:
+				enchunk = make_header([(chunk, None)])
+			except UnicodeDecodeError:
+				enchunk = make_header([(chunk, 'UTF-8')])
+			enchunks.append(str(enchunk))
+		NewEmail.add_header(hname, ' '.join(enchunks))
 	
 	# if there is not Message-ID but we must set at least one xattr
 	if not NewEmail[HDR_MID] and win_comp.get_data('set-xattr-on-send'):
@@ -2521,6 +2513,20 @@ def update_composer_status_message():
 	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
 	size = len(NewEmail.as_string())
 	tb_comp_label.set_label(_("Size: %s") % (human_size(size),))
+
+def update_composer_toolbar_toggle_buttons():
+	ninja_toggle(toggle_unimportant, False)
+	ninja_toggle(toggle_unimportant, False)
+	ninja_toggle(toggle_rqdn, False)
+	
+	for hname, hval in iterate_composer_headers():
+		if hname == 'Importance':
+			if hval.lower().find('low')>-1:
+				ninja_toggle(toggle_unimportant, True)
+			if hval.lower().find('high')>-1:
+				ninja_toggle(toggle_important, True)
+		if hname == HDR_DNT:
+			ninja_toggle(toggle_rqdn, True)
 
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
