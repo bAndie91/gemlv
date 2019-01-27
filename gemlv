@@ -518,11 +518,11 @@ def truish(x):
 
 def file_uri_to_path(uri):
 	if uri.startswith('file:///'):
-		return uri[7:]
+		return urllib2.unquote(uri[7:])
 	elif uri.startswith('file://'):
-		return uri[6:]
+		return urllib2.unquote(uri[6:])
 	elif uri.startswith('file:/'):
-		return uri[5:]
+		return urllib2.unquote(uri[5:])
 	return None
 
 
