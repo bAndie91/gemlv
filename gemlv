@@ -2863,6 +2863,7 @@ def drop_attachment_data(wdg, context, x, y, data, intid, time):
 			# TODO get filename from somewhere
 			success = bool(attach_blob(data.data, parent_iter))
 	context.finish(success, False, time)
+	update_composer_status_message()
 	return True
 
 def drop_attachment_reorder_data(wdg, context, x, y, data, intid, time):
@@ -2951,6 +2952,7 @@ def on_keypress_attachments(tv, evt):
 				parent_part = Attachments[parent_iter][0]
 			parent_part._payload.remove(part)
 			del Attachments[iterator]
+		update_composer_status_message()
 		return True
 	return False
 
