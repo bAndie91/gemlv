@@ -536,7 +536,7 @@ def human_size(x, suffix='B'):
 	prefixa = ['', 'K', 'M', 'G']
 	for prefixum in prefixa:
 		if abs(x) < 1024.0 or prefixum == prefixa[-1]:
-			return "%d %s%s" % (x, prefixum, suffix)
+			return '%d %s%s' % (x, prefixum, suffix)
 		x /= 1024.0
 
 ### private functions ###
@@ -851,14 +851,14 @@ def get_headers_markup(eml):
 		"Reply-To",
 		"Importance",
 		"Priority",
-		"X-Priority",
-		"X-MSMail-Priority",
+		"X-Priority",  # @notranslate
+		"X-MSMail-Priority",  # @notranslate
 		"To",
 		"Cc",
 		"Date",
 		"Reply-By",
 		"Expires",
-		"X-Spam",
+		"X-Spam",  # @notranslate
 	]
 	from_addresses = get_email_addresses_in_main_headers('From')
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
@@ -2596,7 +2596,7 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 
 def debug_multipart(eml):
 	for depth, part in walk_multipart(eml):
-		stderr("%s- [%s] %d %s" % (depth*2*' ', part.get_content_type(), len(part.get_payload()), part.get_filename()))
+		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), part.get_filename()))
 
 def act_attach():
 	filename = choose_open_file()
@@ -2696,10 +2696,10 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 						break
 					visited_paths.append(symlink_target_abs)
 				else:
-					# it's a symlink (transitively) pointing not to a "safe" file (in sense 
+					# it's a symlink (transitively) pointing not to a 'safe' file (in sense 
 					# of not being within the directory currently being attached),
 					# neither to an other symlink but something which exists (likely a normal file or a directory),
-					# so attach the resolved "unsafe" file instead of the original symlink.
+					# so attach the resolved 'unsafe' file instead of the original symlink.
 					attachment_path = symlink_target_abs
 					# TODO what should happen with unsafe files which linked multiple times?
 					break
@@ -2812,7 +2812,7 @@ def drop_attachment_acceptable(targets):
 	return False
 
 def drop_attachment_motion(wdg, context, x, y, time):
-	#stderr("Dropping %s" % (context.targets,))
+	#stderr('Dropping %s' % (context.targets,))
 	if drop_attachment_acceptable(context.targets):
 		wdg.drag_highlight()
 		context.drag_status(gtk.gdk.ACTION_COPY, time)

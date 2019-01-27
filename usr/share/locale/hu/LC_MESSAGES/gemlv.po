@@ -343,3 +343,15 @@ msgstr "Betűtípus-váltás\njobb klikk: monospace\ngörgetés: nagyít/kicsiny
 
 msgid "Save\nRight click: Save and Keep Structure"
 msgstr "Mentés\njobb klikk: Mentés Struktúrát Megőrizve"
+
+msgid "Show Details"
+msgstr "Részletek"
+
+msgid "Hide Details"
+msgstr "Részletek elrejtése"
+
+msgid "Size: %s"
+msgstr "Méret: %s"
+
+msgid "Unsaved"
+msgstr "Nincs mentve"
