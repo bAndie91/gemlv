@@ -56,6 +56,10 @@ except ImportError:
 
 ### helper classes, functions ###
 
+class gtkWindow(gtk.Window):
+	def set_icon_name(self, name):
+		self.set_icon(gtk.icon_theme_get_default().load_icon(name, gtk.ICON_SIZE_SMALL_TOOLBAR, 0))
+
 class LabelToolItem(gtk.ToolItem):
 	def __init__(self, label=None, markup=None):
 		super(self.__class__, self).__init__()
@@ -3364,7 +3368,7 @@ gtk.gdk.threads_init()
 
 ### Build GUI ###
 
-win_main = gtk.Window()
+win_main = gtkWindow()
 win_main.set_default_size(800, 450)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
@@ -3535,7 +3539,7 @@ btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
 ### Build Composer GUI ###
 
-win_comp = gtk.Window()
+win_comp = gtkWindow()
 win_comp.set_default_size(*win_main.get_default_size())
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
 add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda a,b,c,d: act_close_edit())
