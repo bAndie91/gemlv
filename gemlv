@@ -3663,7 +3663,10 @@ if cliArgs.compose:
 		# Open existing Email for edit.
 		win_comp.set_data('saved-to-file', cliArgs.FILE)
 		on_after_save_draft()
-		edit_eml = email_from_file(cliArgs.FILE)
+		try:
+			edit_eml = email_from_file(cliArgs.FILE)
+		except RuntimeError:
+			sys.exit(1)
 		
 		# Import headers.
 		supersedes = []
