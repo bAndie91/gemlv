@@ -635,6 +635,7 @@ def load_parts(eml, model, parent):
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb])
+	# Note, buggy or incomplete Content-Type (eg. "Content-Type: pdf") translated as text/plain by email module
 	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
 		PartPrimary = iterator
 	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
