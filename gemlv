@@ -1233,9 +1233,14 @@ class compose_header_box(gtk.HBox):
 			self['validate'] = None
 		model = self.completer.get_model()
 		model.clear()
+		autocomplete_items = []
 		if type(self['validate']) == list:
-			for text in self['validate']:
-				model.append([text])
+			autocomplete_items = self['validate'][:]
+		else:
+			try: autocomplete_items = self['validate']['autocomplete'][:]
+			except (KeyError, TypeError): pass
+		for text in autocomplete_items:
+			model.append([text])
 		self.on_changed()
 	
 	def on_value_changed(self, entry=None):
@@ -3239,6 +3244,8 @@ MIMETYPE_URILIST = 'text/uri-list'
 MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
+Importances = ['low','normal','high']
+Priorities = ['non-urgent','normal','urgent']
 RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
@@ -3254,6 +3261,10 @@ VAL_AGE = {
 	}
 VAL_DATE = {
 	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}(\s+\([A-Z]+\))?$',
+	}
+VAL_IMPORTANCE = {
+	'autocomplete': Importances,
+	'require': '^(%s)$' % '|'.join('[%c%c]%s' % (x[0].upper(), x[0], x[1:]) for x in Importances),
 	}
 Email = None
 PartPrimary = None
@@ -3273,8 +3284,6 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 	]
-Importances = ['low','normal','high']
-Priorities = ['non-urgent','normal','urgent']
 EditExcludedHeaders = [
 	'Auto-Submitted',
 	'Delivered-To',
@@ -3298,7 +3307,7 @@ ValidatorHeaders = {
 	'Bcc': VAL_ADDRESSES,
 	'Deliver-At-Age': VAL_AGE,
 	'Priority': Priorities,
-	'Importance': Importances,
+	'Importance': VAL_IMPORTANCE,
 	'Precedence': ['list', 'junk', 'bulk'],
 }
 for h in DateTimeHeaders:
@@ -3688,6 +3697,7 @@ if cliArgs.compose:
 			sys.exit(1)
 		
 		# Import headers.
+		# TODO - remove technical headers like Content-Type
 		supersedes = []
 		for hname, hval in edit_eml._headers:
 			hname_lc = hname.lower()
