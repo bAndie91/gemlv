@@ -3354,6 +3354,9 @@ argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or con
 sysargv = sys.argv[1:]
 if os.path.basename(sys.argv[0]).find('compose') > -1 and '--compose' not in sysargv:
 	sysargv.insert(0, '--compose')
+if os.path.basename(sys.argv[0]).find('mailto') > -1:
+	sysargv.insert(0, '--compose')
+	sysargv.insert(1, '--mailto')
 cliArgs = argparser.parse_args(args=sysargv)
 del sysargv
 for attr in 'to', 'cc', 'bcc', 'attach':
