@@ -1106,10 +1106,17 @@ def add_composer_headers(hname, hvals, manual_call=True):
 	for hval in hvals:
 		add_composer_header(hname, hval, manual_call)
 
-def set_composer_headers(hname, hvals, manual_call=True):
+def reset_composer_headers(hname, hvals, manual_call=True):
 	clear_composer_headers(hname)
 	for hval in hvals:
 		add_composer_header(hname, hval, manual_call)
+
+def set_composer_header(hname, hval):
+	for hbox in panel_comp_header.children():
+		if hbox['name'] == hname:
+			hbox['value'] = hval
+			return hbox
+	return add_composer_header(hname, hval)
 
 def clear_composer_headers(hname, content=None):
 	for box in panel_comp_header.children():
@@ -1131,10 +1138,10 @@ def composer_append_to_list_header(hname, hvals, delimiter=' '):
 	hval = delimiter.join(filter(lambda x: x is not None, hvals))
 	headers = get_composer_headers(hname)
 	if len(headers) == 0:
-		set_composer_headers(hname, [hval])
+		reset_composer_headers(hname, [hval])
 	else:
 		headers[-1] = delimiter.join([headers[-1], hval])
-		set_composer_headers(HDR_REF, headers, manual_call=False)
+		reset_composer_headers(HDR_REF, headers, manual_call=False)
 
 def composer_substract_from_list_header(hname, hvals, delimiter=' '):
 	hvals = filter(lambda x: x is not None, hvals)
@@ -1147,7 +1154,7 @@ def composer_substract_from_list_header(hname, hvals, delimiter=' '):
 			else:
 				newvalue.append(word)
 		headers[idx] = delimiter.join(newvalue)
-	set_composer_headers(hname, headers, manual_call=False)
+	reset_composer_headers(hname, headers, manual_call=False)
 
 class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
@@ -2535,7 +2542,7 @@ def update_composer_toolbar_toggle_buttons():
 				ninja_toggle(toggle_unimportant, True)
 			if hval.lower().find('high')>-1:
 				ninja_toggle(toggle_important, True)
-		if hname == HDR_DNT:
+		if hname == HDR_GDR:
 			ninja_toggle(toggle_rqdn, True)
 
 def update_window_title(window, filename, subject_text):
@@ -3094,15 +3101,14 @@ def act_dispos_notif():
 
 def act_req_dispos_notif():
 	if toggle_rqdn.get_active():
-		clear_composer_headers(HDR_GDR)
-		box_gdr = add_composer_header(HDR_GDR, 'Yes')
+		box_gdr = set_composer_header(HDR_GDR, 'Yes')
 		box_gdr['readonly'] = True
 		
 		Froms = get_composer_headers('From')
 		From = Froms[0]
 		if From == '':
 			From = '[' + _("missing email address") + ']'
-		box_dnt = add_composer_header(HDR_DNT, From)
+		box_dnt = set_composer_header(HDR_DNT, From)
 	else:
 		clear_composer_headers(HDR_GDR)
 		clear_composer_headers(HDR_DNT)
@@ -3136,8 +3142,8 @@ def act_importance():
 	n = 1
 	if toggle_important.get_active(): n = 2
 	elif toggle_unimportant.get_active(): n = 0
-	set_composer_headers('Importance', [] if n == 1 else [Importances[n]])
-	set_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
+	reset_composer_headers('Importance', [] if n == 1 else [Importances[n]])
+	reset_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
 
 def act_edit_external():
 	menubutton_send.set_sensitive(False)
@@ -3714,7 +3720,7 @@ if cliArgs.compose:
 				pass
 			else:
 				add_composer_header(hname, hval)
-		set_composer_headers('Supersedes', [', '.join(supersedes)])
+		reset_composer_headers('Supersedes', [', '.join(supersedes)])
 		
 		body_found = False
 		def detect_body_part(part):
@@ -3749,7 +3755,7 @@ if cliArgs.compose:
 		else:
 			add_composer_mailto(mailto)
 	if getattr(cliArgs, 'from'):
-		set_composer_headers('From', [getattr(cliArgs, 'from')])
+		reset_composer_headers('From', [getattr(cliArgs, 'from')])
 	if cliArgs.to:
 		add_composer_headers('To', cliArgs.to)
 	if cliArgs.cc:
