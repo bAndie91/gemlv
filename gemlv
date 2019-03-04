@@ -3526,7 +3526,7 @@ toolbuttons = [
 	("Report Spam", 'mail-mark-junk', None, act_report_spam, None),
 	("Report Ham", 'mail-mark-notjunk', None, (act_report_spam, False), None),
 	(None, None, None, 'space', None),
-	(None, gtk.STOCK_QUIT, None, act_quit, None),
+	(None, gtk.STOCK_CLOSE, None, act_quit, None),
 ]
 x, menubutton_mdn, x, x, menubutton_replytolist, x, x_, menubutton_unsubscribe, menubutton_spam, menubutton_ham, x_, x \
 = load_toolitems(toolbar, toolbuttons)
@@ -3662,7 +3662,7 @@ toolbuttons = [
 	("Addressbook", 'x-office-address-book', None, act_addressbook, None),
 	("Attach File", 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
-	(None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE, None, act_close_edit, None),
+	(None, gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
 menubutton_send, menubutton_save_draft, x, x, x_, x \
 = load_toolitems(tb_compose, toolbuttons)
