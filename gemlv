@@ -3252,7 +3252,7 @@ MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
-RE_EMAIL = '(?P<LP>[a-z][\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
+RE_EMAIL = '(?P<LP>\w[\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
