@@ -1589,10 +1589,10 @@ def open_composer():
 	on_after_save_draft()
 	return True
 
-def quote_message_plain():
+def quote_message(part):
 	if PartPrimary is not None:
-		return re.sub('(^|\n)(.)', '\\1> \\2', get_content_readably(Parts[PartPrimary][0]))
-	return '>'
+		return re.sub('^', '> ', re.sub('\r', '', get_content_readably(part)), 0, re.MULTILINE)
+	return ''
 
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
@@ -1682,7 +1682,7 @@ def act_reply(recip):
 			pre = _("Re: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
-			body += '\n' + _("Quote:") + '\n\n' + quote_message_plain()
+			body += '\n' + _("Quote:") + '\n\n' + quote_message(Parts[PartPrimary][0])
 			
 			messageid = get_one_header_main(HDR_MID)
 			add_composer_header('In-Reply-To', messageid)
