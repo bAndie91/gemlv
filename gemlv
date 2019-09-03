@@ -1005,6 +1005,10 @@ def sig_term():
 	return False
 
 def act_quit():
+	if win_comp.get_visible():
+		act_close_edit()
+	if win_comp.get_visible():
+		return True
 	razor_children = panel_razor.get_children()
 	if razor_children:
 		menubutton_quit.set_sensitive(False)
@@ -1012,10 +1016,6 @@ def act_quit():
 		vb = razor_children[0]
 		vb.set_data('quit-on-all-finished', True)
 		glib.idle_add(lambda: finished_razor_thread(vb), priority=glib.PRIORITY_DEFAULT_IDLE)
-		return True
-	if win_comp.get_visible():
-		act_close_edit()
-	if win_comp.get_visible():
 		return True
 	win_main.hide()
 	win_comp.hide()
@@ -1900,7 +1900,7 @@ def finished_razor_thread(vb):
 			return True
 	if vb.get_data('quit-on-all-finished'):
 		close_razor_window(None, vb)
-		act_quit()
+		glib.idle_add(act_quit, priority=glib.PRIORITY_DEFAULT_IDLE)
 	else:
 		vb.get_data('close-button').set_sensitive(True)
 	return False
