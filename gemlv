@@ -1007,6 +1007,8 @@ def sig_term():
 def act_quit():
 	razor_children = panel_razor.get_children()
 	if razor_children:
+		menubutton_quit.set_sensitive(False)
+		menubutton_quit.set_label(menubutton_quit.get_label() + ' …')
 		vb = razor_children[0]
 		vb.set_data('quit-on-all-finished', True)
 		glib.idle_add(lambda: finished_razor_thread(vb), priority=glib.PRIORITY_DEFAULT_IDLE)
@@ -1896,10 +1898,11 @@ def finished_razor_thread(vb):
 	for thread, textbuffer in wait_threads:
 		if thread.is_alive():
 			return True
-	vb.get_data('close-button').set_sensitive(True)
 	if vb.get_data('quit-on-all-finished'):
 		close_razor_window(None, vb)
 		act_quit()
+	else:
+		vb.get_data('close-button').set_sensitive(True)
 	return False
 
 def get_extension_by_mime(mime):
@@ -3538,7 +3541,7 @@ toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_CLOSE, None, act_quit, None),
 ]
-x, menubutton_mdn, x, x, menubutton_replytolist, x, x_, menubutton_unsubscribe, menubutton_spam, menubutton_ham, x_, x \
+x, menubutton_mdn, x, x, menubutton_replytolist, x, x_, menubutton_unsubscribe, menubutton_spam, menubutton_ham, x_, menubutton_quit \
 = load_toolitems(toolbar, toolbuttons)
 l = menubutton_mdn.get_label()
 menubutton_mdn.set_data('saved-label', l)
