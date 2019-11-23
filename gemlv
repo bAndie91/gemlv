@@ -351,10 +351,15 @@ def display_error(e):
 	dlg.run()
 	dlg.destroy()
 
-def question(msg, stock_yes=None, parent=None):
+def question(msg, stock_yes=None, stock_no=None, parent=None):
 	dlg = gtk.MessageDialog(parent or get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
 	dlg.set_markup(msg)
 	dlg.set_title(_("Question"))
+	if stock_no is not None:
+		dlg.get_widget_for_response(gtk.RESPONSE_NO).hide()
+		btn_no = StockButton(label=stock_no[0], stock=stock_no[1])
+		dlg.add_action_widget(btn_no, gtk.RESPONSE_NO)
+		btn_no.show()
 	if stock_yes is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
 		btn_yes = StockButton(label=stock_yes[0], stock=stock_yes[1])
@@ -1024,7 +1029,7 @@ def act_quit():
 
 def act_close_edit():
 	if not win_comp.get_data('email-sent') and not win_comp.get_data('is-saved'):
-		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE)):
+		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE), (_("Continue Editing"), gtk.STOCK_EDIT)):
 			return True
 	win_comp.hide()
 	if cliArgs.compose:
@@ -3405,7 +3410,7 @@ gtk.gdk.threads_init()
 ### Build GUI ###
 
 win_main = gtkWindow()
-win_main.set_default_size(800, 450)
+win_main.set_default_size(820, 450)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
 add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
@@ -3623,7 +3628,7 @@ spanel_edit_message.add(panel_edit_message)
 box_compose.pack_start(tb_comp_controls, False, True)
 
 win_comp.set_icon_name('mail-message-new')
-win_comp.set_geometry_hints(min_width=120, min_height=200)
+win_comp.set_geometry_hints(min_width=132, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 panel_upper.set_position(win_comp.get_default_size()[1]-150)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)

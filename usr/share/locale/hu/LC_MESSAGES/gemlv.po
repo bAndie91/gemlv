@@ -355,3 +355,6 @@ msgstr "Méret: %s"
 
 msgid "Unsaved"
 msgstr "Nincs mentve"
+
+msgid "Continue Editing"
+msgstr "Szerkesztés Folytatása"
