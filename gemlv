@@ -2240,9 +2240,9 @@ def act_send():
 	if not validate_all_comp_headers():
 		return
 	if not get_composer_subject():
-		msg += _("No Subject." + '\n')
+		msg += _("No Subject.") + '\n'
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		msg += _("No any Recipient." + '\n')
+		msg += _("No any Recipient.") + '\n'
 	if msg != '':
 		msg += _("Send anyway?")
 		if not question(msg, (_("Send"), 'mail-send')):
