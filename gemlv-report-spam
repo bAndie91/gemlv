@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ -z "$TERM" ]
+then
+	if [ -x ~/.local/share/gemlv/report-spam ]
+	then
+		exec ~/.local/share/gemlv/report-spam "$@"
+	fi
+	
+	GEMLV_EMAIL_FILE=$1
+	export GEMLV_EMAIL_FILE
+	
+	exec xterm -e "$0"
+else
+	razor-report -d -f "$GEMLV_EMAIL_FILE"
+	pyzor -d report <"$GEMLV_EMAIL_FILE"
+	bogofilter -s -v <"$GEMLV_EMAIL_FILE"
+fi

@@ -1014,14 +1014,6 @@ def act_quit():
 		act_close_edit()
 	if win_comp.get_visible():
 		return True
-	razor_children = panel_razor.get_children()
-	if razor_children:
-		menubutton_quit.set_sensitive(False)
-		menubutton_quit.set_label(menubutton_quit.get_label() + ' …')
-		vb = razor_children[0]
-		vb.set_data('quit-on-all-finished', True)
-		glib.idle_add(lambda: finished_razor_thread(vb), priority=glib.PRIORITY_DEFAULT_IDLE)
-		return True
 	win_main.hide()
 	win_comp.hide()
 	gtk.main_quit()
@@ -1773,92 +1765,8 @@ def scroll_textview(tv, rect, scrwin):
 	vadj.set_value(vadj.upper - vadj.page_size)
 
 def act_report_spam(considered_as_spam = True):
-	spamdirname = 'Spam'
 	emailfile = os.path.abspath(cliArgs.FILE)
-	curdir = os.path.dirname(emailfile)
-	if os.path.basename(curdir) == spamdirname:
-		isin_spam_folder = True
-		inboxpath = os.path.dirname(curdir)
-	else:
-		isin_spam_folder = False
-		inboxpath = curdir
-	inboxname = os.path.basename(inboxpath)
-	
-	if considered_as_spam:
-		razorwin = start_razor_window(_("Reporting Spam"), [['razor-report', '-d', '-f'], ['pyzor', '-d', 'report']])
-		Lqtxt = _("Put into <tt>%s</tt> folder?" % (spamdirname))
-		btndesc = (_("Put"), gtk.STOCK_DELETE)
-		targetdir = os.path.join(curdir, spamdirname)
-	else:
-		razorwin = start_razor_window(_("Reporting Ham"), [['razor-revoke', '-d', '-f'], ['pyzor', '-d', 'whitelist']])
-		Lqtxt = _("Take out from <tt>%s</tt> folder into <tt>%s</tt>?") % (spamdirname, inboxname)
-		btndesc = (_("Take out"), gtk.STOCK_UNDELETE)
-		targetdir = inboxpath
-	
-	if (considered_as_spam and not isin_spam_folder) or (not considered_as_spam and isin_spam_folder):
-		if question(Lqtxt, btndesc):
-			try:
-				mkdir(targetdir)
-				os.rename(emailfile, os.path.join(targetdir, os.path.basename(emailfile)))
-			except OSError as e:
-				display_error(e)
-
-def start_razor_window(title, cmdargses):
-	bgc = win_main.get_style().bg[gtk.STATE_NORMAL]
-	vb = gtk.VBox(False, 6)
-	lbl = gtk.Label()
-	frm = gtk.Frame()
-	frm.set_shadow_type(gtk.SHADOW_IN)
-	hb = gtk.HBox()
-	btn = StockButton(stock=gtk.STOCK_CLOSE)
-	vb2 = gtk.VBox()
-	
-	panel_razor.pack_start(vb)
-	vb.pack_start(lbl, True, True)
-	vb.pack_start(frm, True, True)
-	frm.add(hb)
-	hb.pack_start(vb2, True, True)
-	hb.pack_start(btn, False, False)
-	panels = []
-	for cmdargs in cmdargses:
-		spanel = gtk.ScrolledWindow()
-		panel = gtk.TextView()
-		panels.append((panel, cmdargs))
-		spanel.add(panel)
-		vb2.pack_start(spanel, True, True)
-
-		spanel.set_size_request(420, 42)
-		spanel.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-		panel.set_editable(False)
-		panel.set_wrap_mode(gtk.WRAP_NONE)
-		panel.modify_font(pango.FontDescription('monospace'))
-		panel.modify_base(gtk.STATE_NORMAL, bgc)
-		panel.connect('size-allocate', scroll_textview, spanel)
-	
-	lbl.set_markup('<b>'+glib.markup_escape_text(title)+'</b>')
-	vb.set_data('close-button', btn)
-	btn.set_sensitive(False)
-	btn.connect('clicked', close_razor_window, vb)
-	vb.show_all()
-	
-	menubutton_spam.set_sensitive(False)
-	menubutton_ham.set_sensitive(False)
-	
-	wait_threads = []
-	for panel, cmdargs in panels:
-		buffer = panel.get_buffer()
-		pipedesc_reader, pipedesc_writer = os.pipe()
-		thrd_feed = threading.Thread(target=spam_feeder_thread, args=(pipedesc_writer,))
-		thrd_feed.start()
-		thrd = threading.Thread(target=runcmd_thread, args=(cmdargs, pipedesc_reader, buffer, vb))
-		wait_threads.append((thrd, buffer))
-		thrd.start()
-	vb.set_data('threads', wait_threads)
-	return vb
-
-def spam_feeder_thread(fd):
-	os.write(fd, Email.as_string())
-	os.close(fd)
+	run_async('gemlv-report-%s' % 'spam' if considered_as_spam else 'ham', [emailfile])
 
 def runcmd_thread(args, input_fd, out_buffer, vb):
 	reader, writer = get_pipe_handlers(1)
@@ -1890,25 +1798,6 @@ def runcmd_thread(args, input_fd, out_buffer, vb):
 	out_buffer.set_data('process-exit-status', status)
 	glib.idle_add(lambda: finished_razor_thread(vb), priority=glib.PRIORITY_DEFAULT_IDLE)
 	gtk.threads_leave()
-
-def close_razor_window(btn, vb):
-	menubutton_spam.set_sensitive(True)
-	menubutton_ham.set_sensitive(True)
-	vb.destroy()
-
-def finished_razor_thread(vb):
-	wait_threads = vb.get_data('threads')
-	if wait_threads is None:
-		return True
-	for thread, textbuffer in wait_threads:
-		if thread.is_alive():
-			return True
-	if vb.get_data('quit-on-all-finished'):
-		close_razor_window(None, vb)
-		glib.idle_add(act_quit, priority=glib.PRIORITY_DEFAULT_IDLE)
-	else:
-		vb.get_data('close-button').set_sensitive(True)
-	return False
 
 def get_extension_by_mime(mime):
 	if mime is None:
@@ -3454,7 +3343,6 @@ panel_content = gtk.TextView()
 tb_controls = gtk.Toolbar()
 menubutton_filters = gtk.MenuToolButton(gtk.STOCK_ZOOM_FIT)
 menu_filters = gtk.Menu()
-panel_razor = gtk.VBox(True, 10)
 
 win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
@@ -3529,7 +3417,6 @@ tb_controls.set_style(gtk.TOOLBAR_ICONS)
 menubutton_filters.set_homogeneous(False)
 menubutton_filters.set_menu(menu_filters)
 menubutton_filters.set_arrow_tooltip_text(_("Filters"))
-box_main.pack_start(panel_razor, False, True)
 
 
 toolbuttons = [
