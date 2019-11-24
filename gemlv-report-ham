@@ -1,18 +1,3 @@
-#!/bin/bash
+#!/bin/sh
 
-if [ -z "$TERM" ]
-then
-	if [ -x ~/.local/share/gemlv/report-ham ]
-	then
-		exec ~/.local/share/gemlv/report-ham "$@"
-	fi
-	
-	GEMLV_EMAIL_FILE=$1
-	export GEMLV_EMAIL_FILE
-	
-	exec xterm -e "$0"
-else
-	razor-revoke -d -f "$GEMLV_EMAIL_FILE"
-	pyzor -d whitelist <"$GEMLV_EMAIL_FILE"
-	bogofilter -n -v <"$GEMLV_EMAIL_FILE"
-fi
+exec gemlv-report ham "$@"
