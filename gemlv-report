@@ -1,0 +1,46 @@
+#!/bin/bash
+
+type=$1
+shift
+
+if [ -z "$GEMLV_UNDER_XTERM" ]
+then
+	if [ -x ~/.local/share/gemlv/report-$type ]
+	then
+		exec ~/.local/share/gemlv/report-$type "$@"
+	fi
+	
+	if [ -x /etc/gemlv/report-$type ]
+	then
+		exec /etc/gemlv/report-$type "$@"
+	fi
+	
+	GEMLV_EMAIL_FILE=$1
+	export GEMLV_EMAIL_FILE
+	GEMLV_UNDER_XTERM=yes
+	export GEMLV_UNDER_XTERM
+	GEMLV_REPORT_TYPE=$type
+	export GEMLV_REPORT_TYPE
+	
+	exec xterm -hold -e "gemlv-report-$type"
+else
+	read -se -p "Press Enter to report ${GEMLV_REPORT_TYPE^}: $GEMLV_EMAIL_FILE"
+	
+	case "$GEMLV_REPORT_TYPE" in
+	spam)
+		razor-report -d -f "$GEMLV_EMAIL_FILE"
+		pyzor -d report <"$GEMLV_EMAIL_FILE"
+		bogofilter -s -v <"$GEMLV_EMAIL_FILE"
+		;;
+	ham)
+		razor-revoke -d -f "$GEMLV_EMAIL_FILE"
+		pyzor -d whitelist <"$GEMLV_EMAIL_FILE"
+		bogofilter -n -v <"$GEMLV_EMAIL_FILE"
+		;;
+	*)
+		echo "unknown: $GEMLV_REPORT_TYPE" >&2
+		;;
+	esac
+	
+	echo "$0: $GEMLV_EMAIL_FILE: done marked as $GEMLV_REPORT_TYPE" >&2
+fi
