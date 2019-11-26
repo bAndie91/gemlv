@@ -1750,8 +1750,8 @@ def act_unsubscribe():
 					linktext = glib.markup_escape_text(short)
 			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
-		dlg.set_title(_("Unsubscribe Methods"))
-		dlg.set_markup(_("Select a link to unsubscribe") + text)
+		dlg.set_title(_("Unsubscribe"))
+		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + text)
 		try:
 			label = dlg.get_content_area().children()[0].children()[1].children()[0]
 			label.set_selectable(False)
@@ -3299,7 +3299,7 @@ gtk.gdk.threads_init()
 ### Build GUI ###
 
 win_main = gtkWindow()
-win_main.set_default_size(820, 450)
+win_main.set_default_size(832, 450)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
 add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())

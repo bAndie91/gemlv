@@ -205,9 +205,6 @@ msgstr "Fontos"
 msgid "Edit with External Program"
 msgstr "Szekresztés külső programmal"
 
-msgid "Unsubscribe Methods"
-msgstr "Leiratkozási módok"
-
 msgid "New Email's writer's name and address"
 msgstr "Az új Email szerzőjének neve és címe"
 
@@ -252,6 +249,12 @@ msgstr "Fontosság"
 
 msgid "Select a link to unsubscribe"
 msgstr "Válassz egy linket, amivel leiratkozol"
+
+msgid "Beware, open links only from trusted source. Spammers know their "
+"spam reached target if you follow fake unsubscribe links."
+msgstr "Figyelj arra, hogy csak megbízható forrásból származó linkeket nyiss "
+"meg. A szpemmerek hamis leiratkozó linkekkel derítik ki, hogy levélszemetük "
+"célba ért-e."
 
 msgid "Reporting Spam"
 msgstr "Spam bejelentése"
