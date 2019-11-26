@@ -24,23 +24,61 @@ then
 	
 	exec xterm -hold -e "gemlv-report-$type"
 else
-	read -se -p "Press Enter to report ${GEMLV_REPORT_TYPE^}: $GEMLV_EMAIL_FILE"
-	
-	case "$GEMLV_REPORT_TYPE" in
-	spam)
-		razor-report -d -f "$GEMLV_EMAIL_FILE"
-		pyzor -d report <"$GEMLV_EMAIL_FILE"
-		bogofilter -s -v <"$GEMLV_EMAIL_FILE"
-		;;
-	ham)
-		razor-revoke -d -f "$GEMLV_EMAIL_FILE"
-		pyzor -d whitelist <"$GEMLV_EMAIL_FILE"
-		bogofilter -n -v <"$GEMLV_EMAIL_FILE"
-		;;
-	*)
-		echo "unknown: $GEMLV_REPORT_TYPE" >&2
-		;;
-	esac
-	
-	echo "$0: $GEMLV_EMAIL_FILE: done marked as $GEMLV_REPORT_TYPE" >&2
+	if zenity --question --text "Report ${GEMLV_REPORT_TYPE^}?\n$GEMLV_EMAIL_FILE" --title "Report ${GEMLV_REPORT_TYPE^}"
+	then
+		case "$GEMLV_REPORT_TYPE" in
+		spam)
+			razor-report -d -f "$GEMLV_EMAIL_FILE"
+			pyzor -d report <"$GEMLV_EMAIL_FILE"
+			bogofilter -s -v <"$GEMLV_EMAIL_FILE"
+			;;
+		ham)
+			razor-revoke -d -f "$GEMLV_EMAIL_FILE"
+			pyzor -d whitelist <"$GEMLV_EMAIL_FILE"
+			bogofilter -n -v <"$GEMLV_EMAIL_FILE"
+			;;
+		*)
+			echo "unknown: $GEMLV_REPORT_TYPE" >&2
+			;;
+		esac &
+		
+		path=`readlink -f "$GEMLV_EMAIL_FILE"`
+		dirpath=`dirname "$path"`
+		dirname=`basename "$dirpath"`
+		ask_move=no
+		
+		case "$GEMLV_REPORT_TYPE" in
+		spam)
+			prep=into
+			if [ "$dirname" != Spam ]
+			then
+				ask_move=yes
+			fi
+			;;
+		ham)
+			prep="out from"
+			if [ "$dirname" = Spam ]
+			then
+				ask_move=yes
+			fi
+			;;
+		esac
+		
+		if [ $ask_move = yes ] && zenity --question --text "Move $prep Spam folder?\n$GEMLV_EMAIL_FILE" --title "Move Email $prep Spam"
+		then
+			case "$GEMLV_REPORT_TYPE" in
+			spam)
+				mkdir -p "$dirpath/Spam/"
+				mv "$GEMLV_EMAIL_FILE" "$dirpath/Spam/"
+				;;
+			ham)
+				mv "$GEMLV_EMAIL_FILE" "$dirpath/../"
+				;;
+			esac
+		fi
+		
+		wait
+		
+		echo "$0: $GEMLV_EMAIL_FILE: [1mdone marked as $GEMLV_REPORT_TYPE[m" >&2
+	fi
 fi
