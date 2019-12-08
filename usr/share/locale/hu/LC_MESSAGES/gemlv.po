@@ -226,8 +226,11 @@ msgstr "Küldés..."
 msgid "Email is sent."
 msgstr "Email elküldve."
 
-msgid "Sendmail error %s."
-msgstr "Sendmail hiba %s."
+msgid "Sendmail error: %s"
+msgstr "Sendmail hiba: %s"
+
+msgid "signal: %s"
+msgstr "szignál: %s"
 
 msgid "Reply-By"
 msgstr "Válasz Eddig"

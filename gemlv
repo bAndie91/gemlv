@@ -2260,6 +2260,7 @@ def act_send():
 	progressbar = gtk.ProgressBar()
 	details = gtk.ScrolledWindow()
 	details_text = gtk.Label()
+	details_text.set_alignment(0, 0)
 	details.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	details.add_with_viewport(details_text)
 	carea.pack_start(progressbar, False, True)
@@ -2344,7 +2345,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 	btn_close.connect('clicked', lambda x: dlg.destroy())
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
-	if status.code == 0:
+	if status.code == 0 and status.signal == 0:
 		set_dialog_icon_name(dlg, gtk.STOCK_APPLY)
 		with BasicReuseable(_("Email is sent.")) as s:
 			dlg.set_title(s)
@@ -2358,7 +2359,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 				set_xattrs(cliArgs.FILE, {xattrname: MsgId}, cliArgs.FILE)
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
-		dlg.set_markup(_("Sendmail error %s.") % (status.code,))
+		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
 	details_text.set_markup('<tt>' + glib.markup_escape_text(resp) + '</tt>')
 	gtk.threads_leave()
@@ -2386,12 +2387,9 @@ def iterate_composer_headers():
 
 def build_newemail():
 	preserve_headers = win_comp.get_data('preserve-headers')
-	idx = 0
 	for hname, hval in NewEmail._headers:
 		if hname.lower() not in preserve_headers:
-			del NewEmail._headers[idx]
-			continue
-		idx += 1
+			del NewEmail[hname]
 	for hname, hval in iterate_composer_headers():
 		enchunks = []
 		for chunk in hval.split(' '):
