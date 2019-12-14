@@ -27,21 +27,61 @@ then
 else
 	if zenity --question --no-markup --text "Report ${GEMLV_REPORT_TYPE^}?$LF$GEMLV_EMAIL_FILE" --title "Report ${GEMLV_REPORT_TYPE^}"
 	then
+		pids=()
+		
 		case "$GEMLV_REPORT_TYPE" in
 		spam)
-			razor-report -d -f "$GEMLV_EMAIL_FILE"
-			pyzor -d report <"$GEMLV_EMAIL_FILE"
-			bogofilter -s -v <"$GEMLV_EMAIL_FILE"
+			commands=("razor-report -d -f" "pyzor-files -d report --" "bogofilter -s -v -B")
 			;;
 		ham)
-			razor-revoke -d -f "$GEMLV_EMAIL_FILE"
-			pyzor -d whitelist <"$GEMLV_EMAIL_FILE"
-			bogofilter -n -v <"$GEMLV_EMAIL_FILE"
+			commands=("razor-revoke -d -f" "pyzor-files -d whitelist --" "bogofilter -n -v -B")
 			;;
 		*)
 			echo "unknown: $GEMLV_REPORT_TYPE" >&2
+			exit -1
 			;;
-		esac &
+		esac
+		
+		for cmd in "${commands[@]}"
+		do
+			command $cmd "$GEMLV_EMAIL_FILE" &
+			pids+=($!)
+		done
+		
+		all_ok=1
+		codes=()
+		
+		for pid in "${pids[@]}"
+		do
+			wait $pid
+			code=$?
+			codes+=($code)
+			if [ $code != 0 ]
+			then
+				all_ok=0
+			fi
+		done
+		
+		if [ $all_ok != 1 ]
+		then
+			n=0
+			highest_code=0
+			for code in "${codes[@]}"
+			do
+				if [ $code != 0 ]
+				then
+					echo "$0: $GEMLV_EMAIL_FILE: [1m$GEMLV_REPORT_TYPE report error $code[m at command '${commands[$n]}'" >&2
+					if [ $highest_code -lt $code ]
+					then
+						highest_code=$code
+					fi
+				fi
+				n=$[n+1]
+			done
+			exit $highest_code
+		fi
+		
+		# Move to 'Spam/' folder
 		
 		path=`readlink -f "$GEMLV_EMAIL_FILE"`
 		dirpath=`dirname "$path"`
@@ -77,10 +117,6 @@ else
 				;;
 			esac
 		fi
-		
-		wait
-		
-		# FIXME: check exit statuses
 		
 		echo "$0: $GEMLV_EMAIL_FILE: [1mdone marked as $GEMLV_REPORT_TYPE[m" >&2
 	fi
