@@ -30,10 +30,12 @@ Email viewer and composer for local emails in GTK
 	- save Message-ID, Content-Type in Extended Attributes
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
-	- supported networks
+	- supported networks and filters
 		- razor
 		- pyzor
+		- bogofilter
 	- move Email file into / out from ```Spam``` folder
+	- override spam-report command on user/system level (`~/.local/share/gemlv/report-spam`, `/etc/gemlv/report-spam`)
 - writing Email
 	- send by ```sendmail -ti``` (preconfig is out of scope)
 		- can interrupt sending process
