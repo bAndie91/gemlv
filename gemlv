@@ -634,13 +634,13 @@ def load_parts(eml, model, parent):
 	global LeafParts
 	
 	label = PMU_MIME + glib.markup_escape_text(eml.get_content_type()) + PMU_MIME_CLOSE
-	filename = eml.get_filename()
+	filename = decode_mimetext(eml.get_filename())
 	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
 	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb])
-	# Note, buggy or incomplete Content-Type (eg. "Content-Type: pdf") translated as text/plain by email module
+	# Note, buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
 	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
 		PartPrimary = iterator
 	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
@@ -715,7 +715,7 @@ def load_part(eml, filt=None):
 #				TODO
 			else:
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
-				filename = eml.get_filename()
+				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
 				lbl_right.set_markup(label)
 				
@@ -777,9 +777,15 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
+def decode_mimetext(s):
+	if s is not None:
+		plain_str, encoding = email.header.decode_header(s)[0]
+		return plain_str
+	return s
+
 def decode_header(s, unfold=False, eml=None):
 	chunks = []
-	for chars, encoding in email.Header.decode_header(s):
+	for chars, encoding in email.header.decode_header(s):
 		if encoding is None:
 			if unfold:
 				chars = re.sub('\r?\n\s*', ' ', chars)
@@ -1843,7 +1849,7 @@ def basenameify(s):
 	return s.replace('/', u'\u2215')
 
 def calc_attachment_name(part, n=None):
-	name = part.get_filename()
+	name = decode_mimetext(part.get_filename())
 	if name is None:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
@@ -1852,7 +1858,7 @@ def calc_attachment_name(part, n=None):
 
 def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add_subject=False):
 	part = Parts[itpath][0]
-	fname = part.get_filename()
+	fname = decode_mimetext(part.get_filename())
 	if fname is None:
 		fname = ''
 		if add_subject:
@@ -1878,7 +1884,7 @@ def act_save_struct():
 def act_save_struct_inner(savedir, iterator):
 	part = Parts[iterator][0]
 	itpath = Parts.get_path(iterator)
-	myname = part.get_filename()
+	myname = decode_mimetext(part.get_filename())
 	if myname is not None:
 		myname = os.path.basename(myname)
 	if Parts.iter_has_child(iterator):
@@ -2527,7 +2533,7 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 
 def debug_multipart(eml):
 	for depth, part in walk_multipart(eml):
-		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), part.get_filename()))
+		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
 
 def act_attach():
 	filename = choose_open_file()
@@ -2727,7 +2733,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 	if callback(eml):
 		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
-		name = eml.get_filename() or '[%s/%s]' % (ct_main, ct_sub)
+		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
 		icon = get_stock_by_mime(ct_main, ct_sub)
 		iterator = Attachments.append(root_iter, [eml, name, icon, None])
 		subparts = eml.get_payload()
