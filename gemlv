@@ -541,11 +541,11 @@ def get_iterator_from_pos(treeview, x, y):
 	return treeview.get_model().get_iter(pathinfo[0])
 
 
-def human_size(x, suffix='B'):
+def human_size(x, suffix='B', decimals=1):
 	prefixa = ['', 'K', 'M', 'G']
 	for prefixum in prefixa:
 		if abs(x) < 1024.0 or prefixum == prefixa[-1]:
-			return '%d %s%s' % (x, prefixum, suffix)
+			return '%.*f %s%s' % (decimals, x, prefixum, suffix)
 		x /= 1024.0
 
 ### private functions ###
@@ -717,6 +717,7 @@ def load_part(eml, filt=None):
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
+				label = label + '\n' + _("Size: %s" % human_size(len(eml.get_payload(decode=True))))
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
