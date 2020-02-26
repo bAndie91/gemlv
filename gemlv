@@ -835,9 +835,25 @@ def get_mailtos(s, schemata=['mailto']):
 			l.append(q)
 	return l
 
+def get_fskv(key):
+	"""
+	Filesystem as key-value store
+	"""
+	for t in (os.environ['HOME'], '.config', PROGNAME, key), (os.path.sep, 'etc', PROGNAME, key),:
+		n = os.path.join(*t)
+		fh = None
+		try:
+			fh = open(n, 'r')
+		except IOError:
+			pass
+		if fh is not None:
+			return ''.join(fh.readlines())
+	return None
+
 def load_gravatar(addr, container):
 	if not isinstance(addr, str): return
-	url = 'https://www.gravatar.com/avatar/%s?default=404&size=64&rating=G' % (hashlib.md5(addr.lower()).hexdigest())
+	url = (get_fskv('avatar_url_template') or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G')\
+		.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
 	try:
 		web = urllib2.urlopen(url)
 	except urllib2.HTTPError:

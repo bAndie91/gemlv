@@ -18,8 +18,7 @@ Email viewer and composer for local emails in GTK
 	- select first text/plain or text/html part at beginning
 	- show attached filenames, and their mime type
 	- Drag-and-Drop from attachment panel
-- [Gravatar](http://www.gravatar.com/) support
-- undisplayable parts can be opened with external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
+- email parts (attachments) can be opened with external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 - save attachments (MIME parts)
 	- save as:
 		- single files
@@ -28,6 +27,11 @@ Email viewer and composer for local emails in GTK
 	- preverse modification time, permissions if specified in attachment
 	- preserve symlinks
 	- save Message-ID, Content-Type in Extended Attributes
+- [Gravatar](http://www.gravatar.com/) support
+	- you can configure the url to fetch an avatar picture for en email address:
+		- file: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
+		- content: `https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G`
+		- template vars: `email`, `email_md5`
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
 	- supported networks and filters
