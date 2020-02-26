@@ -1551,10 +1551,10 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headers(hname, evenif_hidden=True):
+def get_composer_headers(hname):
 	hlist = []
 	for hbox in panel_comp_header.children():
-		if hbox.get_visible() or evenif_hidden:
+		if hbox['name'] not in SenderHeaders or hbox.get_visible():
 			if hname is None:
 				hlist.append((hbox['name'], hbox['value']))
 			elif type(hname) == type([]) and hbox['name'] in hname:
