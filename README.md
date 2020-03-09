@@ -29,7 +29,7 @@ Email viewer and composer for local emails in GTK
 	- save Message-ID, Content-Type in Extended Attributes
 - [Gravatar](http://www.gravatar.com/) support
 	- you can configure the url to fetch an avatar picture for en email address:
-		- file: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
+		- files in precedence: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
 		- content: `https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G`
 		- template vars: `email`, `email_md5`
 - button to unsubscribe from newsletters, mailing lists
@@ -41,7 +41,7 @@ Email viewer and composer for local emails in GTK
 	- move Email file into / out from ```Spam``` folder
 	- override spam-report command on user/system level (`~/.local/share/gemlv/report-spam`, `/etc/gemlv/report-spam`)
 - writing Email
-	- send by ```sendmail -ti``` (preconfig is out of scope)
+	- send by standard ```sendmail -ti``` command
 		- can interrupt sending process
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) and arbitrary ones as well
 		- email address syntax is validated
@@ -51,9 +51,9 @@ Email viewer and composer for local emails in GTK
 		- set Importance and Priority by tool buttons
 		- ask Disposition Notification by tool button
 	- addressbook
-		- read plain email addresses from file line by line
+		- read plain email addresses from file line by line (`~/Mail/.addressbook`)
 - reply options
-	- handle Reply-To field
+	- interpret Reply-To field
 	- set References, In-Reply-To headers
 	- quote plain text message in the new email
 	- Reply To All: reply to sender, to all recipients, to the mailing list, except ourself
@@ -100,3 +100,34 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-U``` Filter/Unfilter
 	- ```Ctrl-H``` Show/Hide headers
 	- ```F4``` edit draft message with external program
+
+## FAQ
+
+**Q.** Support feature-rich HTML-rendering?
+
+**A.** No. HTML-rendering is a huge job on its own right; does not fit into one program - one job paradigm for me.
+I built in filters for several media types (including html), you can define more filter for one mime type
+as well. Though it's not capable of feature-rich rendering with images, css, interactive content, nor 
+anything like that. There are embedable libs for this purpose out there, but I doubt any html renderer engine
+can work on the long-term on one hand, and I don't belive any reasonable ground to send so full-featured html 
+around in emails on the other hand (except as attachments which you can open externally or just save).
+
+**Q.** Where can I configure incoming/outgoing email server address/hostname/portnumber/ssl/tls/starttls options?
+
+**A.** Nowhere. It's just a viewer for raw email files (and composer). You may setup an other program to
+acquire your emails and save them in a directory, or use some virtual filesystem (fuse) which represents your 
+IMAP/POP3 mailbox as a conventional filesystem. I personally donwload my emails by `getmail4` preserving IMAP
+folder structure.
+
+**Q.** I get error when about to send email. Why?
+
+**A.** Consult the docs of your `sendmail` installation. If you have not any, install a tool providing
+`sendmail` command; there are more of them.
+
+**Q.** Why encryption and digital signing do not do anything?
+
+**A.** They are not yet implemented. I do want to implement them.
+
+**Q.** Python 2 ?
+
+**A.** Yes. It is not banned. Is it?
