@@ -923,7 +923,7 @@ def get_headers_markup(eml):
 					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (addr_mu, addr_mu)
-					if realname: mu = realname + ' ' + mu
+					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
 			elif hname in DateTimeHeaders:
