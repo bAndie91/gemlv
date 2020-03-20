@@ -922,7 +922,8 @@ def get_headers_markup(eml):
 				for realname, addr in email.utils.getaddresses([hval]):
 					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
-					mu = '<a href=\'mailto:%s\'>%s</a>' % (addr_mu, addr_mu)
+					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"'), addr_mu)) if realname else addr_mu
+					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
@@ -3181,7 +3182,7 @@ MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
-RE_EMAIL = '(?P<LP>\w[\w\.-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
+RE_EMAIL = '(?P<LP>\w[\w\.+-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
 VAL_EMAIL = {
 	'require': '^' + RE_EMAIL + '$',
 	}
