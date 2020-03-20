@@ -819,11 +819,11 @@ def get_one_header_main(hname, unfold=True):
 def get_all_headers_main(hname):
 	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
 
-def get_mailtos(s, schemata=['mailto']):
+def get_header_links(s, schemata=['mailto']):
 	l = []
 	uris = re.findall('<([^>]+)>', s)
 	if len(uris) == 0:
-		# For poorly behaved mail lists.
+		# workaround for poorly behaved mail lists
 		uris = re.findall('^\s*(\S+)', s)
 	for uri in uris:
 		rslt = urlparse.urlsplit(uri)
@@ -834,6 +834,12 @@ def get_mailtos(s, schemata=['mailto']):
 			q['split'] = rslt
 			l.append(q)
 	return l
+
+def get_mailto(s):
+	l = get_header_links('<%s>' % (s))
+	if len(l) > 0: return l[0]
+	stderr(_("Can not parse mailto link: '%s'") % (s))
+	return {}
 
 def get_fskv(key):
 	"""
@@ -875,7 +881,7 @@ def load_gravatar(addr, container):
 def get_listaddress_main():
 	try:
 		# Hopefully there is only one list address.
-		listaddress = get_mailtos(','.join(get_all_headers_main('List-Post') or []))[0]['to']
+		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []))[0]['to']
 	except IndexError:
 		listaddress = None
 	except KeyError:
@@ -1653,7 +1659,13 @@ def add_composer_mailto(mailto):
 	for h in 'To', 'Cc', 'Bcc':
 		k = h.lower()
 		if mailto.has_key(k):
-			add_composer_headers(h, mailto[k] if hasattr(mailto[k], '__iter__') else [mailto[k]])
+			# urlparse.parse_qs() in get_header_links() may turn GET parameters 
+			# (eg. "?cc[]=foo&cc[]=bar") into arrays, so handle them like comma-
+			# delimited addresses
+			v = ','.join(mailto[k]) if hasattr(mailto[k], '__iter__') else mailto[k]
+			recipient_list = []
+			for x in v.split(','): recipient_list.append(x)
+			add_composer_headers(h, recipient_list)
 	if mailto.has_key('subject'):
 		set_composer_subject(mailto['subject'])
 	if mailto.has_key('body'):
@@ -1754,7 +1766,7 @@ def shorturl(url, maxlength=72):
 		return None
 
 def act_unsubscribe():
-	links = get_mailtos(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
+	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
 	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
 		if open_composer():
 			add_composer_mailto(links[0])
@@ -3676,12 +3688,8 @@ if cliArgs.compose:
 			set_composer_text('\n\n' + get_user_signature())
 	
 	if cliArgs.mailto:
-		try:
-			mailto = get_mailtos('<%s>' % (cliArgs.mailto))[0]
-		except IndexError:
-			stderr(_("Can not parse mailto link."))
-		else:
-			add_composer_mailto(mailto)
+		mailto = get_mailto(cliArgs.mailto)
+		add_composer_mailto(mailto)
 	if getattr(cliArgs, 'from'):
 		reset_composer_headers('From', [getattr(cliArgs, 'from')])
 	if cliArgs.to:

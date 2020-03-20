@@ -214,8 +214,8 @@ msgstr "Teljes 'mailto:' link"
 msgid "Unsubscribe"
 msgstr "Leiratkozás"
 
-msgid "Can not parse mailto link."
-msgstr "Nem lehet értelmezni a mailto linket."
+msgid "Can not parse mailto link: '%s'"
+msgstr "Nem lehet értelmezni a mailto linket: '%s'"
 
 msgid "Send anyway?"
 msgstr "Mégis küldöd?"
