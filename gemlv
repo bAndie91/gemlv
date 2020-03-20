@@ -548,6 +548,19 @@ def human_size(x, suffix='B', decimals=1):
 			return '%.*f %s%s' % (decimals, x, prefixum, suffix)
 		x /= 1024.0
 
+def fix_unquoted_comma(s):
+	def repl(m):
+		probably_realname = m.group(2)
+		probably_realname_norm = probably_realname.strip()
+		if probably_realname_norm == '' or probably_realname_norm.startswith('"') or probably_realname.find(',')==-1:
+			return m.group(0)
+		else:
+			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))
+	return re.sub('(^|,)(.+)(<)', repl, s)
+
+def getaddresses(array):
+	return email.utils.getaddresses(map(fix_unquoted_comma, array))
+
 ### private functions ###
 
 def win_main_show(widget, event):
@@ -557,7 +570,7 @@ def win_main_show(widget, event):
 		load_file(cliArgs.FILE)
 
 def get_email_addresses_in_main_headers(h):
-	return map(lambda x: x[1], email.utils.getaddresses(Email.get_all(h) or []))
+	return map(lambda x: x[1], getaddresses(Email.get_all(h) or []))
 
 def email_from_file(filename):
 	try:
@@ -925,7 +938,7 @@ def get_headers_markup(eml):
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for realname, addr in email.utils.getaddresses([hval]):
+				for realname, addr in getaddresses([hval]):
 					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
 					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"'), addr_mu)) if realname else addr_mu
@@ -1646,7 +1659,7 @@ def get_user_signature():
 
 def filter_out_addresses(noaddrs, hvals):
 	filtered = []
-	for realname, addr in email.utils.getaddresses(hvals):
+	for realname, addr in getaddresses(hvals):
 		if addr not in noaddrs:
 			filtered.append(email.utils.formataddr((realname, addr)))
 	return filtered
@@ -2995,10 +3008,10 @@ def act_dispos_notif():
 		pndr_box['readonly'] = True
 		toggle_rqdn.set_sensitive(False)
 		
-		dnt_address = Email.get_all(HDR_DNT)
+		dnt_addresses = Email.get_all(HDR_DNT)
 		my_address = guess_my_address()
-		if dnt_address:
-			for realname, addr in email.utils.getaddresses(dnt_address):
+		if dnt_addresses:
+			for realname, addr in getaddresses(dnt_addresses):
 				add_composer_header('To', email.utils.formataddr((decode_header(realname, eml=Email), addr)))
 		else:
 			add_composer_header('To', guess_reply_address())
@@ -3205,7 +3218,7 @@ VAL_ADDRESS = {
 	'require': VAL_ADDRESSES['repetative'] + '$',
 	}
 VAL_AGE = {
-	'require': '^\d+[shmdwy]$',
+	'require': '^\d+[smhdwy]$',
 	}
 VAL_DATE = {
 	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}(\s+\([A-Z]+\))?$',
