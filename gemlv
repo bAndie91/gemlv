@@ -2928,6 +2928,19 @@ def on_keypress_attachments(tv, evt):
 		return True
 	return False
 
+def on_panel_parts_button_press_event(wdg, event):
+	# https://stackoverflow.com/a/57470492/1676943
+	if event.type != gtk.gdk.BUTTON_PRESS or event.button != 1: return
+	if (event.state & gtk.gdk.CONTROL_MASK): return
+	path = wdg.get_path_at_pos(int(event.x), int(event.y))
+	if not path: return
+	path = path[0]
+	selection = wdg.get_selection()
+	if selection.path_is_selected(path):
+		selection.unselect_path(path)
+		event.state |= gtk.gdk.CONTROL_MASK
+		return
+
 def drag_part_begin(wdg, context):
 	targets = wdg.drag_source_get_target_list()
 	dragged_parts = []
@@ -3444,6 +3457,7 @@ spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
 panel_parts.drag_source_set(gtk.gdk.BUTTON1_MASK, [(MIMETYPE_OCTETSTREAM, 0, 0), ('XdndDirectSave0', 0, 1)], gtk.gdk.ACTION_COPY)
+panel_parts.connect('button-press-event', on_panel_parts_button_press_event)
 panel_parts.connect('drag-begin', drag_part_begin)
 panel_parts.connect('drag-data-get', drag_part_data)
 panel_parts.connect('drag-end', drag_part_end)
