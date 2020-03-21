@@ -1265,7 +1265,9 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.set_completion(self.completer)
 		self.completer.set_model(gtk.ListStore(str))
 		self.completer.set_minimum_key_length(0)
+		self.completer.set_match_func(self.autocomplete_matcher, 0)
 		self.completer.set_text_column(0)
+		self.completer.set_popup_single_match(True)
 		
 		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
@@ -1289,6 +1291,13 @@ class compose_header_box(gtk.HBox):
 		self['name'] = chname
 		self['value'] = val
 	
+	def autocomplete_matcher(self, completion, key, treeiter, column):
+		model = completion.get_model()
+		text = model.get_value(treeiter, column)
+		if text.find(key) != -1:
+			return True
+		return False
+	
 	def propagate_button_press_event(self, w, evt):
 		self.parent.parent.parent.emit('button-press-event', evt)
 	
@@ -1301,24 +1310,33 @@ class compose_header_box(gtk.HBox):
 		else:
 			self.btn_datetime.hide()
 	
-	def on_name_changed(self, x=None):
+	def on_name_changed(self, _=None):
 		name = self['name']
 		self.showhide_pick_buttons()
 		if name in ValidatorHeaders.keys():
 			self['validate'] = ValidatorHeaders[name]
 		else:
 			self['validate'] = None
+		
+		if name in AddressbookHeaders:
+			abook = []
+			load_addressbook(callback = lambda x, _: abook.append(x))
+			self.set_autocomplete_list(abook)
+		else:
+			autocomplete_items = []
+			if type(self['validate']) == list:
+				autocomplete_items = self['validate'][:]
+			else:
+				try: autocomplete_items = self['validate']['autocomplete'][:]
+				except (KeyError, TypeError): pass
+			self.set_autocomplete_list(autocomplete_items)
+		self.on_changed()
+	
+	def set_autocomplete_list(self, autocomplete_list):
 		model = self.completer.get_model()
 		model.clear()
-		autocomplete_items = []
-		if type(self['validate']) == list:
-			autocomplete_items = self['validate'][:]
-		else:
-			try: autocomplete_items = self['validate']['autocomplete'][:]
-			except (KeyError, TypeError): pass
-		for text in autocomplete_items:
-			model.append([text])
-		self.on_changed()
+		for item in autocomplete_list:
+			model.append([item])
 	
 	def on_value_changed(self, entry=None):
 		if entry is None: entry = self.wdg_value
@@ -1499,7 +1517,7 @@ class compose_header_box(gtk.HBox):
 		elif key in ['validate', 'valid']:
 			return self.wdg_value.get_data(key)
 		else:
-			raise IndexError()
+			raise KeyError()
 	
 	def __setitem__(self, key, newvalue):
 		if key == 'name':
@@ -1524,7 +1542,7 @@ class compose_header_box(gtk.HBox):
 			assert isinstance(newvalue, bool)
 			self.wdg_value.set_data(key, newvalue)
 		else:
-			raise IndexError()
+			raise KeyError()
 
 
 class Clock(gtk.HBox):
@@ -2522,6 +2540,13 @@ def update_composer_toolbar_toggle_buttons():
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
+def load_addressbook(callback, userdata = None):
+	try:
+		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
+			callback(ln.strip(), userdata)
+	except IOError as e:
+		display_error(e)
+
 def act_addressbook():
 	def dblclick(wdg, evt):
 		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
@@ -2547,12 +2572,7 @@ def act_addressbook():
 	bad = StockButton(stock=gtk.STOCK_ADD)
 	bcl = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	try:
-		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
-			mod.append([ln.strip()])
-	except IOError as e:
-		display_error(e)
-		return
+	load_addressbook(callback = lambda x, _: mod.append([x]))
 	
 	win.set_transient_for(win_comp)
 	win.set_modal(True)
@@ -2832,7 +2852,6 @@ def drop_attachment_drop(wdg, context, x, y, time):
 	return accept
 
 def drop_attachment_data(wdg, context, x, y, data, intid, time):
-	#print map(lambda x: (x, getattr(data, 'get_'+x)()), ['target', 'format', 'data_type', 'selection', 'text'])
 	success = False
 	if data.get_length() > -1:
 		typ = data.get_data_type()
@@ -3310,6 +3329,7 @@ EditExcludedHeaders = [
 	#'Content-Type',
 	#'X-MS-*',
 	#'X-*',
+	# TODO: sensitive headers
 ]
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
@@ -3323,6 +3343,14 @@ ValidatorHeaders = {
 	'Importance': VAL_IMPORTANCE,
 	'Precedence': ['list', 'junk', 'bulk'],
 }
+AddressbookHeaders = [
+	'From',
+	'Reply-To',
+	HDR_DNT,
+	'To',
+	'Cc',
+	'Bcc',
+]
 for h in DateTimeHeaders:
 	ValidatorHeaders[h] = VAL_DATE
 XATTR_CHARSET = 'user.mime_encoding'
