@@ -19,6 +19,7 @@ from email.mime.message import MIMEMessage
 from email.header import make_header
 import re
 from tempfile import mkstemp
+from tempfile import mkdtemp
 from mimetypes import guess_extension
 import magic
 from fnmatch import fnmatch
@@ -303,6 +304,19 @@ def futimes(fd, times):
 	TIMEVALS = TIMEVAL * 2
 	if libc.futimes(fd, TIMEVALS((times[0], 0), (times[1], 0))) == -1:
 		raise OSError
+
+def recursive_rm(path):
+	try:
+		try:
+			os.unlink(path)
+		except OSError as e:
+			if e.errno == os.errno.EISDIR:
+				for x in os.listdir(path):
+					recursive_rm(os.path.join(path, x))
+			else:
+				raise
+	except OSError as e:
+		stderr(str(e))
 
 def timer_once(iden, sec, func, func_args=()):
 	if Timers.has_key(iden):
@@ -730,7 +744,11 @@ def load_part(eml, filt=None):
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
-				label = label + '\n' + _("Size: %s" % human_size(len(eml.get_payload(decode=True))))
+				# Extracted email part here to tell its size
+				# TODO: check memory footprint of email parts (attachments)
+				raw_part = eml.get_payload(decode=True)
+				if raw_part is None: raw_part = eml.as_string()
+				label = label + '\n' + _("Size: %s" % human_size(len(raw_part)))
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -2146,6 +2164,7 @@ def on_select_parts(selection):
 			btn_save2.set_sensitive(False)
 			clear_content()
 			menubutton_filters.set_sensitive(False)
+	set_dnd_drag_targets()
 
 def act_show_view_headers(chkmi):
 	show_view_headers(chkmi.active)
@@ -2832,7 +2851,7 @@ def drop_attachment_data(wdg, context, x, y, data, intid, time):
 				# All uri are attached successfuly.
 				success = True
 		elif typ == MIMETYPE_OCTETSTREAM:
-			# TODO get filename from somewhere
+			# TODO: get filename from somewhere
 			success = bool(attach_blob(data.data, parent_iter))
 	context.finish(success, False, time)
 	update_composer_status_message()
@@ -2941,67 +2960,87 @@ def on_panel_parts_button_press_event(wdg, event):
 		event.state |= gtk.gdk.CONTROL_MASK
 		return
 
+def set_dnd_drag_targets():
+	itpaths = selection_parts.get_selected_rows()[1]
+	if len(itpaths) == 1:
+		mime = Parts[itpaths[0]][0].get_content_type()
+		targets = [(mime, gtk.TARGET_OTHER_APP, 1), ('XdndDirectSave0', gtk.TARGET_OTHER_APP, 2), (MIMETYPE_OCTETSTREAM, gtk.TARGET_OTHER_APP, 3)]
+	else:
+		targets = [(MIMETYPE_URILIST, gtk.TARGET_OTHER_APP, 0)]
+	panel_parts.drag_source_set_target_list(targets)
+
 def drag_part_begin(wdg, context):
-	targets = wdg.drag_source_get_target_list()
 	dragged_parts = []
-	common_mime = None
 	itpaths = selection_parts.get_selected_rows()[1]
 	for itpath in itpaths:
 		part = Parts[itpath][0]
-		dragged_parts.append(part)
-		mime = part.get_content_type()
-		if common_mime is not False:
-			if common_mime is None:
-				common_mime = mime
-			elif common_mime != mime:
-				common_mime = False
-	if common_mime:
-		targets.insert(0, (common_mime, 0, len(targets)))
+		filename = part_filename_by_iteratorpath(itpath, add_extension=True, add_subject=True)
+		dragged_parts.append((part, filename))
+	
 	if len(dragged_parts) > 1:
 		context.set_icon_stock(gtk.STOCK_DND_MULTIPLE, 0, 0)
-	
-	atom_xds = gtk.gdk.atom_intern('XdndDirectSave0')
-	atom_filename = gtk.gdk.atom_intern(MIMETYPE_TEXT)
-	# TODO support multiple files
-	filename0 = part_filename_by_iteratorpath(itpaths[0], add_extension=True, add_subject=True)
-	stderr("Dragging [%s] %s" % (','.join(x[0] for x in targets), repr(filename0)))
-	
-	# Put dragged file's name into XWindow property (XDirectSave standard)
-	context.source_window.property_change(atom_xds, atom_filename, 8, gtk.gdk.PROP_MODE_REPLACE, str(filename0))
-	context.set_data('dragged-parts', dragged_parts)
-	context.set_data('atom-xds', atom_xds)
-	context.set_data('atom-filename', atom_filename)
-
-def drag_part_data(wdg, context, data, intid, time):
-	targettype = data.get_target()
-	dragged_parts = context.get_data('dragged-parts')
-	part0 = dragged_parts[0]
-	stderr("Dropping [%s]" % (targettype,))
-	if targettype == MIMETYPE_OCTETSTREAM:
-		filedata = part0.get_payload(decode=True)
-		if filedata is None:
-			filedata = part0.as_string()
-		atom = gtk.gdk.atom_intern(MIMETYPE_OCTETSTREAM)
-		data.set(atom, 8, filedata)
-	elif targettype == 'XdndDirectSave0':
-		typ, fmt, dest_filename = context.source_window.property_get(context.get_data('atom-xds'), context.get_data('atom-filename'))
-		if dest_filename is not None:
-			xds_return_code = 'F'
-			# Don't handle XDirectSave.
-			# We pretended to support it just to have the remote app read our filename.
-			if False:
-				# TODO support GIO
-				filepath = file_uri_to_path(dest_filename)
-				if filepath is not None:
-					saved = save_to_file(part0, filepath)
-					xds_return_code = 'S' if saved else 'E'
-			# Fail XDirectSave, remote app should ask us for other target type.
-			data.set(data.target, 8, xds_return_code)
 	else:
-		stderr("Unknown drop target: "+targettype)
+		dragged_part, filename = dragged_parts[0][:]
+		atom_xds = gtk.gdk.atom_intern('XdndDirectSave0')
+		atom_filename = gtk.gdk.atom_intern(MIMETYPE_TEXT)
+		# Put dragged file's name into XWindow property (XDirectSave standard)
+		context.source_window.property_change(atom_xds, atom_filename, 8, gtk.gdk.PROP_MODE_REPLACE, str(filename))
+		context.set_data('atom-xds', atom_xds)
+		context.set_data('atom-xds-filename', atom_filename)
+		
+	context.set_data('dragged-parts', dragged_parts)
+
+def drag_part_data(wdg, context, dnd_data, intid, time):
+	targettype = dnd_data.get_target()
+	stderr("Dropping %d %s" % (intid, targettype,))
+	dragged_parts = context.get_data('dragged-parts')
+	
+	if targettype == MIMETYPE_URILIST:
+		uris_text = ''
+		# save attachments to temporary files, where the remote app will copy from
+		# TODO: IDEA: detect email-attachment fuse filesystem where user can access attachments through and give URIs pointing in it.
+		tmp_dir_path = mkdtemp(prefix = PROGNAME + '-DnD_')
+		context.set_data('tmp-dir-path', tmp_dir_path)
+		for dragged_part, filename in dragged_parts:
+			savefile = os.path.join(tmp_dir_path, filename)
+			save_to_file(dragged_part, savefile, ask_overwrite=False, consider_preamble=False)
+			uris_text += 'file://%s\r\n' % (urllib2.quote(savefile.encode('utf-8')),)
+		stderr('drag-and-drop uri-list:\n'+uris_text+'---')
+		atom = gtk.gdk.atom_intern(MIMETYPE_URILIST)
+		dnd_data.set(atom, 8, uris_text)
+	else:
+		dragged_part = dragged_parts[0][0]
+		if targettype == MIMETYPE_OCTETSTREAM:
+			filedata = dragged_part.get_payload(decode=True)
+			if filedata is None:
+				filedata = dragged_part.as_string()
+			atom = gtk.gdk.atom_intern(MIMETYPE_OCTETSTREAM)
+			dnd_data.set(atom, 8, filedata)
+		elif targettype == 'XdndDirectSave0':
+			typ, fmt, dest_filename = context.source_window.property_get(context.get_data('atom-xds'), context.get_data('atom-xds-filename'))
+			if dest_filename is not None:
+				xds_return_code = 'F'
+				# TODO
+				# Don't handle XDirectSave.
+				# We pretended to support it just to have the remote app read our filename.
+				if False:
+					# TODO support GIO
+					filepath = file_uri_to_path(dest_filename)
+					if filepath is not None:
+						saved = save_to_file(part0, filepath)
+						xds_return_code = 'S' if saved else 'E'
+				# Fail XDirectSave, remote app should ask us for other target type.
+				dnd_data.set(dnd_data.target, 8, xds_return_code)
+		else:
+			stderr("Unknown drop target: "+targettype)
 
 def drag_part_end(wdg, context):
-	context.source_window.property_delete(context.get_data('atom-xds'))
+	atom = context.get_data('atom-xds')
+	if atom is not None:
+		context.source_window.property_delete(atom)
+	tmp_dir_path = context.get_data('tmp-dir-path')
+	if tmp_dir_path:
+		recursive_rm(tmp_dir_path)
 
 def act_encrypt():
 	pass
@@ -3456,7 +3495,7 @@ panel_body.set_position(175)
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
-panel_parts.drag_source_set(gtk.gdk.BUTTON1_MASK, [(MIMETYPE_OCTETSTREAM, 0, 0), ('XdndDirectSave0', 0, 1)], gtk.gdk.ACTION_COPY)
+panel_parts.drag_source_set(gtk.gdk.BUTTON1_MASK, [], gtk.gdk.ACTION_COPY)
 panel_parts.connect('button-press-event', on_panel_parts_button_press_event)
 panel_parts.connect('drag-begin', drag_part_begin)
 panel_parts.connect('drag-data-get', drag_part_data)
