@@ -1320,7 +1320,7 @@ class compose_header_box(gtk.HBox):
 		
 		if name in AddressbookHeaders:
 			abook = []
-			load_addressbook(callback = lambda x, _: abook.append(x))
+			load_addressbook(callback = lambda x, _: abook.append(x), display_error = False)
 			self.set_autocomplete_list(abook)
 		else:
 			autocomplete_items = []
@@ -2540,12 +2540,17 @@ def update_composer_toolbar_toggle_buttons():
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
-def load_addressbook(callback, userdata = None):
+def load_addressbook(callback, display_error = True, userdata = None):
 	try:
 		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
 			callback(ln.strip(), userdata)
 	except IOError as e:
-		display_error(e)
+		if display_error:
+			display_error(e)
+		else:
+			stderr(str(e))
+		return False
+	return True
 
 def act_addressbook():
 	def dblclick(wdg, evt):
@@ -2572,7 +2577,7 @@ def act_addressbook():
 	bad = StockButton(stock=gtk.STOCK_ADD)
 	bcl = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	load_addressbook(callback = lambda x, _: mod.append([x]))
+	load_addressbook(callback = lambda x, _: mod.append([x]), display_error = True)
 	
 	win.set_transient_for(win_comp)
 	win.set_modal(True)
