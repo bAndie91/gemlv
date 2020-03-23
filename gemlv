@@ -1315,7 +1315,26 @@ class compose_header_box(gtk.HBox):
 					item[column['is_match']] = text in hits.keys() and hits[text] > 0
 					item[column['order']] = 100 - hits.get(text, 0)
 					if hits.get(text):
-						item[column['markup']] = ''.join(map(lambda c: (PMU_AUTOCOMPLETION_MATCH_CHAR if c in userinput else '%c') % (glib.markup_escape_text(c),), text))
+						# generate markup string highlighting the matched chars
+						cur_does_match = False
+						end_string = ''
+						substr = ''
+						for c in text:
+							if c in userinput and not cur_does_match:
+								end_string += glib.markup_escape_text(substr)
+								substr = ''
+							elif c not in userinput and cur_does_match:
+								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
+								substr = ''
+							cur_does_match = c in userinput
+							substr += c
+						if substr != '':
+							if cur_does_match:
+								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
+							else:
+								end_string += glib.markup_escape_text(substr)
+						print end_string
+						item[column['markup']] = end_string
 					else:
 						item[column['markup']] = glib.markup_escape_text(text)
 			else:
@@ -3324,7 +3343,7 @@ PMU_WARN = '<span foreground=\'darkred\' weight=\'bold\'>'
 PMU_WARN_CLOSE = '</span>'
 PMU_SUBJ = '<big>'
 PMU_SUBJ_CLOSE = '</big>'
-PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%c</u></b>'
+PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
 PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color="gray30">%s</span></i>'
 PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
 HDR_CD = 'Content-Disposition'
