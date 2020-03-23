@@ -1313,6 +1313,8 @@ class compose_header_box(gtk.HBox):
 					item[column['order']] = hits.get(text, 0)
 					if hits.get(text):
 						item[column['markup']] = ''.join(map(lambda c: (PMU_AUTOCOMPLETION_MATCH_CHAR if c in userinput else '%c') % (glib.markup_escape_text(c),), text))
+					else:
+						item[column['markup']] = glib.markup_escape_text(text)
 		
 		if fuzzywuzzy is not None:
 			return ac_model.get_value(treeiter, column['is_match'])
@@ -2592,12 +2594,17 @@ def act_addressbook():
 	def click_add(btn):
 		clear_composer_headers('To', '')
 		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1]))
+	def click_close(*_):
+		win.destroy()
+		win_comp.remove_data('addressbook-window')
+	
+	if win_comp.get_data('addressbook-window'): return
 	
 	win = gtk.Window()
 	box = gtk.VBox(False, 3)
 	ent = gtk.Entry()
 	scr = gtk.ScrolledWindow()
-	mod = gtk.ListStore(str)
+	mod = gtk.ListStore(str, str)
 	flt = mod.filter_new()
 	trv = gtk.TreeView(flt)
 	sel = trv.get_selection()
@@ -2605,10 +2612,10 @@ def act_addressbook():
 	bad = StockButton(stock=gtk.STOCK_ADD)
 	bcl = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	load_addressbook(callback = lambda x, _: mod.append([x]), display_error = True)
+	load_addressbook(callback = lambda x, _: mod.append([x, '']), display_error = True)
 	
 	win.set_transient_for(win_comp)
-	win.set_modal(True)
+	win.set_modal(False)
 	win.set_default_size(280, 400)
 	win.set_border_width(4)
 	sel.set_mode(gtk.SELECTION_MULTIPLE)
@@ -2619,11 +2626,11 @@ def act_addressbook():
 	trv.insert_column_with_attributes(0, '', gtk.CellRendererText(), text=0)
 	flt.set_visible_func(lambda mo, it, ent: mo[it][0].find(ent.get_text())>-1, ent)
 	bad.set_sensitive(False)
-	win.connect('delete-event', lambda w, x: win.destroy())
-	add_key_binding(win, 'Escape', lambda a,b,c,d: win.destroy())
 	ent.connect('changed', lambda w: flt.refilter())
 	trv.connect('button-press-event', dblclick)
-	bcl.connect('clicked', lambda w: win.destroy())
+	win.connect('delete-event', click_close)
+	add_key_binding(win, 'Escape', click_close)
+	bcl.connect('clicked', click_close)
 	bad.connect('clicked', click_add)
 	
 	win.add(box)
@@ -2634,6 +2641,7 @@ def act_addressbook():
 	bbx.pack_start(bad, True, False)
 	bbx.pack_start(bcl, True, False)
 	win.show_all()
+	win_comp.set_data('addressbook-window', win)
 
 def walk_multipart(eml, leaf_only=False, depth=0):
 	if not leaf_only:
