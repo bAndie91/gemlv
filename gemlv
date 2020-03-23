@@ -1300,38 +1300,15 @@ class compose_header_box(gtk.HBox):
 	def autocomplete_matcher(self, completion, key, treeiter, column):
 		ac_model = completion.get_model()
 		if self.wdg_value.get_data('autocomplete-dirty'):
+			self.wdg_value.set_data('autocomplete-dirty', False)
 			# compute auto completion hits
-			if fuzzywuzzy is not None:
+			if fuzzywuzzy is not None and key != '':
 				hits = fuzzywuzzy.process.extract(self['value'], map(lambda item: item[column['text']], ac_model), limit=len(ac_model))
 				hits = dict(hits)
 				for item in ac_model:
-					item[column['is_match']] = item[column['text']] in hits.keys()
-					item[column['order']] = hits.get(item[column['text']], 0)
-#				new_order = []
-#				for hit in hits:
-#					old_idx = 0
-#					for item in ac_model:
-#						if item[column['is_match']] and item[column['text']] == hit: break
-#						old_idx += 1
-#					new_order.append(old_idx)
-#				new_order.extend(filter(lambda item: not item[column['is_match']], ac_model))
-#				ac_model.reorder(new_order)
-###				
-#				yes_match = {}
-#				no_match = []
-#				for item in ac_model:
-#					if item[column['text']] in hits:
-#						item[column['is_match']] = 
-#						yes_match[item[column['text']]] = item
-#					else:
-#						no_match.append(item)
-#				ac_model.clear()
-#				for hit in hits:
-#					ac_model.append(yes_match[hit])
-#				for item in no_match:
-#					item[column['is_match']] = False
-#					ac_model.append(item)
-			self.wdg_value.set_data('autocomplete-dirty', False)
+					text = item[column['text']]
+					item[column['is_match']] = text in hits.keys() and hits[text] > 0
+					item[column['order']] = hits.get(text, 0)
 		
 		if fuzzywuzzy is not None:
 			return ac_model.get_value(treeiter, column['is_match'])
