@@ -1,6 +1,14 @@
 # gemlv
 Email viewer and composer for local emails in GTK
 
+## Screenshots
+
+![email viewer](img/gemlv-read-email.jpg)
+![view html email](img/gemlv-read-html.jpg)
+![simple addressbook](img/gemlv-compose-simple-addressbook.jpg)
+![composer context menu](img/gemlv-compose-menu-and-attachments.jpg)
+![address auto completion](img/gemlv-address-auto-completion.jpg)
+
 ## Features
 
 - display headers
