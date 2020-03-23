@@ -1,0 +1,41 @@
+#!/usr/bin/env perl
+
+use warnings;
+
+open $fh, '+<', "README.md" or die $!;
+
+LOOP:
+while(<$fh>)
+{
+	if($_ eq '## CLI options'."\n")
+	{
+		$insert_pos = undef;
+		while(<$fh>)
+		{
+			if($_ eq '```'."\n")
+			{
+				if(not defined $insert_pos)
+				{
+					$insert_pos = tell $fh;
+				}
+				else
+				{
+					$/ = undef;
+					$document_rest = $_ . <$fh>;
+					
+					seek $fh, $insert_pos, 0 or die $!;
+					
+					$ENV{'LANGUAGE'} = 'C';
+					open $ph, '-|', "./gemlv", "--help" or die $!;
+					print {$fh} <$ph>;
+					
+					print {$fh} $document_rest;
+					
+					last LOOP;
+				}
+			}
+		}
+	}
+}
+
+close $fh or die $!;

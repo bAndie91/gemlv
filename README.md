@@ -101,6 +101,37 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-H``` Show/Hide headers
 	- ```F4``` edit draft message with external program
 
+## CLI options
+
+```
+usage: gemlv [-h] [--compose] [--from FROM] [--to ADDRESSES] [--cc ADDRESSES]
+             [--bcc ADDRESSES] [--subject STRING] [--message STRING]
+             [--mailto URL] [--attach FILES] [--localedir DIR]
+             [--opener COMMAND]
+             [FILE]
+
+positional arguments:
+  FILE              Raw Email file for read or continue editing (default:
+                    None)
+
+optional arguments:
+  -h, --help        show this help message and exit
+  --compose         Write a new Email (default: False)
+  --from FROM       New Email's writer's name and address (default: None)
+  --to ADDRESSES    New Email's Recipients, comma-separated list (default:
+                    None)
+  --cc ADDRESSES    Carbon Copy Recipients, comma-separated list (default:
+                    None)
+  --bcc ADDRESSES   Blind Carbon Copy Recipients, comma-separated list
+                    (default: None)
+  --subject STRING  Subject (default: None)
+  --message STRING  Message body (default: None)
+  --mailto URL      Full 'mailto:' link (default: None)
+  --attach FILES    Attachments, comma-separated list (default: None)
+  --localedir DIR   L10n base directory (default: None)
+  --opener COMMAND  File opener command (default: mimeopen-gui)
+```
+
 ## FAQ
 
 **Q.** Support feature-rich HTML-rendering?
