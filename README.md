@@ -1,6 +1,11 @@
 # gemlv
 Email viewer and composer for local emails in GTK
 
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [CLI options](#cli_options)
+- [FAQ](#faq)
+
 ## Screenshots
 
 ![email viewer](img/gemlv-read-email.jpg)
