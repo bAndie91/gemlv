@@ -98,7 +98,7 @@ Email viewer and composer for local emails in GTK
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
 	- message body (```--message "..."```)
-	- attachments (```--attach file1,file2,dir1,dir2```)
+	- attachments (```--attach file1:file2:dir1:dir2```)
 	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368
 - hotkeys
 	- ```Ctrl-Q``` quit
@@ -140,7 +140,7 @@ optional arguments:
   --subject STRING  Subject (default: None)
   --message STRING  Message body (default: None)
   --mailto URL      Full 'mailto:' link (default: None)
-  --attach FILES    Attachments, comma-separated list (default: None)
+  --attach FILES    Attachments, colon-separated list (default: None)
   --localedir DIR   L10n base directory (default: None)
   --opener COMMAND  File opener command (default: mimeopen-gui)
 ```
