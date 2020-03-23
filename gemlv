@@ -53,6 +53,11 @@ except ImportError:
 		@classmethod
 		def setproctitle(self, *x, **kv):
 			pass
+try:
+	import fuzzywuzzy.process
+except ImportError:
+	sys.stderr.write("No module named fuzzywuzzy. Degrading address auto completer.\n")
+	fuzzywuzzy = None
 
 
 ### helper classes, functions ###
@@ -1263,10 +1268,11 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
-		self.completer.set_model(gtk.ListStore(str))
+		self.completer.set_model(gtk.ListStore(str, bool, int))
 		self.completer.set_minimum_key_length(0)
-		self.completer.set_match_func(self.autocomplete_matcher, 0)
+		self.completer.set_match_func(self.autocomplete_matcher, {'text': 0, 'is_match': 1, 'order': 2})
 		self.completer.set_text_column(0)
+		self.completer.get_model().set_sort_column_id(2, gtk.SORT_DESCENDING)
 		self.completer.set_popup_single_match(True)
 		
 		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
@@ -1292,11 +1298,48 @@ class compose_header_box(gtk.HBox):
 		self['value'] = val
 	
 	def autocomplete_matcher(self, completion, key, treeiter, column):
-		model = completion.get_model()
-		text = model.get_value(treeiter, column)
-		if text.find(key) != -1:
-			return True
-		return False
+		ac_model = completion.get_model()
+		if self.wdg_value.get_data('autocomplete-dirty'):
+			# compute auto completion hits
+			if fuzzywuzzy is not None:
+				hits = fuzzywuzzy.process.extract(self['value'], map(lambda item: item[column['text']], ac_model), limit=len(ac_model))
+				hits = dict(hits)
+				for item in ac_model:
+					item[column['is_match']] = item[column['text']] in hits.keys()
+					item[column['order']] = hits.get(item[column['text']], 0)
+#				new_order = []
+#				for hit in hits:
+#					old_idx = 0
+#					for item in ac_model:
+#						if item[column['is_match']] and item[column['text']] == hit: break
+#						old_idx += 1
+#					new_order.append(old_idx)
+#				new_order.extend(filter(lambda item: not item[column['is_match']], ac_model))
+#				ac_model.reorder(new_order)
+###				
+#				yes_match = {}
+#				no_match = []
+#				for item in ac_model:
+#					if item[column['text']] in hits:
+#						item[column['is_match']] = 
+#						yes_match[item[column['text']]] = item
+#					else:
+#						no_match.append(item)
+#				ac_model.clear()
+#				for hit in hits:
+#					ac_model.append(yes_match[hit])
+#				for item in no_match:
+#					item[column['is_match']] = False
+#					ac_model.append(item)
+			self.wdg_value.set_data('autocomplete-dirty', False)
+		
+		if fuzzywuzzy is not None:
+			return ac_model.get_value(treeiter, column['is_match'])
+		else:
+			text = ac_model.get_value(treeiter, column['text'])
+			if text.find(key) != -1:
+				return True
+			return False
 	
 	def propagate_button_press_event(self, w, evt):
 		self.parent.parent.parent.emit('button-press-event', evt)
@@ -1333,13 +1376,16 @@ class compose_header_box(gtk.HBox):
 		self.on_changed()
 	
 	def set_autocomplete_list(self, autocomplete_list):
-		model = self.completer.get_model()
-		model.clear()
+		ac_model = self.completer.get_model()
+		ac_model.clear()
 		for item in autocomplete_list:
-			model.append([item])
+			ac_model.append([item, False, 0])
 	
 	def on_value_changed(self, entry=None):
 		if entry is None: entry = self.wdg_value
+		entry.set_data('autocomplete-dirty', True)
+		
+		# indicate field validity
 		bg_normal = entry.get_data('bg-normal')
 		if not bg_normal:
 			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
@@ -1353,6 +1399,7 @@ class compose_header_box(gtk.HBox):
 			entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
 			self['valid'] = False
 			self.point_out()
+		
 		self.on_changed()
 		return False
 
