@@ -1268,11 +1268,13 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
-		self.completer.set_model(gtk.ListStore(str, bool, int))
+		self.completer.set_model(gtk.ListStore(str, str, bool, int))
 		self.completer.set_minimum_key_length(0)
-		self.completer.set_match_func(self.autocomplete_matcher, {'text': 0, 'is_match': 1, 'order': 2})
-		self.completer.set_text_column(0)
-		self.completer.get_model().set_sort_column_id(2, gtk.SORT_DESCENDING)
+		col_text, col_markup, col_ismatch, col_order = 0, 1, 2, 3
+		self.completer.set_match_func(self.autocomplete_matcher, {'text': col_text, 'markup': col_markup, 'is_match': col_ismatch, 'order': col_order})
+		self.completer.set_text_column(col_text)
+		self.completer.set_attributes(self.completer.get_cells()[0], markup=col_markup)
+		self.completer.get_model().set_sort_column_id(col_order, gtk.SORT_DESCENDING)
 		self.completer.set_popup_single_match(True)
 		
 		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
@@ -1297,24 +1299,26 @@ class compose_header_box(gtk.HBox):
 		self['name'] = chname
 		self['value'] = val
 	
-	def autocomplete_matcher(self, completion, key, treeiter, column):
+	def autocomplete_matcher(self, completion, userinput, treeiter, column):
 		ac_model = completion.get_model()
 		if self.wdg_value.get_data('autocomplete-dirty'):
 			self.wdg_value.set_data('autocomplete-dirty', False)
 			# compute auto completion hits
-			if fuzzywuzzy is not None and key != '':
-				hits = fuzzywuzzy.process.extract(self['value'], map(lambda item: item[column['text']], ac_model), limit=len(ac_model))
+			if fuzzywuzzy is not None and userinput != '':
+				hits = fuzzywuzzy.process.extract(self['value'].decode('utf-8'), [item[column['text']] for item in ac_model], limit=None)
 				hits = dict(hits)
 				for item in ac_model:
 					text = item[column['text']]
 					item[column['is_match']] = text in hits.keys() and hits[text] > 0
 					item[column['order']] = hits.get(text, 0)
+					if hits.get(text):
+						item[column['markup']] = ''.join(map(lambda c: (PMU_AUTOCOMPLETION_MATCH_CHAR if c in userinput else '%c') % (glib.markup_escape_text(c),), text))
 		
 		if fuzzywuzzy is not None:
 			return ac_model.get_value(treeiter, column['is_match'])
 		else:
 			text = ac_model.get_value(treeiter, column['text'])
-			if text.find(key) != -1:
+			if text.find(userinput) != -1:
 				return True
 			return False
 	
@@ -1356,7 +1360,7 @@ class compose_header_box(gtk.HBox):
 		ac_model = self.completer.get_model()
 		ac_model.clear()
 		for item in autocomplete_list:
-			ac_model.append([item, False, 0])
+			ac_model.append([item, glib.markup_escape_text(item), False, 0])
 	
 	def on_value_changed(self, entry=None):
 		if entry is None: entry = self.wdg_value
@@ -3291,6 +3295,7 @@ PMU_WARN = '<span foreground=\'darkred\' weight=\'bold\'>'
 PMU_WARN_CLOSE = '</span>'
 PMU_SUBJ = '<big>'
 PMU_SUBJ_CLOSE = '</big>'
+PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%c</u></b>'
 HDR_CD = 'Content-Disposition'
 HDR_CTE = 'Content-Transfer-Encoding'
 HDR_DNT = 'Disposition-Notification-To'
