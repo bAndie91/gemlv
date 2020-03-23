@@ -3,7 +3,7 @@ Email viewer and composer for local emails in GTK
 
 - [Screenshots](#screenshots)
 - [Features](#features)
-- [CLI options](#cli_options)
+- [CLI options](#cli-options)
 - [FAQ](#faq)
 
 ## Screenshots
