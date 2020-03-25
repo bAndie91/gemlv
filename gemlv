@@ -2825,7 +2825,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 		if isalink:
 			part.set_payload(symlink_content)
 		else:
-			# Check whther this file is an email file.
+			# Check whether this file is an email file.
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
 			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 				# File being attached is an Email (according to mime type or by detected multipart)
@@ -2847,7 +2847,11 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
 						part.add_header(HDR_CTE, enc)
-					part._payload += buf.encode(enc)
+					append_buf = buf.encode(enc)
+					if enc == 'base64' and append_buf[-1] == '\n':
+						# strip the trailing linefeed as it corrupts some base64 decoder
+						append_buf = append_buf[:-1]
+					part._payload += append_buf
 				fh.close()
 	
 	basename = os.path.basename(original_path)
