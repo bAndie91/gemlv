@@ -2478,7 +2478,10 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 					if len(ready[1]) > 0:
 						break
 			else:
-				raise e
+				gtk.threads_enter()
+				display_error(e)
+				gtk.threads_leave()
+				break
 		gtk.threads_enter()
 		progressbar.set_fraction((min(pos, length) + 0.0) / length)
 		gtk.threads_leave()
