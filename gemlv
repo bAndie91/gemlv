@@ -2466,12 +2466,12 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 	length = len(text)
 	while pos < length and not StopSending:
 		try:
-			parent_write.write(text[pos:pos+bufsize])
-			pos += bufsize
+			byteswritten = os.write(parent_write.fileno(), text[pos:pos+bufsize])
+			pos += byteswritten
 		except ValueError as e:
 			resp += '>>> ' + str(e) + '\n'
 			break
-		except IOError as e:
+		except OSError as e:
 			if e.errno == os.errno.EAGAIN:
 				while not StopSending:
 					ready = select.select([], [parent_write], [], 1.0)
@@ -2866,11 +2866,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
 						part.add_header(HDR_CTE, enc)
-					append_buf = buf.encode(enc)
-					if enc == 'base64' and append_buf[-1] == '\n':
-						# strip the trailing linefeed as it corrupts some base64 decoder
-						append_buf = append_buf[:-1]
-					part._payload += append_buf
+					part._payload += buf.encode(enc)
 				fh.close()
 	
 	basename = os.path.basename(original_path)
