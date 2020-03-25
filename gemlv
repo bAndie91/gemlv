@@ -714,6 +714,13 @@ def set_content_text(s):
 	panel_content.set_sensitive(True)
 	return True
 
+def get_email_part_size_net(eml):
+	# Extracted email part here to tell its size
+	# TODO: check memory footprint of email parts (attachments)
+	raw_part = eml.get_payload(decode=True)
+	if raw_part is None: raw_part = eml.as_string()
+	return len(raw_part)
+
 def load_part(eml, filt=None):
 	if eml is None: return
 	clear_content(_("Loading failed"))
@@ -752,11 +759,7 @@ def load_part(eml, filt=None):
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
-				# Extracted email part here to tell its size
-				# TODO: check memory footprint of email parts (attachments)
-				raw_part = eml.get_payload(decode=True)
-				if raw_part is None: raw_part = eml.as_string()
-				label = label + '\n' + _("Size: %s" % human_size(len(raw_part)))
+				label = label + '\n' + _("Size: %s" % (human_size(get_email_part_size_net(eml)),))
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -1826,7 +1829,7 @@ def act_reply(recip):
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
 			# TODO - remove sensitive headers?
 			NewEmail.attach(part)
-			Attachments.append(None, [part, fwdname, 'emblem-mail', None])
+			Attachments.append(None, [part, fwdname, 'emblem-mail', None, ''])
 		else:
 			win_comp.set_data('set-xattr-on-send', [XATTR_REPLIED])
 			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or subj)
@@ -2721,6 +2724,13 @@ def analyze_for_optimal_encoding(buf):
 	else:
 		return 'quoted-printable'
 
+def on_composer_attachments_row_changed(model, itpath, iterator):
+	hid = model.get_data('row-changed-signal-handler-id')
+	model.handler_block(hid)
+	part = model[iterator][0]
+	model[iterator][4] = human_size(get_email_part_size_net(part))
+	model.handler_unblock(hid)
+
 def attach_blob(data, parent_iter=None):
 	mime = get_mime_by_data(data)
 	ct_main, ct_sub = mime.split('/')
@@ -2878,7 +2888,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None])
+	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None, ''])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
@@ -2902,7 +2912,7 @@ def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
 		icon = get_stock_by_mime(ct_main, ct_sub)
-		iterator = Attachments.append(root_iter, [eml, name, icon, None])
+		iterator = Attachments.append(root_iter, [eml, name, icon, None, ''])
 		subparts = eml.get_payload()
 		if type(subparts) == list:
 			for subpart in subparts:
@@ -3035,6 +3045,7 @@ def on_keypress_attachments(tv, evt):
 				# Child was deleted in meantime.
 				continue
 			if Attachments[iterator][0].get_content_type() == 'message/disposition-notification':
+				# Disallow removing MDN part as it would lose to be an MDN anymore
 				win_comp.get_window().beep()
 				continue
 			part = Attachments[iterator][0]
@@ -3205,7 +3216,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None])
+		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, ''])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -3703,7 +3714,8 @@ menu_add_header = gtk.Menu()
 panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
+Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str)
+Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
 panel_subject = gtk.HBox(False, 5)
@@ -3735,7 +3747,6 @@ box_compose.pack_start(tb_comp_controls, False, True)
 win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=132, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
-panel_upper.set_position(win_comp.get_default_size()[1]-150)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
 panel_comp_header.set_border_width(4)
@@ -3751,7 +3762,7 @@ panel_attachments.connect('drag-data-received', drop_attachment_reorder_data)
 panel_attachments.connect('drag-drop', drop_attachment_reorder_drop)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
-panel_upper.set_position(win_comp.get_default_size()[0]-200)
+panel_upper.set_position(win_comp.get_default_size()[0]-242)
 panel_compose.set_position(125)
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -3789,7 +3800,16 @@ toolbuttons = [
 ]
 menubutton_send, menubutton_save_draft, x, x, x_, x \
 = load_toolitems(tb_compose, toolbuttons)
+
+# Add columns to Composer's Attachments panel
 setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
+tvc = gtk.TreeViewColumn()
+cr_txt = gtk.CellRendererText()
+cr_txt.set_alignment(1, 0)
+tvc.pack_start(cr_txt, True)
+tvc.add_attribute(cr_txt, 'text', 4)
+panel_attachments.append_column(tvc)
+
 
 for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
