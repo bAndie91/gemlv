@@ -392,7 +392,7 @@ def set_dialog_icon_name(dlg, icon):
 	img = dlg.get_content_area().children()[0].children()[0]
 	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
-def choose_dialog(action, filename=None):
+def choose_dialog(action, filename=None, multifile=False):
 	global LastFolder
 	selected = None
 	
@@ -402,13 +402,18 @@ def choose_dialog(action, filename=None):
 	dlg = gtk.FileChooserDialog(parent=get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
 	if LastFolder is not None: dlg.set_current_folder(LastFolder)
 	if filename is not None: dlg.set_current_name(filename)
+	if multifile:
+		dlg.set_select_multiple(True)
 	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
 	while True:
 		resp = dlg.run()
 		if resp == gtk.RESPONSE_ACCEPT:
-			selected = dlg.get_filename()
+			if multifile:
+				selected = dlg.get_filenames()
+			else:
+				selected = dlg.get_filename()
 			break
 		elif resp == gtk.RESPONSE_NO:
 			dlg.set_current_folder(os.getcwd())
@@ -426,6 +431,9 @@ def choose_save_folder():
 
 def choose_open_file():
 	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN)
+
+def choose_open_files():
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True)
 
 def get_pipe_handlers(npairs):
 	pipes = []
@@ -2702,10 +2710,11 @@ def debug_multipart(eml):
 		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
 
 def act_attach():
-	filename = choose_open_file()
-	if filename is not None:
-		attach_path(filename, filename)
-	update_composer_status_message()
+	filenames = choose_open_files()
+	if len(filenames) != 0:
+		for filename in filenames:
+			attach_path(filename, filename)
+		update_composer_status_message()
 
 def byte_is_identical_qp(b):
 	if ord(b) < ord('!') or ord(b) > ord('~') or b == '=':
