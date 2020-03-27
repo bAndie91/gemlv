@@ -1317,27 +1317,29 @@ class compose_header_box(gtk.HBox):
 		ac_model = completion.get_model()
 		if self.wdg_value.get_data('autocomplete-dirty'):
 			self.wdg_value.set_data('autocomplete-dirty', False)
-			# compute auto completion hits and sort order
+			# Compute auto completion hits and sort order
 			if fuzzywuzzy is not None:
-				hits = fuzzywuzzy.process.extract(self['value'].decode('utf-8'), [item[column['text']] for item in ac_model], limit=None)
+				# Highlight only somewhat meaningful chars
+				userinput_norm = re.sub('[^\w.@]', '', userinput, flags = re.IGNORECASE | re.UNICODE)
+				hits = fuzzywuzzy.process.extract(self['value'].decode('utf-8'), [item[column['text']] for item in ac_model], limit=None, scorer=fuzzywuzzy.fuzz.token_set_ratio)
 				hits = dict(hits)
 				for item in ac_model:
 					text = item[column['text']]
 					item[column['is_match']] = text in hits.keys() and hits[text] > 0
 					item[column['order']] = 100 - hits.get(text, 0)
 					if hits.get(text):
-						# generate markup string highlighting the matched chars
+						# Generate markup string highlighting the matched chars
 						cur_does_match = False
 						end_string = ''
 						substr = ''
 						for c in text:
-							if c in userinput and not cur_does_match:
+							if c in userinput_norm and not cur_does_match:
 								end_string += glib.markup_escape_text(substr)
 								substr = ''
-							elif c not in userinput and cur_does_match:
+							elif c not in userinput_norm and cur_does_match:
 								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
 								substr = ''
-							cur_does_match = c in userinput
+							cur_does_match = c in userinput_norm
 							substr += c
 						if substr != '':
 							if cur_does_match:
