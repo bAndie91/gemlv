@@ -1344,7 +1344,6 @@ class compose_header_box(gtk.HBox):
 								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
 							else:
 								end_string += glib.markup_escape_text(substr)
-						print end_string
 						item[column['markup']] = end_string
 					else:
 						item[column['markup']] = glib.markup_escape_text(text)
