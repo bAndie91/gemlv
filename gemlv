@@ -595,6 +595,8 @@ def getaddresses(array):
 
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
+	saved_font = get_fskv('font')
+	if saved_font is not None: change_font(panel_content, saved_font)
 	panel_content.set_data('saved-font', get_current_font(panel_content))
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
@@ -905,6 +907,16 @@ def get_fskv(key):
 		if fh is not None:
 			return ''.join(fh.readlines())
 	return None
+
+def set_fskv(key, value):
+	try:
+		dir = os.path.join(os.environ['HOME'], '.config', PROGNAME)
+		mkdir(dir)
+		open(os.path.join(dir, key), 'w').write(value)
+	except IOError as e:
+		display_error(e)
+		return False
+	return True
 
 def load_gravatar(addr, container):
 	if not isinstance(addr, str): return
@@ -2192,6 +2204,7 @@ def act_font_switch(tv):
 		else: f = f['string']
 	else:
 		f = tv.get_data('saved-font')['string']
+	set_fskv('font', f)
 	change_font(tv, f)
 
 def act_font(tv):
@@ -2201,6 +2214,7 @@ def act_font(tv):
 	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	if dlg.run() == gtk.RESPONSE_OK:
 		font_name = dlg.get_font_name()
+		set_fskv('font', font_name)
 		change_font(tv, font_name)
 		font = get_current_font(tv)
 		if font['family'] == 'monospace':

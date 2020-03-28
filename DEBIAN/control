@@ -7,7 +7,7 @@ Architecture: all
 Version: 0.1
 Depends: python-gtk2, python-magic
 Recommends: mimeopen-gui, python-xattr, python-fuzzywuzzy
-Suggests: python-levenshtein
+Suggests:
 Provides: 
 Replaces: 
 Conflicts: 
