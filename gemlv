@@ -1119,6 +1119,8 @@ def act_close_edit():
 		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE), (_("Continue Editing"), gtk.STOCK_EDIT)):
 			return True
 	win_comp.hide()
+	glib.source_remove(Timers['auto-save-draft'])
+	remove_old_draft()
 	if cliArgs.compose:
 		win_main.hide()
 		gtk.main_quit()
@@ -1716,6 +1718,7 @@ def on_edit_subject(wdg):
 
 def on_change_message(wdg):
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
+	win_comp.set_data('is-auto-saved', False)
 
 def set_composer_text(s):
 	bufr = panel_edit_message.get_buffer()
@@ -1759,6 +1762,28 @@ def open_composer():
 	win_comp.set_data('set-xattr-on-send', [])
 	win_comp.set_data('saved-to-file', None)
 	on_after_save_draft()
+	Timers['auto-save-draft'] = glib.timeout_add(5*1000, auto_save_draft)
+	return True
+
+def get_autosave_dir():
+	return os.path.join(os.environ['HOME'], '.cache', PROGNAME, 'drafts')
+
+def remove_old_draft():
+	last_draft_name = win_comp.get_data('last-auto-saved-draft-file-name')
+	if last_draft_name:
+		draft_dir = get_autosave_dir()
+		os.unlink(os.path.join(draft_dir, last_draft_name))
+
+def auto_save_draft():
+	if not win_comp.get_data('is-auto-saved'):
+		draft_name = '%s pid-%d.eml' % (time.strftime('%F %T').replace(':', '.'), os.getpid())
+		draft_dir = get_autosave_dir()
+		mkdir(draft_dir)
+		if save_to_file(NewEmail, os.path.join(draft_dir, draft_name), ask_overwrite=False):
+			win_comp.set_data('is-auto-saved', True)
+			remove_old_draft()
+			win_comp.set_data('last-auto-saved-draft-file-name', draft_name)
+	# Keep timer running:
 	return True
 
 def quote_message():
@@ -2122,10 +2147,14 @@ def set_xattrs(fh, attrs, filename='-'):
 				else:
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError as e:
-				stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
-				allok = False
-				if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
-					raise e
+				if e.errno == os.errno.ENODATA and attrval is None:
+					# Ignore that a nonexistent attribute could not be removed
+					pass
+				else:
+					stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
+					allok = False
+					if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
+						raise e
 	return allok
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
@@ -3362,6 +3391,7 @@ def on_edit_external_done(data):
 
 def set_unsaved(unsaved=True):
 	win_comp.set_data('is-saved', not unsaved)
+	win_comp.set_data('is-auto-saved', not unsaved)
 	win_comp.set_data('email-sent', False)
 	s = menubutton_save_draft.get_label()
 	endmark = '*'

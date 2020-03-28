@@ -24,7 +24,7 @@ Email viewer and composer for local emails in GTK
 	- switch to show all of the headers
 - view plain text message, or a filtered attachment
 	- configure multiple filters for non-text attachments
-	- changable font or monospace on/off, font zoom
+	- change font or turn monospace on/off, font zoom, preserve selected font
 	- wrap lines, wrap letters, no wrap
 	- show link for Content-Location if applicable
 - display attachments and other MIME parts in tree view
@@ -65,6 +65,8 @@ Email viewer and composer for local emails in GTK
 		- ask Disposition Notification by tool button
 	- addressbook
 		- read plain email addresses from file line by line (`~/Mail/.addressbook`)
+		- auto completion on address fields
+	- auto save drafts to `~/.cache/gemlv/drafts/`
 - reply options
 	- interpret Reply-To field
 	- set References, In-Reply-To headers
