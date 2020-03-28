@@ -486,7 +486,10 @@ def run_async(cmd, args, postrun):
 		os.closerange(0, 255)
 		pid2 = os.fork()
 		if pid2 == 0:
-			pid3 = os.fork()
+			if postrun is None:
+				pid3 = 0
+			else:
+				pid3 = os.fork()
 			if pid3 == 0:
 				os.execvp(cmd, args)
 				os._exit(127)
@@ -2626,9 +2629,12 @@ def update_composer_toolbar_toggle_buttons():
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
+def get_addressbook_path():
+	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
+
 def load_addressbook(callback, display_error = True, userdata = None):
 	try:
-		for ln in open(os.path.join(os.environ['HOME'], 'Mail', '.addressbook'), 'r'):
+		for ln in open(get_addressbook_path(), 'r'):
 			callback(ln.strip(), userdata)
 	except IOError as e:
 		if display_error:
@@ -2645,21 +2651,27 @@ def update_addressbook_highlights(abook_model=None):
 	added_recipients = [addr[1] for addr in getaddresses(get_composer_headers(RecipientHeaders))]
 	for item in abook_model:
 		item_emailaddresses = getaddresses([item[0]])
-		item_emailaddr = item_emailaddresses[0][1]
-		item[1] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddr in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[0]),)
+		try:
+			item_emailaddr = item_emailaddresses[0][1]
+			item[1] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddr in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[0]),)
+		except IndexError:
+			pass
 
 def act_addressbook():
-	def dblclick(wdg, evt):
+	def dblclick(_, evt):
 		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
-			flt_pathinfo = trv.get_path_at_pos(int(evt.x), int(evt.y))
+			flt_pathinfo = treeview.get_path_at_pos(int(evt.x), int(evt.y))
 			if flt_pathinfo is not None:
-				iterator_path = flt.convert_path_to_child_path(flt_pathinfo[0])
+				iterator_path = listfilter.convert_path_to_child_path(flt_pathinfo[0])
 				iterator = mod.get_iter(iterator_path)
 				clear_composer_headers('To', '')
 				add_composer_header('To', mod[iterator][0])
-	def click_add(btn):
+	def click_add(_):
 		clear_composer_headers('To', '')
-		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], sel.get_selected_rows()[1]))
+		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], selection.get_selected_rows()[1]))
+	def click_edit(_):
+		click_close()
+		run_async(cliArgs.opener, [get_addressbook_path()], None)
 	def click_close(*_):
 		win.destroy()
 		win_comp.remove_data('addressbook-window')
@@ -2669,15 +2681,16 @@ def act_addressbook():
 	
 	win = gtk.Window()
 	box = gtk.VBox(False, 3)
-	ent = gtk.Entry()
-	scr = gtk.ScrolledWindow()
+	entry = gtk.Entry()
+	scroll = gtk.ScrolledWindow()
 	mod = gtk.ListStore(str, str)
-	flt = mod.filter_new()
-	trv = gtk.TreeView(flt)
-	sel = trv.get_selection()
-	bbx = gtk.HBox(True, 2)
-	bad = StockButton(stock=gtk.STOCK_ADD)
-	bcl = StockButton(stock=gtk.STOCK_CLOSE)
+	listfilter = mod.filter_new()
+	treeview = gtk.TreeView(listfilter)
+	selection = treeview.get_selection()
+	box_buttons = gtk.HBox(True, 2)
+	b_add = StockButton(stock=gtk.STOCK_ADD)
+	b_edit = StockButton(stock=gtk.STOCK_EDIT)
+	b_close = StockButton(stock=gtk.STOCK_CLOSE)
 	
 	load_addressbook(callback = lambda x, _: mod.append([x, '']), display_error = True)
 	update_addressbook_highlights(mod)
@@ -2686,28 +2699,30 @@ def act_addressbook():
 	win.set_modal(False)
 	win.set_default_size(280, 400)
 	win.set_border_width(4)
-	sel.set_mode(gtk.SELECTION_MULTIPLE)
-	sel.connect('changed', lambda sel: bad.set_sensitive(bool(len(sel.get_selected_rows()[1])>0)))
-	scr.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	trv.set_headers_visible(False)
-	trv.set_rules_hint(True)
-	trv.insert_column_with_attributes(0, '', gtk.CellRendererText(), markup=1)
-	flt.set_visible_func(lambda mo, it, ent: mo[it][0].find(ent.get_text())>-1, ent)
-	bad.set_sensitive(False)
-	ent.connect('changed', lambda w: flt.refilter())
-	trv.connect('button-press-event', dblclick)
+	selection.set_mode(gtk.SELECTION_MULTIPLE)
+	selection.connect('changed', lambda selection: b_add.set_sensitive(bool(len(selection.get_selected_rows()[1])>0)))
+	scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+	treeview.set_headers_visible(False)
+	treeview.set_rules_hint(True)
+	treeview.insert_column_with_attributes(0, '', gtk.CellRendererText(), markup=1)
+	listfilter.set_visible_func(lambda mo, it, entry: mo[it][0].find(entry.get_text())>-1, entry)
+	b_add.set_sensitive(False)
+	entry.connect('changed', lambda w: listfilter.refilter())
+	treeview.connect('button-press-event', dblclick)
 	win.connect('delete-event', click_close)
 	add_key_binding(win, 'Escape', click_close)
-	bcl.connect('clicked', click_close)
-	bad.connect('clicked', click_add)
+	b_close.connect('clicked', click_close)
+	b_add.connect('clicked', click_add)
+	b_edit.connect('clicked', click_edit)
 	
 	win.add(box)
-	box.pack_start(ent, False, True)
-	box.pack_start(scr, True, True)
-	scr.add_with_viewport(trv)
-	box.pack_start(bbx, False, True)
-	bbx.pack_start(bad, True, False)
-	bbx.pack_start(bcl, True, False)
+	box.pack_start(entry, False, True)
+	box.pack_start(scroll, True, True)
+	scroll.add_with_viewport(treeview)
+	box.pack_start(box_buttons, False, True)
+	box_buttons.pack_start(b_add, True, False)
+	box_buttons.pack_start(b_edit, True, False)
+	box_buttons.pack_start(b_close, True, False)
 	win.show_all()
 	win_comp.set_data('addressbook-window', win)
 	win_comp.set_data('addressbook-model', mod)
