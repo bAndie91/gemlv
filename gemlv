@@ -2779,7 +2779,9 @@ def act_attach():
 		update_composer_status_message()
 
 def byte_is_identical_qp(b):
-	if ord(b) < ord('!') or ord(b) > ord('~') or b == '=':
+	if b == '\r' or b == '\n':
+		return True
+	if ord(b) < ord(' ') or ord(b) > ord('~') or b == '=':
 		return False
 	return True
 
