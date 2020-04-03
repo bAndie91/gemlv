@@ -359,6 +359,9 @@ msgstr "Részletek elrejtése"
 msgid "Size: %s"
 msgstr "Méret: %s"
 
+msgid "Sent on %s"
+msgstr "Elküldve %s"
+
 msgid "Unsaved"
 msgstr "Nincs mentve"
 

@@ -416,6 +416,7 @@ def choose_dialog(action, filename=None, multifile=False):
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
 		dlg.set_select_multiple(True)
+		selected = []
 	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
@@ -865,7 +866,7 @@ def decode_header(s, unfold=False, eml=None):
 			# lastly fall back to UTF-8 but mask unrecognizable chars
 			encodings = ['utf-8']
 			if eml:
-				for _, part in walk_multipart(eml):
+				for _x, part in walk_multipart(eml):
 					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'] or '', re.I)
 					if m:
 						encodings.append(m.group(1))
@@ -1402,7 +1403,7 @@ class compose_header_box(gtk.HBox):
 		else:
 			self.btn_datetime.hide()
 	
-	def on_name_changed(self, _=None):
+	def on_name_changed(self, _x=None):
 		name = self['name']
 		self.showhide_pick_buttons()
 		if name in ValidatorHeaders.keys():
@@ -1412,7 +1413,7 @@ class compose_header_box(gtk.HBox):
 		
 		if name in AddressbookHeaders:
 			abook = []
-			load_addressbook(callback = lambda x, _: abook.append(x), display_error = False)
+			load_addressbook(callback = lambda addr, userdata: abook.append(addr), display_error = False)
 			self.set_autocomplete_list(abook)
 		else:
 			autocomplete_items = []
@@ -1459,6 +1460,7 @@ class compose_header_box(gtk.HBox):
 		if name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
 		set_unsaved()
+		update_composer_status_message()
 	
 	def validate(self):
 		if not self['validate']:
@@ -1571,6 +1573,7 @@ class compose_header_box(gtk.HBox):
 			update_composer_toolbar_toggle_buttons()
 		if self['name'] in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
+		update_composer_status_message()
 	
 	def tick_my_menuitem(self, on):
 		for mi in menu_add_header.children():
@@ -1707,16 +1710,20 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headers(hname):
+def get_composer_headers(search_hname):
+	search_hnames = None
+	if search_hname is not None:
+		if type(search_hname) == list:
+			search_hnames = list([x.lower() for x in search_hname])
+		else:
+			search_hnames = [search_hname.lower()]
 	hlist = []
-	# TODO: header case insensivite
 	for hbox in panel_comp_header.children():
-		if hbox['name'] not in SenderHeaders or hbox.get_visible():
-			if hname is None:
+		hname_cmp = hbox['name'].lower()
+		if hbox.get_visible() or hname_cmp not in [x.lower() for x in SenderHeaders]:
+			if search_hname is None:
 				hlist.append((hbox['name'], hbox['value']))
-			elif type(hname) == type([]) and hbox['name'] in hname:
-				hlist.append(hbox['value'])
-			elif hbox['name'] == hname:
+			elif hname_cmp in search_hnames:
 				hlist.append(hbox['value'])
 	return hlist
 
@@ -2402,11 +2409,12 @@ def load_toolitems(toolbar, toolitems):
 			tbi = stock
 			if tip is not None:
 				tbi.set_tooltip_text(_(tip))
-			try:
+			if isinstance(tbi, gtk.ToolButton):
+				if label is None:
+					tbi.set_label(_(tip))
+				else:
+					tbi.set_label(_(label))
 				hid = tbi.connect('clicked', on_click_button, fnc_left)
-			except TypeError:
-				# this ToolItem does not upport 'clicked' signal
-				pass
 		else:
 			Lstocklabel = None
 			st = gtk.stock_lookup(stock)
@@ -2414,10 +2422,14 @@ def load_toolitems(toolbar, toolitems):
 				Lstocklabel = re.sub('_', '', st[1])
 			if label is not None:
 				Llabel = _(label)
-			else:
+			elif Lstocklabel is not None:
 				Llabel = Lstocklabel
+			else:
+				Llabel = None
 			if tip is not None:
 				Ltip = _(tip)
+				if Llabel is None:
+					Llabel = Ltip
 			else:
 				if label is not None:
 					Ltip = Llabel
@@ -2679,7 +2691,7 @@ def on_after_save_draft():
 	update_composer_status_message()
 
 def update_composer_status_message():
-	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
+#	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
 	size = len(NewEmail.as_string())
 	status_msgs = [_("Size: %s") % (human_size(size),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
@@ -2733,7 +2745,7 @@ def update_addressbook_highlights(abook_model=None):
 			pass
 
 def act_addressbook():
-	def dblclick(_, evt):
+	def dblclick(_x, evt):
 		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
 			flt_pathinfo = treeview.get_path_at_pos(int(evt.x), int(evt.y))
 			if flt_pathinfo is not None:
@@ -2741,13 +2753,13 @@ def act_addressbook():
 				iterator = mod.get_iter(iterator_path)
 				clear_composer_headers('To', '')
 				add_composer_header('To', mod[iterator][0])
-	def click_add(_):
+	def click_add(_x):
 		clear_composer_headers('To', '')
 		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], selection.get_selected_rows()[1]))
-	def click_edit(_):
+	def click_edit(_x):
 		click_close()
 		run_async(cliArgs.opener, [get_addressbook_path()], None)
-	def click_close(*_):
+	def click_close(*_x):
 		win.destroy()
 		win_comp.remove_data('addressbook-window')
 		win_comp.remove_data('addressbook-mod')
@@ -2767,7 +2779,7 @@ def act_addressbook():
 	b_edit = StockButton(stock=gtk.STOCK_EDIT)
 	b_close = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	load_addressbook(callback = lambda x, _: mod.append([x, '']), display_error = True)
+	load_addressbook(callback = lambda addr, userdata: mod.append([addr, '']), display_error = True)
 	update_addressbook_highlights(mod)
 	
 	win.set_transient_for(win_comp)
@@ -2775,7 +2787,7 @@ def act_addressbook():
 	win.set_default_size(280, 400)
 	win.set_border_width(4)
 	selection.set_mode(gtk.SELECTION_MULTIPLE)
-	selection.connect('changed', lambda selection: b_add.set_sensitive(bool(len(selection.get_selected_rows()[1])>0)))
+	selection.connect('changed', lambda selection, b_add: b_add.set_sensitive(bool(len(selection.get_selected_rows()[1])>0)), b_add)
 	scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 	treeview.set_headers_visible(False)
 	treeview.set_rules_hint(True)
