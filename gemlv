@@ -2794,6 +2794,7 @@ def act_addressbook():
 	treeview.insert_column_with_attributes(0, '', gtk.CellRendererText(), markup=1)
 	listfilter.set_visible_func(lambda mo, it, entry: mo[it][0].find(entry.get_text())>-1, entry)
 	b_add.set_sensitive(False)
+	entry.set_icon_from_stock(1, gtk.STOCK_FIND)
 	entry.connect('changed', lambda w: listfilter.refilter())
 	treeview.connect('button-press-event', dblclick)
 	win.connect('delete-event', click_close)
