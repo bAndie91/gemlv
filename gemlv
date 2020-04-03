@@ -1902,9 +1902,11 @@ def act_reply(recip):
 			add_composer_header('To', '')
 			composer_maintain_references_headers()
 			
-			part = MIMEMessage(Email)
+			email_to_forward = email.message_from_string(Email.as_string())
+			for hdr in SensitiveHeaders:
+				del email_to_forward[hdr]
+			part = MIMEMessage(email_to_forward)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
-			# TODO - remove sensitive headers?
 			NewEmail.attach(part)
 			Attachments.append(None, [part, fwdname, 'emblem-mail', None, ''])
 		else:
@@ -3547,21 +3549,27 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 	]
+# sensitive headers are stripped from forwarded emails and from emails opened for edit
+SensitiveHeaders = [
+	# TODO: sensitive headers
+	'X-getmail-retrieved-from-mailbox',
+	'X-GMAIL-LABELS',
+]
 EditExcludedHeaders = [
 	'Auto-Submitted',
-	'Delivered-To',
+	'Delivered-To',  # sensitive?
 	'DKIM-Signature',
 	'Domainkey-Signature',
 	'Message-ID',
 	'Received',
 	'Received-*',
 	'X-Originating-IP',
-	# TODO
+	# TODO: technical headers
 	#'Content-Type',
 	#'X-MS-*',
 	#'X-*',
-	# TODO: sensitive headers
 ]
+EditExcludedHeaders.extend(SensitiveHeaders)
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
@@ -3993,8 +4001,6 @@ if cliArgs.compose:
 				set_composer_subject(hval)
 			if any(fnmatch(hname_lc, hdr.lower()) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
-				# TODO: remove technical headers like Content-Type
-				# TODO: remove sensitive headers
 				pass
 			else:
 				add_composer_header(hname, hval)
