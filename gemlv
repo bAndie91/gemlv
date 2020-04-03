@@ -1768,12 +1768,12 @@ def open_composer():
 	
 	global NewEmail
 	NewEmail = MIMEMultipart('mixed')
-	win_comp.set_data('preserve-headers', map(lambda x: x[0].lower(), NewEmail._headers))
+	win_comp.set_data('blank-email-default-headers', map(lambda x: x[0].lower(), NewEmail._headers))
 	NewEmail.preamble = PREAMBLE
-	part0 = MIMEText('')
-	part0.set_charset('UTF-8')
-	part0.replace_header(HDR_CTE, '')
-	NewEmail.attach(part0)
+	part_body = MIMEText('')
+	part_body.set_charset('UTF-8')
+	part_body.replace_header(HDR_CTE, '')
+	NewEmail.attach(part_body)
 	Attachments.clear()
 	
 	win_comp.show_all()
@@ -2645,9 +2645,9 @@ def iterate_composer_headers():
 			yield (hname, hval)
 
 def build_newemail():
-	preserve_headers = win_comp.get_data('preserve-headers')
+	keep_headers = win_comp.get_data('blank-email-default-headers')
 	for hname, hval in NewEmail._headers:
-		if hname.lower() not in preserve_headers:
+		if hname.lower() not in keep_headers:
 			del NewEmail[hname]
 	for hname, hval in iterate_composer_headers():
 		enchunks = []
@@ -2657,6 +2657,8 @@ def build_newemail():
 			except UnicodeDecodeError:
 				enchunk = make_header([(chunk, 'UTF-8')])
 			enchunks.append(str(enchunk))
+		if hname.lower() in keep_headers:
+			del NewEmail[hname]
 		NewEmail.add_header(hname, ' '.join(enchunks))
 	
 	# if there is not Message-ID but we want to add it to xattrs on successful sending
@@ -2666,9 +2668,9 @@ def build_newemail():
 	text = get_composer_text()
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
-	part0 = NewEmail.get_payload()[0]
-	part0.replace_header(HDR_CTE, enc)
-	part0.set_payload(text)
+	part_body = NewEmail.get_payload()[0]
+	part_body.replace_header(HDR_CTE, enc)
+	part_body.set_payload(text)
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
@@ -2691,7 +2693,7 @@ def on_after_save_draft():
 	update_composer_status_message()
 
 def update_composer_status_message():
-#	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
+	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
 	size = len(NewEmail.as_string())
 	status_msgs = [_("Size: %s") % (human_size(size),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
@@ -3981,7 +3983,6 @@ if cliArgs.compose:
 			sys.exit(1)
 		
 		# Import headers.
-		# TODO - remove technical headers like Content-Type
 		supersedes = []
 		for hname, hval in edit_eml._headers:
 			hname_lc = hname.lower()
@@ -3992,6 +3993,8 @@ if cliArgs.compose:
 				set_composer_subject(hval)
 			if any(fnmatch(hname_lc, hdr.lower()) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
+				# TODO: remove technical headers like Content-Type
+				# TODO: remove sensitive headers
 				pass
 			else:
 				add_composer_header(hname, hval)
