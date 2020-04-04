@@ -2301,6 +2301,8 @@ def on_scroll_on_button_font(wdg, evt, textview, modmask):
 		font = pctx.get_font_description()
 		font.set_size(font.get_size() + delta * pango.SCALE)
 		textview.modify_font(font)
+		textview.set_data('saved-font', get_current_font(panel_content))
+		set_fskv('font', str(font))
 		return True
 
 def change_font(tv, s):
