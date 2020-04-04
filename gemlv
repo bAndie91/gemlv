@@ -568,6 +568,9 @@ def get_header_parameter(text, param):
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
+def headercase(s):
+	return re.sub(r'\b(.)', lambda x: x.group(1).upper(), s.lower())
+
 def file_uri_to_path(uri):
 	if uri.startswith('file:///'):
 		return urllib2.unquote(uri[7:])
@@ -1312,6 +1315,7 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value = gtk.Entry()
 		self.pack_start(self.wdg_value, True, True)
 		self.wdg_value.connect('changed', self.on_value_changed)
+		self.wdg_value.connect('key-press-event', self.on_keypress)
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
 		self.completer.set_model(gtk.ListStore(str, str, bool, int))
@@ -1347,40 +1351,47 @@ class compose_header_box(gtk.HBox):
 	
 	def autocomplete_matcher(self, completion, userinput, treeiter, column):
 		ac_model = completion.get_model()
-		if self.wdg_value.get_data('autocomplete-dirty'):
-			self.wdg_value.set_data('autocomplete-dirty', False)
+		ac_last_userinput = self.wdg_value.get_data('autocomplete-computed-for')
+		if ac_last_userinput is None or ac_last_userinput != userinput:
+			self.wdg_value.set_data('autocomplete-computed-for', userinput)
 			# Compute auto completion hits and sort order
 			if fuzzywuzzy is not None:
-				# Highlight only somewhat meaningful chars
-				userinput_norm = re.sub('[^\w.@]', '', userinput, flags = re.IGNORECASE | re.UNICODE)
-				hits = fuzzywuzzy.process.extract(self['value'].decode('utf-8'), [item[column['text']] for item in ac_model], limit=None, scorer=fuzzywuzzy.fuzz.token_set_ratio)
-				hits = dict(hits)
-				for item in ac_model:
-					text = item[column['text']]
-					item[column['is_match']] = text in hits.keys() and hits[text] > 0
-					item[column['order']] = 100 - hits.get(text, 0)
-					if hits.get(text):
-						# Generate markup string highlighting the matched chars
-						cur_does_match = False
-						end_string = ''
-						substr = ''
-						for c in text:
-							if c in userinput_norm and not cur_does_match:
-								end_string += glib.markup_escape_text(substr)
-								substr = ''
-							elif c not in userinput_norm and cur_does_match:
-								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
-								substr = ''
-							cur_does_match = c in userinput_norm
-							substr += c
-						if substr != '':
-							if cur_does_match:
-								end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
-							else:
-								end_string += glib.markup_escape_text(substr)
-						item[column['markup']] = end_string
-					else:
-						item[column['markup']] = glib.markup_escape_text(text)
+				if userinput == '':
+					if len(ac_model) <= AutocompletionListSizeLimitOnEmptyInput:
+						for item in ac_model:
+							item[column['is_match']] = True
+							item[column['order']] = 0
+				else:
+					hits = fuzzywuzzy.process.extract(userinput.decode('utf-8'), [item[column['text']] for item in ac_model], limit=None, scorer=fuzzywuzzy.fuzz.token_set_ratio)
+					hits = dict(hits)
+					# Highlight only somewhat meaningful chars
+					userinput_norm = re.sub('[^\w.@]', '', userinput, flags = re.IGNORECASE | re.UNICODE)
+					for item in ac_model:
+						text = item[column['text']]
+						item[column['is_match']] = text in hits.keys() and hits[text] > 0
+						item[column['order']] = 100 - hits.get(text, 0)
+						if hits.get(text):
+							# Generate markup string highlighting the matched chars
+							cur_does_match = False
+							end_string = ''
+							substr = ''
+							for c in text:
+								if c in userinput_norm and not cur_does_match:
+									end_string += glib.markup_escape_text(substr)
+									substr = ''
+								elif c not in userinput_norm and cur_does_match:
+									end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
+									substr = ''
+								cur_does_match = c in userinput_norm
+								substr += c
+							if substr != '':
+								if cur_does_match:
+									end_string += PMU_AUTOCOMPLETION_MATCH_CHAR % (glib.markup_escape_text(substr),)
+								else:
+									end_string += glib.markup_escape_text(substr)
+							item[column['markup']] = end_string
+						else:
+							item[column['markup']] = glib.markup_escape_text(text)
 			else:
 				for item in ac_model:
 					text = item[column['text']]
@@ -1390,6 +1401,17 @@ class compose_header_box(gtk.HBox):
 			return ac_model.get_value(treeiter, column['is_match'])
 		else:
 			return ac_model.get_value(treeiter, column['order']) != -1
+	
+	def on_keypress(self, wdg, evt):
+		if evt.keyval == gtk.gdk.keyval_from_name('Down'):
+			try:
+				if wdg.get_text() == '' and len(wdg.get_completion().get_model()) <= AutocompletionListSizeLimitOnEmptyInput:
+					# Trigger auto completion popup. [hack]
+					wdg.emit('changed')
+					return True
+			except AttributeError:
+				pass
+		return False
 	
 	def propagate_button_press_event(self, w, evt):
 		self.parent.parent.parent.emit('button-press-event', evt)
@@ -1403,6 +1425,13 @@ class compose_header_box(gtk.HBox):
 		else:
 			self.btn_datetime.hide()
 	
+	def set_autocomplete_list(self, autocomplete_list):
+		ac_model = self.completer.get_model()
+		ac_model.clear()
+		for item in autocomplete_list:
+			ac_model.append([item, glib.markup_escape_text(item), False, 0])
+		self.wdg_value.remove_data('autocomplete-computed-for')
+	
 	def on_name_changed(self, _x=None):
 		name = self['name']
 		self.showhide_pick_buttons()
@@ -1415,39 +1444,32 @@ class compose_header_box(gtk.HBox):
 			abook = []
 			load_addressbook(callback = lambda addr, userdata: abook.append(addr), display_error = False)
 			self.set_autocomplete_list(abook)
-		else:
-			autocomplete_items = []
-			if type(self['validate']) == list:
-				autocomplete_items = self['validate'][:]
-			else:
-				try: autocomplete_items = self['validate']['autocomplete'][:]
-				except (KeyError, TypeError): pass
-			self.set_autocomplete_list(autocomplete_items)
+		elif name in AutocompletionHeaders.keys():
+			self.set_autocomplete_list(AutocompletionHeaders[name])
 		self.on_changed()
-	
-	def set_autocomplete_list(self, autocomplete_list):
-		ac_model = self.completer.get_model()
-		ac_model.clear()
-		for item in autocomplete_list:
-			ac_model.append([item, glib.markup_escape_text(item), False, 0])
 	
 	def on_value_changed(self, entry=None):
 		if entry is None: entry = self.wdg_value
-		entry.set_data('autocomplete-dirty', True)
 		
 		# indicate field validity
+		bg_invalid = gtk.gdk.Color('#FFA4A4')
 		bg_normal = entry.get_data('bg-normal')
 		if not bg_normal:
 			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
 			entry.set_data('bg-normal', bg_normal)
 		valid = self.validate()
-		if valid:
+		if valid == VALID_PASS:
 			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-			self['valid'] = True
+			entry.set_icon_from_stock(1, None)
 		else:
-			bg_invalid = gtk.gdk.Color('#FFA4A4')
-			entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
-			self['valid'] = False
+			if valid == VALID_INVALID:
+				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
+				entry.set_icon_from_stock(1, gtk.STOCK_STOP)
+				entry.set_icon_tooltip_text(1, _("Invalid input"))
+			else:
+				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+				entry.set_icon_from_stock(1, gtk.STOCK_DIALOG_QUESTION)
+				entry.set_icon_tooltip_text(1, _("Strange input; maybe double check"))
 			self.point_out()
 		
 		self.on_changed()
@@ -1464,44 +1486,33 @@ class compose_header_box(gtk.HBox):
 	
 	def validate(self):
 		if not self['validate']:
-			return True
+			return VALID_PASS
 		text = self['value']
 		if text == '':
-			return True
-		if type(self['validate']) == list:
-			return (text in self['validate'] or '' in self['validate'])
-		if self['validate'].has_key('require'):
-			if not re.search(self['validate']['require'], text):
-				return False
-		if self['validate'].has_key('repetative'):
-			remainder = text
-			while True:
-				m = re.match(self['validate']['repetative'], remainder)
-				if m is not None:
-					remainder = remainder[m.end():]
-					if remainder == '':
+			return VALID_PASS
+		result = True
+		for validation_rule in self['validate']:
+			if validation_rule.has_key('require'):
+				result = bool(re.search(validation_rule['require'], text))
+			elif validation_rule.has_key('require-repetative'):
+				remainder = text
+				while True:
+					m = re.search(validation_rule['require-repetative'], remainder)
+					if m is not None:
+						remainder = remainder[m.end():]
+						if remainder == '':
+							break
+					else:
+						result = False
 						break
-				else:
-					return False
-			if remainder != '':
-				return False
-		if self['validate'].has_key('all'):
-			for regexp in self['validate']['all']:
-				if not re.search(regexp, text):
-					return False
-		if self['validate'].has_key('one'):
-			one = False
-			for regexp in self['validate']['one']:
-				if re.search(regexp, text):
-					one = True
-					break
-			if not one:
-				return False
-		if self['validate'].has_key('deny'):
-			for regexp in self['validate']['deny']:
-				if re.search(regexp, text):
-					return False
-		return True
+				if remainder != '':
+					result = False
+			if not result:
+				break
+		if result:
+			return VALID_PASS
+		else:
+			return validation_rule.get('condition', VALID_INVALID)
 	
 	def point_out(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
@@ -1608,28 +1619,31 @@ class compose_header_box(gtk.HBox):
 			if self.hntype == self.HNTYPE_CUSTOM:
 				it = self.wdg_name.get_active_iter()
 				if it is not None:
-					return self.wdg_name.get_model().get_value(it, 0)
+					ret = self.wdg_name.get_model().get_value(it, 0)
 				else:
-					return self.wdg_name.children()[0].get_text()
+					ret = self.wdg_name.children()[0].get_text()
 			else:
-				return self.wdg_name.get_data('name')
+				ret = self.wdg_name.get_data('name')
+			if ret is not None:
+				ret = headercase(ret)
+			return ret
 		elif key == 'value':
 			return self.wdg_value.get_text()
 		elif key == 'readonly':
 			return not self.wdg_value.get_sensitive()
-		elif key in ['validate', 'valid']:
+		elif key in ['validate']:
 			return self.wdg_value.get_data(key)
 		else:
 			raise KeyError()
 	
 	def __setitem__(self, key, newvalue):
 		if key == 'name':
+			newvalue = headercase(newvalue)
 			old = self[key]
 			self.wdg_name.set_data('name', newvalue)
 			if self.hntype == self.HNTYPE_CUSTOM:
 				self.wdg_name.children()[0].set_text(newvalue)
 			else:
-				self.wdg_name.set_data('name', newvalue)
 				self.wdg_name.set_label(_(newvalue))
 			if old != newvalue:
 				self.on_name_changed()
@@ -1641,9 +1655,6 @@ class compose_header_box(gtk.HBox):
 		elif key == 'validate':
 			self.wdg_value.set_data(key, newvalue)
 			self.on_value_changed()
-		elif key == 'valid':
-			assert isinstance(newvalue, bool)
-			self.wdg_value.set_data(key, newvalue)
 		else:
 			raise KeyError()
 
@@ -1886,14 +1897,14 @@ def act_compose():
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-def act_reply(recip):
+def act_reply(compose_type):
 	if open_composer():
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
 		body = '\n\n' + get_user_signature()
 		my_address = guess_my_address()
 		
-		if recip == '':
+		if compose_type == COMPOSE_FORWARD:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (subj or _("Email")) + '.eml'
 			pre = _("Fwd: ")
@@ -1925,9 +1936,9 @@ def act_reply(recip):
 			reply_address = email.utils.parseaddr(reply_fulladdress)[1]
 			listaddress = get_listaddress_main()
 			
-			if recip == 'one':
+			if compose_type == COMPOSE_REPLY:
 				add_composer_header('To', reply_fulladdress or '')
-			elif recip == 'all':
+			elif compose_type == COMPOSE_REPLY_ALL:
 				skip_addresses = [my_address, reply_address, '']
 				rcpt_addresses = []
 				
@@ -1940,7 +1951,7 @@ def act_reply(recip):
 						rcpt_addresses.append(email.utils.parseaddr(addrspec)[1])
 				if listaddress is not None and listaddress not in rcpt_addresses:
 					add_composer_header('To', listaddress)
-			elif recip == 'list':
+			elif compose_type == COMPOSE_REPLY_LIST:
 				add_composer_header('To', listaddress)
 		
 		set_composer_text(body)
@@ -2476,7 +2487,7 @@ def validate_all_comp_headers():
 		box = panel_comp_header.children()[n]
 		if box.get_visible():
 			valid = box.validate()
-			if not valid:
+			if valid == VALID_INVALID:
 				box.point_out()
 				return False
 	return True
@@ -3513,26 +3524,54 @@ MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
-RE_EMAIL = '(?P<LP>\w[\w\.+-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
-VAL_EMAIL = {
-	'require': '^' + RE_EMAIL + '$',
-	}
-VAL_ADDRESSES = {
-	'repetative': r'^(?i)\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)',
-	}
-VAL_ADDRESS = {
-	'require': VAL_ADDRESSES['repetative'] + '$',
-	}
-VAL_AGE = {
-	'require': '^\d+[smhdwy]$',
-	}
-VAL_DATE = {
-	'require': '^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}(\s+\([A-Z]+\))?$',
-	}
-VAL_IMPORTANCE = {
-	'autocomplete': Importances,
+Precedences = ['list', 'junk', 'bulk']
+RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
+RE_IPADDR = r'[0-9a-f\.:]+'
+RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
+RE_EMAIL_PERMISSIVE = r'.@' + RE_DOMAINPART
+RE_EMAIL = r'(?P<LP>\w[\w\.+-]*(?<![\.-]))@' + RE_DOMAINPART
+RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
+VALID_PASS, VALID_INVALID, VALID_NOTICE = 1, 0, 2
+VAL_EMAIL = [{
+		'require': r'(?i)' + RE_EMAIL_PERMISSIVE  + '$',
+		'condition': VALID_INVALID,
+	},
+	{
+		'require': r'^(?i)' + RE_EMAIL + '$',
+		'condition': VALID_NOTICE,
+	}]
+VAL_ADDRESSES = [{
+		# note: no left-anchor
+		'require-repetative': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?\s*(?:,\s*|$)',
+		'condition': VALID_INVALID,
+	},{
+		'require-repetative': r'^(?i)' + RE_ADDRESS,
+		'condition': VALID_NOTICE,
+	}]
+VAL_ADDRESS = [{
+		# note: no left-anchor
+		'require': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?$',
+		'condition': VALID_INVALID,
+	},{
+		'require': r'^(?i)' + RE_ADDRESS + '$',
+		'condition': VALID_NOTICE,
+	}]
+VAL_AGE = [{
+	'require': r'^\d+[smhdwy]$',
+	}]
+VAL_DATE = [{
+	'require': r'^[a-zA-Z]+,\s*([12]\d|3[01]|0?[1-9])\s+[a-zA-Z]+\s+\d{4}\s+([01]\d|2[0-3])(:([0-5]\d)){2}\s+[+-]\d{4}(\s+\([A-Z]+\))?$',
+	}]
+VAL_IMPORTANCE = [{
 	'require': '^(%s)$' % '|'.join('[%c%c]%s' % (x[0].upper(), x[0], x[1:]) for x in Importances),
-	}
+	}]
+VAL_PRIORITY = [{
+	'require': '^(?i)(%s)$' % '|'.join(Priorities),
+	}]
+VAL_PRECEDENCE = [{
+	'require': '^(?i)(%s)$' % '|'.join(Precedences),
+	}]
+COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD = range(5)
 Email = None
 PartPrimary = None
 PartSecondary = None
@@ -3572,18 +3611,6 @@ EditExcludedHeaders = [
 	#'X-*',
 ]
 EditExcludedHeaders.extend(SensitiveHeaders)
-ValidatorHeaders = {
-	'From': VAL_ADDRESS,
-	'Reply-To': VAL_ADDRESS,
-	HDR_DNT: VAL_ADDRESS,
-	'To': VAL_ADDRESSES,
-	'Cc': VAL_ADDRESSES,
-	'Bcc': VAL_ADDRESSES,
-	'Deliver-At-Age': VAL_AGE,
-	'Priority': Priorities,
-	'Importance': VAL_IMPORTANCE,
-	'Precedence': ['list', 'junk', 'bulk'],
-}
 AddressbookHeaders = [
 	'From',
 	'Reply-To',
@@ -3592,8 +3619,26 @@ AddressbookHeaders = [
 	'Cc',
 	'Bcc',
 ]
+ValidatorHeaders = {
+	'From': VAL_ADDRESS,
+	'Reply-To': VAL_ADDRESS,
+	HDR_DNT: VAL_ADDRESS,
+	'To': VAL_ADDRESSES,
+	'Cc': VAL_ADDRESSES,
+	'Bcc': VAL_ADDRESSES,
+	'Deliver-At-Age': VAL_AGE,
+	'Importance': VAL_IMPORTANCE,
+	'Priority': VAL_PRIORITY,
+	'Precedence': VAL_PRECEDENCE,
+}
 for h in DateTimeHeaders:
 	ValidatorHeaders[h] = VAL_DATE
+AutocompletionListSizeLimitOnEmptyInput = 10
+AutocompletionHeaders = {
+	'Importance': Importances,
+	'Priority': Priorities,
+	'Precedence': Precedences,
+}
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
 XATTR_ORIGIN = 'user.xdg.origin.email.message-id'
@@ -3677,9 +3722,9 @@ add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
 add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
 add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
 add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
-add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply('one'))
-add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply('all'))
-add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(''))
+add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
+add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
+add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD))
 add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
 
@@ -3794,10 +3839,10 @@ menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 toolbuttons = [
 	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
 	("Send MDN", 'mail-reply-sender', "Send a Message Disposition Notification", act_dispos_notif, None),
-	("Reply", 'mail-reply-sender', "Reply\nRight click: Send a Message Disposition Notification", (act_reply, 'one'), act_dispos_notif),
-	("Reply to All", 'mail-reply-all', None, (act_reply, 'all'), None),
-	("Reply to List", 'mail-reply-all', None, (act_reply, 'list'), None),
-	("Forward", 'mail-forward', None, (act_reply, ''), None),
+	("Reply", 'mail-reply-sender', "Reply\nRight click: Send a Message Disposition Notification", (act_reply, COMPOSE_REPLY), act_dispos_notif),
+	("Reply to All", 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_ALL), None),
+	("Reply to List", 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_LIST), None),
+	("Forward", 'mail-forward', None, (act_reply, COMPOSE_FORWARD), None),
 	(None, None, None, 'separator', None),
 	("Unsubscribe", 'stop', None, act_unsubscribe, None),
 	("Report Spam", 'mail-mark-junk', None, act_report_spam, None),

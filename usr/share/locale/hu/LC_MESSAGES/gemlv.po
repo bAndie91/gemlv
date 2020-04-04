@@ -367,3 +367,9 @@ msgstr "Nincs mentve"
 
 msgid "Continue Editing"
 msgstr "Szerkesztés Folytatása"
+
+msgid "Invalid input"
+msgstr "Érvénytelen bevitel"
+
+msgid "Strange input; maybe double check"
+msgstr "Szokatlan bevitel; ellenőrizze"
