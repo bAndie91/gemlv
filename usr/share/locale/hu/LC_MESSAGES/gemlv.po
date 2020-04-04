@@ -118,14 +118,17 @@ msgstr "Titkos másolat címek, vesszővel tagolt lista"
 msgid "Message body"
 msgstr "Üzenet szövege"
 
-msgid "Attachments, comma-separated list"
-msgstr "Csatolmányok, vesszővel tagolt lista"
+msgid "Attachment(s)"
+msgstr "Csatolmány(ok)"
 
 msgid "L10n base directory"
 msgstr "L10n alapkönyvtár"
 
 msgid "Raw Email file for read or continue editing"
 msgstr "Nyers Email fájl megnyitásra, vagy szerkesztésre"
+
+msgid "Add custom header(s) to the new Email"
+msgstr "Egyedi fejléc(ek) hozzáadása az új Emailhez"
 
 msgid "Either compose mode or FILE is needed."
 msgstr "Muszáj vagy compose módot, vagy egy FILE-t megadni."
@@ -206,7 +209,7 @@ msgid "Edit with External Program"
 msgstr "Szekresztés külső programmal"
 
 msgid "New Email's writer's name and address"
-msgstr "Az új Email szerzőjének neve és címe"
+msgstr "Az új Email megírójának neve és címe"
 
 msgid "Full 'mailto:' link"
 msgstr "Teljes 'mailto:' link"

@@ -3675,9 +3675,10 @@ argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy R
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
-argparser.add_argument('--attach', metavar='FILES', help=_("Attachments, colon-separated list"))
+argparser.add_argument('--attach', "--attachment", metavar='FILES', action='append', help=_("Attachment(s)"))
 argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
+argparser.add_argument('--header', metavar='STRING', action='append', help=_("Add custom header(s) to the new Email"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
 sysargv = sys.argv[1:]
 if os.path.basename(sys.argv[0]).find('compose') > -1 and '--compose' not in sysargv:
@@ -3687,10 +3688,9 @@ if os.path.basename(sys.argv[0]).find('mailto') > -1:
 	sysargv.insert(1, '--mailto')
 cliArgs = argparser.parse_args(args=sysargv)
 del sysargv
-for separator, attribs in (',', ['to', 'cc', 'bcc']), (':', ['attach']):
-	for attr in attribs:
-		if getattr(cliArgs, attr) is not None:
-			setattr(cliArgs, attr, re.split('\s*'+separator+'\s*', getattr(cliArgs, attr)))
+for attr in ['to', 'cc', 'bcc']:
+	if getattr(cliArgs, attr) is not None:
+		setattr(cliArgs, attr, re.split('\s*,\s*', getattr(cliArgs, attr)))
 if not cliArgs.compose and not cliArgs.FILE:
 	stderr(_("Either compose mode or FILE is needed."))
 	os._exit(1)
@@ -4094,6 +4094,11 @@ if cliArgs.compose:
 		add_composer_header('To')
 	if cliArgs.subject:
 		set_composer_subject(cliArgs.subject)
+	if cliArgs.header:
+		for header in cliArgs.header:
+			if header.find(':') == -1: header += ':'
+			hname, hval = re.split(': ?', header, 1)
+			add_composer_headers(headercase(hname), [hval])
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
