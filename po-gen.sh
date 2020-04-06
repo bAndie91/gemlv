@@ -6,12 +6,12 @@ file=gemlv
 for langdir in "$TEXTDOMAINDIR"/*
 do
 	lang=`basename "$langdir"`
-	grep -Pon '".+?(?<!\\)"' "$file" |\
+	grep -Pon '"(?!").+?(?<!\\)"' "$file" |\
 	{
 	declare -A new
 	while IFS=: read -r lno text
 	do
-		if sed -ne ${lno}p "$file" | grep -q @notranslate
+		if sed -ne ${lno}p "$file" | grep -Eq '^\s*#|@notranslate'
 		then
 			continue
 		fi

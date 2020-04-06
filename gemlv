@@ -615,7 +615,7 @@ def fix_unquoted_comma(s):
 		if probably_realname_norm == '' or probably_realname_norm.startswith('"') or probably_realname.find(',')==-1:
 			return m.group(0)
 		else:
-			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))
+			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
 	return re.sub('(^|,)(.+)(<)', repl, s)
 
 def getaddresses(array):
@@ -1074,7 +1074,7 @@ def get_headers_markup(eml):
 				for realname, addr in getaddresses([hval]):
 					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
-					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"').encode('utf-8'), addr_mu)) if realname else addr_mu
+					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"').encode('utf-8'), addr_mu)) if realname else addr_mu  # @notranslate
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
@@ -3565,7 +3565,7 @@ PMU_WARN_CLOSE = '</span>'
 PMU_SUBJ = '<big>'
 PMU_SUBJ_CLOSE = '</big>'
 PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
-PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color="gray30">%s</span></i>'
+PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color=\'gray30\'>%s</span></i>'
 PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
 HDR_CT = 'Content-Type'
 HDR_CD = 'Content-Disposition'

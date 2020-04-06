@@ -367,3 +367,22 @@ msgstr "Nincs mentve"
 
 msgid "Continue Editing"
 msgstr "Szerkesztés Folytatása"
+
+msgid "Signature info"
+msgstr "Aláírás infó"
+
+msgid "Digital signature is validated. See details below."
+msgstr "A digitális aláírás ellenőrizve. Részletek lent."
+
+msgid "The digital signature on this email/attachment could not be validated. The email might be forged."
+msgstr "A digital aláírás ezen az emailen/csatolmányon nem érvényes vagy nem lehet ellenőrizni. Lehetséges, hogy hamis."
+
+msgid "View anyway"
+msgstr "Megtekintés mégis"
+
+msgid "Valid signature"
+msgstr "Érvényes aláírás"
+
+msgid "Invalid signature"
+msgstr "Érvénytelen aláírás"
+
