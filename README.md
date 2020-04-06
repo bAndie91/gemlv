@@ -40,6 +40,9 @@ Email viewer and composer for local emails in GTK
 	- preverse modification time, permissions if specified in attachment
 	- preserve symlinks
 	- save Message-ID, Content-Type in Extended Attributes
+- Encryption
+	- decrypt encrypted Email (GPG, GnuPG format is supported)
+	- verify GPG signature
 - [Gravatar](http://www.gravatar.com/) support
 	- you can configure the url to fetch an avatar picture for en email address:
 		- files in precedence: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
