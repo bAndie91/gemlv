@@ -789,10 +789,10 @@ def show_signature_info(*_x):
 	dlg.show_all()
 	resp = dlg.run()
 	if resp == gtk.RESPONSE_APPLY:
-		load_part(stck_sign_bad.get_data('email-part'), filt=stck_sign_bad.get_data('filtering'), parent_part=stck_sign_bad.get_data('parent-email-part'), bypass_signature_verify=True)
+		load_part(stck_sign_bad.get_data('email-part'), filt=stck_sign_bad.get_data('filtering'), bypass_signature_verify=True)
 	dlg.destroy()
 
-def load_part(eml, filt=None, parent_part=None, bypass_signature_verify=False):
+def load_part(eml, filt=None, bypass_signature_verify=False):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
@@ -801,15 +801,20 @@ def load_part(eml, filt=None, parent_part=None, bypass_signature_verify=False):
 	
 	stck_sign_good.hide()
 	stck_sign_bad.hide()
-	if parent_part is not None and parent_part.get_content_type() == 'multipart/signed':
-		sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
-		if eml.get_content_type() != sign_protocol:
-			# This part is signed. Find the signature part.
+	btn_open2.set_sensitive(False)
+	btn_save2.set_sensitive(False)
+	gpg_msg = eml.as_string()
+	for parent_level, parent_part in get_all_parent_parts(eml):
+		if parent_part.get_content_type() == 'multipart/signed':
+			sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
+			if parent_level == 1 and eml.get_content_type() == sign_protocol:
+				# This part is the signature itself. Skip signature verification.
+				continue
 			stck_sign_bad.show()
 			if sign_protocol is not None:
 				for sibling_part in parent_part.get_payload():
 					if sibling_part.get_content_type() == sign_protocol:
-						sign_verify = verify_gpg_signature(eml.as_string(), sibling_part.get_payload(decode=True))
+						sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
 						stck_sign_bad.set_data('signature-valid', sign_verify.valid)
 						stck_sign_bad.set_data('signature-info-text', sign_verify.stderr)
 						if sign_verify.valid:
@@ -818,9 +823,14 @@ def load_part(eml, filt=None, parent_part=None, bypass_signature_verify=False):
 						else:
 							stck_sign_bad.set_data('email-part', eml)
 							stck_sign_bad.set_data('filtering', filt)
-							stck_sign_bad.set_data('parent-email-part', parent_part)
 							if not bypass_signature_verify: return
 						break
+					else:
+						gpg_msg = sibling_part.as_string()
+			break
+	
+	btn_open2.set_sensitive(True)
+	btn_save2.set_sensitive(True)
 	
 	if eml['Content-Location']:
 		uri = eml['Content-Location']
@@ -2316,7 +2326,7 @@ def act_view_source():
 		filt = None
 	else:
 		filt = ('', None, False)
-	load_part(get_part_by_itpath(), filt, get_parent_part_by_iter())
+	load_part(get_part_by_itpath(), filt)
 
 def act_wrap(tv, i=1):
 	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
@@ -2392,11 +2402,10 @@ def on_select_parts(selection):
 			btn_open2.set_sensitive(True)
 			btn_save2.set_sensitive(True)
 			itpath = itpaths[0]
-			parent_eml_part = get_parent_part_by_iter(itpath)
 			eml = get_part_by_itpath(itpath)
-			load_part(eml, parent_part=parent_eml_part)
+			load_part(eml)
 			menubutton_filters.set_sensitive(True)
-			populate_filters_menu(eml, parent_eml_part=parent_eml_part)
+			populate_filters_menu(eml)
 		else:
 			btn_open2.set_sensitive(False)
 			btn_save2.set_sensitive(False)
@@ -2433,7 +2442,7 @@ def populate_header_menu(label, menu):
 	menu.append(mi)
 	menu.show_all()
 
-def populate_filters_menu(eml, parent_eml_part=None):
+def populate_filters_menu(eml):
 	for mi in menu_filters.children():
 		menu_filters.remove(mi)
 	uniqfilt = {}
@@ -2445,7 +2454,7 @@ def populate_filters_menu(eml, parent_eml_part=None):
 		if lbl == 'sh':
 			lbl = ' '.join(re.findall('(^\S+|\d*[<>]+(?:&\d+|\s*\S+)|[;\|&]+\s*\S+)', filt[1][1]))
 		mi = gtk.MenuItem(lbl)
-		mi.connect('activate', lambda mi, eml, filt, parent_eml_part: load_part(eml, filt, parent_eml_part), eml, filt, parent_eml_part)
+		mi.connect('activate', lambda mi, eml, filt: load_part(eml, filt), eml, filt)
 		menu_filters.append(mi)
 	menu_filters.show_all()
 	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
@@ -2462,16 +2471,18 @@ def get_part_by_itpath(itpath = None):
 	model = Parts
 	return model.get_value(model.get_iter(itpath), 0)
 
-def get_parent_part_by_iter(itpath = None):
-	if itpath is None:
-		try:
-			itpath = selection_parts.get_selected_rows()[1][0]
-		except IndexError:
-			return None
-	model = Parts
-	it = model.iter_parent(model.get_iter(itpath))
-	if it is None: return None
-	return model.get_value(it, 0)
+def get_all_parent_parts(part_asked):
+	lookup = {'iter': None}
+	Parts.foreach(lambda model, path, it, userdata: (userdata.__setitem__('iter', it), model[it][0] == part_asked)[1], lookup)
+	it = lookup['iter']
+	level = 0
+	while True:
+		it = Parts.iter_parent(it)
+		level += 1
+		if it is None:
+			break
+		else:
+			yield level, Parts[it][0]
 
 def load_toolitems(toolbar, toolitems):
 	items = []
