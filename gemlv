@@ -35,6 +35,7 @@ import threading
 import time
 import hashlib
 import urllib2
+import gnupg
 import ctypes
 from ctypes.util import find_library
 try:
@@ -65,6 +66,19 @@ except ImportError:
 class gtkWindow(gtk.Window):
 	def set_icon_name(self, name):
 		self.set_icon(gtk.icon_theme_get_default().load_icon(name, gtk.ICON_SIZE_SMALL_TOOLBAR, 0))
+
+class gtkScrolledLabelView(gtk.ScrolledWindow):
+	def __init__(self, text=None):
+		super(self.__class__, self).__init__()
+		self.label = gtk.Label()
+		self.label.set_alignment(0, 0)
+		self.label.set_selectable(True)
+		self.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		self.add_with_viewport(self.label)
+		if text is not None:
+			self.set_text(text)
+	def set_text(self, text):
+		self.label.set_markup('<tt>' + glib.markup_escape_text(text) + '</tt>')
 
 class LabelsToolItem(gtk.ToolItem):
 	def __init__(self):
@@ -703,11 +717,12 @@ def load_parts(eml, model, parent):
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb])
-	# Note, buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
+	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
 	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
 		PartPrimary = iterator
 	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
 		PartSecondary = iterator
+	# TODO: multipart/encrypted -> decrypt
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
@@ -749,12 +764,63 @@ def get_email_part_size_net(eml):
 	if raw_part is None: raw_part = eml.as_string()
 	return len(raw_part)
 
-def load_part(eml, filt=None):
+def verify_gpg_signature(message, signature):
+	sgn_r, sgn_w = os.pipe()
+	sgn_fh = os.fdopen(sgn_w, 'w')
+	sgn_fh.write(signature)
+	sgn_fh.close()
+	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
+
+def show_signature_info(*_x):
+	valid = stck_sign_bad.get_data('signature-valid')
+	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO if valid else gtk.MESSAGE_WARNING)
+	dlg.set_title(_("Signature info"))
+	dlg.set_icon_name('mail-signed')
+	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
+	dlg.set_markup(glib.markup_escape_text(_("Digital signature is validated. See details below.") if valid else _("The digital signature on this email/attachment could not be validated. The email might be forged.")))
+	if not valid:
+		dlg.add_action_widget(StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
+	dlg.add_buttons(gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE)
+	dlg.set_default_response(gtk.RESPONSE_CLOSE)
+	
+	carea = dlg.get_content_area()
+	carea.pack_start(gtkScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
+	
+	dlg.show_all()
+	resp = dlg.run()
+	if resp == gtk.RESPONSE_APPLY:
+		load_part(stck_sign_bad.get_data('email-part'), filt=stck_sign_bad.get_data('filtering'), parent_part=stck_sign_bad.get_data('parent-email-part'), bypass_signature_verify=True)
+	dlg.destroy()
+
+def load_part(eml, filt=None, parent_part=None, bypass_signature_verify=False):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
 	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 	loaded_text = None
+	
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
+	if parent_part is not None and parent_part.get_content_type() == 'multipart/signed':
+		sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
+		if eml.get_content_type() != sign_protocol:
+			# This part is signed. Find the signature part.
+			stck_sign_bad.show()
+			if sign_protocol is not None:
+				for sibling_part in parent_part.get_payload():
+					if sibling_part.get_content_type() == sign_protocol:
+						sign_verify = verify_gpg_signature(eml.as_string(), sibling_part.get_payload(decode=True))
+						stck_sign_bad.set_data('signature-valid', sign_verify.valid)
+						stck_sign_bad.set_data('signature-info-text', sign_verify.stderr)
+						if sign_verify.valid:
+							stck_sign_bad.hide()
+							stck_sign_good.show()
+						else:
+							stck_sign_bad.set_data('email-part', eml)
+							stck_sign_bad.set_data('filtering', filt)
+							stck_sign_bad.set_data('parent-email-part', parent_part)
+							if not bypass_signature_verify: return
+						break
 	
 	if eml['Content-Location']:
 		uri = eml['Content-Location']
@@ -2250,7 +2316,7 @@ def act_view_source():
 		filt = None
 	else:
 		filt = ('', None, False)
-	load_part(get_part_by_itpath(), filt)
+	load_part(get_part_by_itpath(), filt, get_parent_part_by_iter())
 
 def act_wrap(tv, i=1):
 	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
@@ -2326,10 +2392,11 @@ def on_select_parts(selection):
 			btn_open2.set_sensitive(True)
 			btn_save2.set_sensitive(True)
 			itpath = itpaths[0]
+			parent_eml_part = get_parent_part_by_iter(itpath)
 			eml = get_part_by_itpath(itpath)
-			load_part(eml)
+			load_part(eml, parent_part=parent_eml_part)
 			menubutton_filters.set_sensitive(True)
-			populate_filters_menu(eml)
+			populate_filters_menu(eml, parent_eml_part=parent_eml_part)
 		else:
 			btn_open2.set_sensitive(False)
 			btn_save2.set_sensitive(False)
@@ -2366,7 +2433,7 @@ def populate_header_menu(label, menu):
 	menu.append(mi)
 	menu.show_all()
 
-def populate_filters_menu(eml):
+def populate_filters_menu(eml, parent_eml_part=None):
 	for mi in menu_filters.children():
 		menu_filters.remove(mi)
 	uniqfilt = {}
@@ -2378,7 +2445,7 @@ def populate_filters_menu(eml):
 		if lbl == 'sh':
 			lbl = ' '.join(re.findall('(^\S+|\d*[<>]+(?:&\d+|\s*\S+)|[;\|&]+\s*\S+)', filt[1][1]))
 		mi = gtk.MenuItem(lbl)
-		mi.connect('activate', lambda mi, eml, filt: load_part(eml, filt), eml, filt)
+		mi.connect('activate', lambda mi, eml, filt, parent_eml_part: load_part(eml, filt, parent_eml_part), eml, filt, parent_eml_part)
 		menu_filters.append(mi)
 	menu_filters.show_all()
 	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
@@ -2394,6 +2461,17 @@ def get_part_by_itpath(itpath = None):
 			return None
 	model = Parts
 	return model.get_value(model.get_iter(itpath), 0)
+
+def get_parent_part_by_iter(itpath = None):
+	if itpath is None:
+		try:
+			itpath = selection_parts.get_selected_rows()[1][0]
+		except IndexError:
+			return None
+	model = Parts
+	it = model.iter_parent(model.get_iter(itpath))
+	if it is None: return None
+	return model.get_value(it, 0)
 
 def load_toolitems(toolbar, toolitems):
 	items = []
@@ -2502,12 +2580,7 @@ def act_send():
 	
 	carea = dlg.get_content_area()
 	progressbar = gtk.ProgressBar()
-	details = gtk.ScrolledWindow()
-	details_text = gtk.Label()
-	details_text.set_alignment(0, 0)
-	details_text.set_selectable(True)
-	details.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	details.add_with_viewport(details_text)
+	details = gtkScrolledLabelView()
 	carea.pack_start(progressbar, False, True)
 	carea.pack_start(details, True, True)
 	
@@ -2521,10 +2594,10 @@ def act_send():
 	details.hide()
 	btn_show_details.hide()
 	
-	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details_text))
+	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details))
 	thrd.start()
 
-def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text):
+def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widget):
 	global StopSending
 	StopSending = False
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -2621,7 +2694,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
-	details_text.set_markup('<tt>' + glib.markup_escape_text(resp) + '</tt>')
+	details_widget.set_text(resp)
 	update_composer_status_message()
 	gtk.threads_leave()
 
@@ -3616,6 +3689,7 @@ class BasicReuseable():
 		pass
 
 Timers = {}
+gpg = gnupg.GPG()
 
 
 ### Parse Arguments ###
@@ -3823,6 +3897,8 @@ toolbuttons = [
 	(None, 'mail-forward', "Forwarded", None, None),
 	(None, 'mail-mark-read', "MDN is sent", None, None),
 	(None, 'mail-mark-junk', "Spam", None, None),
+	(None, 'mail-signed-verified', "Valid signature", show_signature_info, None),
+	(None, 'dialog-warning', "Invalid signature", show_signature_info, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save and Keep Structure", act_save, act_save_struct),
@@ -3831,7 +3907,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, x_, btn_open2, btn_save2, x_, x, x, btn_font \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, x_, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
@@ -4071,6 +4147,8 @@ else:
 	stck_fwd.hide()
 	stck_mdn.hide()
 	stck_spam.hide()
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
 
 gtk.main()
 if len(threading.enumerate()) > 1:
