@@ -768,7 +768,7 @@ def load_part(eml, filt=None):
 		filt = get_filter_by_mime(ct_main, ct_sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == type([]) and (eml.preamble is not None or eml.epilogue is not None):
+		if type(eml.get_payload()) == type([]) and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
 			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 			set_content_text(text)
 			loaded_text = text
@@ -815,9 +815,9 @@ def load_part(eml, filt=None):
 		panel_btnbox.hide()
 		panel_content_image.hide()
 		spanel_content.show()
-	if spanel_content.get_data('loaded-part') != eml:
+	if spanel_content.get_data('-loaded-part') != eml:
 		spanel_content.get_vadjustment().set_value(0.0)
-	spanel_content.set_data('loaded-part', eml)
+	spanel_content.set_data('-loaded-part', eml)
 	if ct_main == 'text' and loaded_text is not None:
 		spanel_content.set_data('last-loaded-text', loaded_text)
 
@@ -867,7 +867,7 @@ def decode_header(s, unfold=False, eml=None):
 			encodings = ['utf-8']
 			if eml:
 				for _x, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'] or '', re.I)
+					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
 					if m:
 						encodings.append(m.group(1))
 			for encoding in encodings:
@@ -3298,7 +3298,7 @@ def act_sign():
 def act_dispos_notif():
 	if open_composer():
 		NewEmail.set_type('multipart/report')
-		NewEmail.set_param('report-type', 'disposition-notification', header='Content-Type')
+		NewEmail.set_param('report-type', 'disposition-notification', header=HDR_CT)
 		
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
@@ -3494,6 +3494,7 @@ PMU_SUBJ_CLOSE = '</big>'
 PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
 PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color="gray30">%s</span></i>'
 PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
+HDR_CT = 'Content-Type'
 HDR_CD = 'Content-Disposition'
 HDR_CTE = 'Content-Transfer-Encoding'
 HDR_DNT = 'Disposition-Notification-To'
@@ -3565,7 +3566,7 @@ EditExcludedHeaders = [
 	'Received-*',
 	'X-Originating-IP',
 	# TODO: technical headers
-	#'Content-Type',
+	#HDR_CT,
 	#'X-MS-*',
 	#'X-*',
 ]
@@ -4074,3 +4075,5 @@ else:
 gtk.main()
 if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
+
+# TODO: make .set_label and .set_text consistent on gtk.Label()s
