@@ -709,8 +709,9 @@ def load_parts(eml, model, parent):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
+	content_type = eml.get_content_type()
 	
-	label = PMU_MIME + glib.markup_escape_text(eml.get_content_type()) + PMU_MIME_CLOSE
+	label = PMU_MIME + glib.markup_escape_text(content_type) + PMU_MIME_CLOSE
 	filename = decode_mimetext(eml.get_filename())
 	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
 	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
@@ -718,11 +719,29 @@ def load_parts(eml, model, parent):
 	
 	iterator = model.append(parent, [eml, label, stock, pixb])
 	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
-	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
+	if PartPrimary is None and content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
-	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
+	if PartSecondary is None and content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	# TODO: multipart/encrypted -> decrypt
+	if content_type == 'multipart/encrypted':
+		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
+		if crypto_protocol == 'application/pgp-encrypted':
+			# RFC3156
+			encrypted_part = eml.get_payload()[1]
+			encrypted_data = encrypted_part.as_string()
+			decrypt = gpg.decrypt(encrypted_data)
+			if decrypt.ok:
+				load_parts(eml.get_payload()[0], model, iterator)
+				decrypted_eml = email.message_from_string(decrypt.data)
+				load_parts(decrypted_eml, model, iterator)
+				# Display an open padlock icon
+				model[model.iter_nth_child(iterator, 1)][2] = None
+				model[model.iter_nth_child(iterator, 1)][3] = gtk.icon_theme_get_default().load_icon('changes-allow', gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+				for other_part in eml.get_payload()[2:]:
+					load_parts(other_part, model, iterator)
+				return
+			else:
+				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
@@ -1170,11 +1189,10 @@ def get_stock_by_mime(main, sub):
 		'text/calendar': 'x-office-calendar',
 		'inode/directory': gtk.STOCK_DIRECTORY,
 		'inode/x-empty': 'document-new',
+		'multipart/digest': 'emblem-mail',
 	}
 	full = main + '/' + sub
 	
-	if full == 'multipart/digest':
-		return 'emblem-mail'
 	if assoc_full.has_key(full):
 		return assoc_full[full]
 	elif assoc_main.has_key(main):
@@ -1184,7 +1202,7 @@ def get_stock_by_mime(main, sub):
 		return main + '-' + sub
 	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
 		return main + '-x-generic'
-
+	
 	return gtk.STOCK_FILE
 
 def sighandler(sign, frame):
@@ -3700,7 +3718,7 @@ class BasicReuseable():
 		pass
 
 Timers = {}
-gpg = gnupg.GPG()
+gpg = gnupg.GPG(use_agent=True)
 
 
 ### Parse Arguments ###

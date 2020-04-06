@@ -386,3 +386,5 @@ msgstr "Érvényes aláírás"
 msgid "Invalid signature"
 msgstr "Érvénytelen aláírás"
 
+msgid "Decryption error"
+msgstr "Titkosítás-visszafejtési hiba"
