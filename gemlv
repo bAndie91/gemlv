@@ -573,11 +573,21 @@ def main_thread_alive():
 			break
 	return alive
 
+RE_HEADERPARAM = '(\\b%s)(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
+
 def get_header_parameter(text, param):
-	for g1, g2 in re.findall('\\b' + re.escape(param) + '=(?:\x22([^\x22]+)\x22|([^\s;]+))', text or ''):
-		if g1 != '': return g1
-		if g2 != '': return g2
+	for left, right, dqval, val in re.findall(RE_HEADERPARAM % (re.escape(param),), text or ''):
+		if dqval != '': return dqval
+		if val != '': return val
 	return None
+
+def set_header_parameter(eml, hname, param, pvalue):
+	regex = RE_HEADERPARAM % (re.escape(param),)
+	if re.findall(regex, eml[hname]):
+		hvalue = re.sub(regex, '\\1="%s"'%(pvalue,), eml[hname])  # @notranslate
+	else:
+		hvalue = eml[hname] + '; %s="%s"'%(param, pvalue)  # @notranslate
+	eml[hname] = hvalue
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
@@ -790,6 +800,12 @@ def verify_gpg_signature(message, signature):
 	sgn_fh.close()
 	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
 
+def gpg_sign_data(message, author_address):
+	sgn = gpg.sign(message, keyid=author_address, detach=True)
+	if sgn.data == '':
+		raise GnuPGError(sgn.stderr)
+	return sgn.data
+
 def show_signature_info(*_x):
 	valid = stck_sign_bad.get_data('signature-valid')
 	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO if valid else gtk.MESSAGE_WARNING)
@@ -820,6 +836,10 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	
 	stck_sign_good.hide()
 	stck_sign_bad.hide()
+	stck_sign_bad.set_data('email-part', eml)
+	stck_sign_bad.set_data('filtering', filt)
+	stck_sign_bad.set_data('signature-valid', None)
+	stck_sign_bad.set_data('signature-info-text', 'n/a')
 	btn_open2.set_sensitive(False)
 	btn_save2.set_sensitive(False)
 	gpg_msg = eml.as_string()
@@ -839,14 +859,15 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 						if sign_verify.valid:
 							stck_sign_bad.hide()
 							stck_sign_good.show()
-						else:
-							stck_sign_bad.set_data('email-part', eml)
-							stck_sign_bad.set_data('filtering', filt)
-							if not bypass_signature_verify: return
 						break
-					else:
-						gpg_msg = sibling_part.as_string()
+			if stck_sign_bad.get_visible():
+				if not bypass_signature_verify: return
 			break
+		else:
+			if parent_level > 1:
+				# The MIME part we are about to show itself is not signed, but
+				# included in a signed MIME part.
+				gpg_msg = parent_part.as_string()
 	
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
@@ -2587,18 +2608,18 @@ def validate_all_comp_headers():
 	return True
 
 def act_send():
-	msg = ''
+	err_msg = ''
 	if not validate_all_comp_headers():
 		return
 	if not get_composer_subject():
-		msg += _("No Subject.") + '\n'
+		err_msg += _("No Subject.") + '\n'
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		msg += _("No any Recipient.") + '\n'
-	if msg != '':
-		msg += _("Send anyway?")
-		if not question(msg, (_("Send"), 'mail-send')):
+		err_msg += _("No any Recipient.") + '\n'
+	if err_msg != '':
+		err_msg += _("Send anyway?")
+		if not question(err_msg, (_("Send"), 'mail-send')):
 			return
-	build_newemail()
+	email_to_send = build_newemail_to_send()
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -2623,10 +2644,10 @@ def act_send():
 	details.hide()
 	btn_show_details.hide()
 	
-	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details))
+	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details, email_to_send))
 	thrd.start()
 
-def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widget):
+def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widget, email_to_send):
 	global StopSending
 	StopSending = False
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -2652,7 +2673,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	child_write.close()
 	set_blocking(parent_write, False)
 	resp = ''
-	text = NewEmail.as_string()
+	text = email_to_send.as_string()
 	pos = 0
 	bufsize = 4096
 	length = len(text)
@@ -2711,7 +2732,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
 			origin_email_file = win_main.get_data('email-file')
-			MsgId = NewEmail[HDR_MID]
+			MsgId = email_to_send[HDR_MID]
 			for xattrname in win_comp.get_data('add-msgid-xattr-on-send'):
 				append_xattrs(origin_email_fh, {xattrname: MsgId}, origin_email_file, glue=',')
 		# Save queue id to the composed email file's xattr.
@@ -2776,6 +2797,32 @@ def build_newemail():
 	part_body.replace_header(HDR_CTE, enc)
 	part_body.set_payload(text)
 
+def build_newemail_to_send():
+	build_newemail()
+	email_to_send = NewEmail
+	if toggle_sign.get_active() or toggle_encrypt.get_active():
+		email_to_send = email.message_from_string(NewEmail.as_string())
+		if toggle_sign.get_active():
+			signed_email = MIMEMultipart(NewEmail.get_content_subtype())
+			signature_part = MIMEBase('application', 'pgp-signature')
+			for part in email_to_send.get_payload():
+				signed_email.attach(part)
+				email_to_send._payload.remove(part)
+			email_to_send.set_type('multipart/signed')
+			set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+			email_to_send.attach(signed_email)
+			signature = generate_signature(email_to_send, signed_email)
+			signature_part.set_payload(signature)
+			email_to_send.attach(signature_part)
+	return email_to_send
+
+def generate_signature(main_new_email, signed_part):
+	addr = getaddresses(main_new_email.get_all('From'))
+	if len(addr) != 1:
+		raise GnuPGSignError(_("No 'From' address given to match a GPG key to crypto-sign with."))
+	author_address = addr[0][1]
+	return gpg_sign_data(signed_part.as_string(), author_address)
+
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
 	ask_overwrite = False
@@ -2786,6 +2833,8 @@ def act_save_edit(save_as=False):
 		filename = choose_save_file(_("Draft") + subj + '.eml')
 	if filename is not None:
 		build_newemail()
+		# !!!! REMOVE !!!!
+		NewEmail = build_newemail_to_send()
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
@@ -3391,12 +3440,6 @@ def drag_part_end(wdg, context):
 	if tmp_dir_path:
 		recursive_rm(tmp_dir_path)
 
-def act_encrypt():
-	pass
-
-def act_sign():
-	pass
-
 def act_dispos_notif():
 	if open_composer():
 		NewEmail.set_type('multipart/report')
@@ -3716,6 +3759,9 @@ class BasicReuseable():
 		return self.value
 	def __exit__(self, exc_type, exc_value, exc_traceback):
 		pass
+
+class GnuPGSignError(Exception):
+	pass
 
 Timers = {}
 gpg = gnupg.GPG(use_agent=True)
@@ -4064,8 +4110,8 @@ for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 toolbuttons = [
 	(None, LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, StockToggleToolButton('dialog-password'), "Encrypt", act_encrypt, None),
-	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", act_sign, None),
+	(None, StockToggleToolButton('dialog-password'), "Encrypt", None, None),
+	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
 	(None, StockToggleToolButton('mail-mark-read'), "Disposition Notification", act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
 	("Unimportant", StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
@@ -4075,7 +4121,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_edit_message),
 	ToolItemDeclaration_font(panel_edit_message),
 ]
-tb_comp_label, x_, x, x, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
+tb_comp_label, x_, toggle_encrypt, toggle_sign, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
 = load_toolitems(tb_comp_controls, toolbuttons)
 toggle_rqdn.connect('toggled', on_toggled)
 toggle_unimportant.connect('toggled', on_toggled)
