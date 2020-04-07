@@ -2720,7 +2720,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
 		sendmail_queue_id = resp.strip().split('\n')[-1]
-		add_composer_header('X-Queue-ID', sendmail_queue_id)
+		add_composer_header(HDR_XQID, sendmail_queue_id)
 		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
 		origin_email_fh = win_main.get_data('email-file-handle')
@@ -2793,29 +2793,39 @@ def build_newemail():
 
 def build_newemail_to_send():
 	build_newemail()
-	email_to_send = NewEmail
-	if toggle_sign.get_active() or toggle_encrypt.get_active():
-		email_to_send = email.message_from_string(NewEmail.as_string())
-		if toggle_sign.get_active():
-			signed_email = MIMEMultipart(NewEmail.get_content_subtype())
-			signature_part = MIMEBase('application', 'pgp-signature')
-			for part in email_to_send.get_payload():
-				signed_email.attach(part)
-				email_to_send._payload.remove(part)
-			email_to_send.set_type('multipart/signed')
-			set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
-			email_to_send.attach(signed_email)
-			signature = generate_signature(email_to_send, signed_email)
-			signature_part.set_payload(signature)
-			email_to_send.attach(signature_part)
+	email_to_send = email.message_from_string(NewEmail.as_string())
+	del email_to_send[HDR_XSD]
+	del email_to_send[HDR_XQID]
+	if toggle_sign.get_active():
+		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
+		signature_part = MIMEBase('application', 'pgp-signature')
+		for part in email_to_send.get_payload():
+			signed_email.attach(part)
+			email_to_send._payload.remove(part)
+		# change the root rfc822 email to a multipart/signed email
+		email_to_send.set_type('multipart/signed')
+		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+		# produce data to be signed
+		data_to_sign = signed_email.as_string()
+		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
+		if signed_email.get_content_maintype() == 'multipart' and data_to_sign[-1] != '\n':
+			data_to_sign += '\n'
+			# there is no trailing '\n' after the closing boundary;
+			# this adds a '\n' at the end of the raw multipart/* part:
+			signed_email.epilogue = ''
+		# produce signature
+		signature = generate_signature(email_to_send, data_to_sign)
+		signature_part.set_payload(signature)
+		email_to_send.attach(signed_email)
+		email_to_send.attach(signature_part)
 	return email_to_send
 
-def generate_signature(main_new_email, signed_part):
+def generate_signature(main_new_email, data_to_sign):
 	addr = getaddresses(main_new_email.get_all('From') or [])
 	if len(addr) != 1:
-		raise GnuPGSignError(_("No 'From' address given to match a GPG key to crypto-sign with."))
+		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
-	return gpg_sign_data(signed_part.as_string(), author_address)
+	return gpg_sign_data(data_to_sign, author_address)
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
@@ -2827,8 +2837,6 @@ def act_save_edit(save_as=False):
 		filename = choose_save_file(_("Draft") + subj + '.eml')
 	if filename is not None:
 		build_newemail()
-		# !!!! REMOVE !!!!
-		NewEmail = build_newemail_to_send()
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
@@ -3643,6 +3651,7 @@ HDR_OR = 'Original-Recipient'
 HDR_MID = 'Message-ID'
 HDR_REF = 'References'
 HDR_XSD = 'X-Sent-Date'
+HDR_XQID = 'X-Queue-ID'
 MIMETYPE_OCTETSTREAM = 'application/octet-stream'
 MIMETYPE_EMAIL = 'message/rfc822'
 MIMETYPE_URILIST = 'text/uri-list'
