@@ -280,8 +280,8 @@ msgstr "Kiveszed a <tt>%s</tt> mappából át a <tt>%s</tt>-ba?"
 msgid "Take out"
 msgstr "Ki"
 
-msgid "Disposition Notification"
-msgstr "Tértivevény"
+msgid "Ask Disposition Notification"
+msgstr "Tértivevény kérése"
 
 msgid "Disposition Notification: {subject}"
 msgstr "Tértivevény: {subject}"
@@ -388,3 +388,9 @@ msgstr "Érvénytelen aláírás"
 
 msgid "Decryption error"
 msgstr "Titkosítás-visszafejtési hiba"
+
+msgid "No 'From' address (or more of them) given to match a GPG key to crypto-sign with."
+msgstr "Nincs 'From' feladó cím (vagy több van), ami alapján GPG kulcsot találnék az aláírás elvégzéséhez."
+
+msgid "Crypto-signing error"
+msgstr "Hiba digitális aláírás közben"

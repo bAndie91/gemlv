@@ -2613,7 +2613,12 @@ def act_send():
 		err_msg += _("Send anyway?")
 		if not question(err_msg, (_("Send"), 'mail-send')):
 			return
-	email_to_send = build_newemail_to_send()
+	try:
+		email_to_send = build_newemail_to_send()
+	except GnuPGSignError as e:
+		e.message = _("Crypto-signing error") + '\n\n' + e.message
+		display_error(e)
+		return
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -3495,7 +3500,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, ''])
+		Attachments.append(None, [dn_part, _("Ask Disposition Notification"), 'mail-mark-read', None, ''])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
