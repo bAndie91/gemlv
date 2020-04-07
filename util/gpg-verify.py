@@ -5,8 +5,8 @@ import gnupg
 
 gpg = gnupg.GPG()
 
-message = open(sys.argv[0]).read()
-signature = open(sys.argv[1]).read()
+message = open(sys.argv[1]).read()
+signature = open(sys.argv[2]).read()
 
 sgn_r, sgn_w = os.pipe()
 sgn_fh = os.fdopen(sgn_w, 'w')

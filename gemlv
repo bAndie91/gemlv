@@ -788,6 +788,10 @@ def get_email_part_size_net(eml):
 	if raw_part is None: raw_part = eml.as_string()
 	return len(raw_part)
 
+def get_gpg_signed_data_from_mime_part(eml):
+	gpg_msg = eml.as_string().replace('\n', '\r\n')
+	return gpg_msg
+
 def verify_gpg_signature(message, signature):
 	sgn_r, sgn_w = os.pipe()
 	sgn_fh = os.fdopen(sgn_w, 'w')
@@ -837,7 +841,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	stck_sign_bad.set_data('signature-info-text', 'n/a')
 	btn_open2.set_sensitive(False)
 	btn_save2.set_sensitive(False)
-	gpg_msg = eml.as_string()
+	gpg_msg = get_gpg_signed_data_from_mime_part(eml)
 	for parent_level, parent_part in get_all_parent_parts(eml):
 		if parent_part.get_content_type() == 'multipart/signed':
 			sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
@@ -861,7 +865,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		else:
 			# The MIME part we are about to show itself is not signed, but
 			# included in a signed MIME part.
-			gpg_msg = parent_part.as_string()
+			gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
 	
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
@@ -2830,7 +2834,7 @@ def generate_signature(main_new_email, data_to_sign):
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
-	return gpg_sign_data(data_to_sign, author_address)
+	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
