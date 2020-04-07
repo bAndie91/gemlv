@@ -582,12 +582,7 @@ def get_header_parameter(text, param):
 	return None
 
 def set_header_parameter(eml, hname, param, pvalue):
-	regex = RE_HEADERPARAM % (re.escape(param),)
-	if re.findall(regex, eml[hname]):
-		hvalue = re.sub(regex, '\\1="%s"'%(pvalue,), eml[hname])  # @notranslate
-	else:
-		hvalue = eml[hname] + '; %s="%s"'%(param, pvalue)  # @notranslate
-	eml[hname] = hvalue
+	return eml.set_param(param, pvalue, hname)
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
@@ -803,7 +798,7 @@ def verify_gpg_signature(message, signature):
 def gpg_sign_data(message, author_address):
 	sgn = gpg.sign(message, keyid=author_address, detach=True)
 	if sgn.data == '':
-		raise GnuPGError(sgn.stderr)
+		raise GnuPGSignError(sgn.stderr)
 	return sgn.data
 
 def show_signature_info(*_x):
@@ -864,10 +859,9 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				if not bypass_signature_verify: return
 			break
 		else:
-			if parent_level > 1:
-				# The MIME part we are about to show itself is not signed, but
-				# included in a signed MIME part.
-				gpg_msg = parent_part.as_string()
+			# The MIME part we are about to show itself is not signed, but
+			# included in a signed MIME part.
+			gpg_msg = parent_part.as_string()
 	
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
@@ -2817,7 +2811,7 @@ def build_newemail_to_send():
 	return email_to_send
 
 def generate_signature(main_new_email, signed_part):
-	addr = getaddresses(main_new_email.get_all('From'))
+	addr = getaddresses(main_new_email.get_all('From') or [])
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
