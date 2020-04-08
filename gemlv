@@ -626,6 +626,12 @@ def fix_unquoted_comma(s):
 def getaddresses(array):
 	return email.utils.getaddresses(map(fix_unquoted_comma, array))
 
+def getaddress(s):
+	addrs = getaddresses([s or ''])
+	if len(addrs) == 0:
+		return None
+	return addrs[0]
+
 ### private functions ###
 
 def win_main_show(widget, event):
@@ -2035,7 +2041,7 @@ def act_reply(recip):
 			composer_maintain_references_headers()
 			
 			reply_fulladdress = guess_reply_address()
-			reply_address = email.utils.parseaddr(reply_fulladdress)[1]
+			reply_address = getaddress(reply_fulladdress)[1]
 			listaddress = get_listaddress_main()
 			
 			if recip == 'one':
@@ -2044,8 +2050,9 @@ def act_reply(recip):
 				skip_addresses = [my_address, reply_address, '']
 				rcpt_addresses = []
 				
-				if reply_address != '' and reply_address != my_address:
+				if reply_address and reply_address != my_address:
 					add_composer_header('To', reply_fulladdress)
+					rcpt_addresses.append(reply_address)
 				for h in 'To', 'Cc':
 					for addrspec in filter_out_addresses(skip_addresses, get_all_headers_main(h)):
 						# get_all_headers_main() gives back realnames decoded
@@ -2809,8 +2816,11 @@ def build_newemail_to_send():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
 		signature_part = MIMEBase('application', 'pgp-signature')
 		for hname, hvalue in email_to_send._headers:
-			if hname not in CoreTechnicalHeaders:
+			# sign main email headers, except base technical ones 
+			# and other headers not being in the recipients' interest
+			if hname not in CoreTechnicalHeaders + ['Bcc']:
 				signed_email.add_header(hname, hvalue)
+		# move all attachments under the signed email
 		for part in email_to_send.get_payload():
 			signed_email.attach(part)
 			email_to_send._payload.remove(part)
