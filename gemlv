@@ -2815,11 +2815,15 @@ def build_newemail_to_send():
 	if toggle_sign.get_active():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
 		signature_part = MIMEBase('application', 'pgp-signature')
+		signed_headers_part = MIMEText('')
+		signed_headers_part.set_type(MIMETYPE_HEADERS)
 		for hname, hvalue in email_to_send._headers:
 			# sign main email headers, except base technical ones 
 			# and other headers not being in the recipients' interest
 			if hname not in CoreTechnicalHeaders + ['Bcc']:
 				signed_email.add_header(hname, hvalue)
+				signed_headers_part._payload += '%s: %s\n' % (hname, hvalue)
+		signed_email.attach(signed_headers_part)
 		# move all attachments under the signed email
 		for part in email_to_send.get_payload():
 			signed_email.attach(part)
@@ -3680,6 +3684,7 @@ MIMETYPE_URILIST = 'text/uri-list'
 MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
+MIMETYPE_HEADERS = 'text/rfc822-headers'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
 RE_EMAIL = '(?P<LP>\w[\w\.+-]*(?<![\.-]))@(?P<DP>(?:(?!-)[a-z\d-]+(?<!-)\.?)+)'
