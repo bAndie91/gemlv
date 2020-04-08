@@ -2808,6 +2808,9 @@ def build_newemail_to_send():
 	if toggle_sign.get_active():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
 		signature_part = MIMEBase('application', 'pgp-signature')
+		for hname, hvalue in email_to_send._headers:
+			if hname not in CoreTechnicalHeaders:
+				signed_email.add_header(hname, hvalue)
 		for part in email_to_send.get_payload():
 			signed_email.attach(part)
 			email_to_send._payload.remove(part)
@@ -3728,6 +3731,12 @@ EditExcludedHeaders = [
 	#'X-*',
 ]
 EditExcludedHeaders.extend(SensitiveHeaders)
+CoreTechnicalHeaders = [
+	HDR_CT,
+	HDR_CTE,
+	HDR_CD,
+	'MIME-Version',
+]
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
