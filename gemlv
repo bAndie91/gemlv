@@ -2820,8 +2820,9 @@ def build_newemail_to_send():
 		for hname, hvalue in email_to_send._headers:
 			# sign main email headers, except base technical ones 
 			# and other headers not being in the recipients' interest
-			if hname not in CoreTechnicalHeaders + ['Bcc']:
-				signed_email.add_header(hname, hvalue)
+			if hname not in ['Bcc']:
+				if hname not in CoreTechnicalHeaders:
+					signed_email.add_header(hname, hvalue)
 				signed_headers_part._payload += '%s: %s\n' % (hname, hvalue)
 		signed_email.attach(signed_headers_part)
 		# move all attachments under the signed email
