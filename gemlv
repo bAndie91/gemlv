@@ -806,7 +806,7 @@ def verify_gpg_signature(message, signature):
 	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
 
 def gpg_sign_data(message, author_address):
-	sgn = gpg.sign(message, keyid=author_address, detach=True)
+	sgn = gpg.sign(message, keyid=('<%s>'%author_address), detach=True)
 	if sgn.data == '':
 		raise GnuPGSignError(sgn.stderr)
 	return sgn.data
