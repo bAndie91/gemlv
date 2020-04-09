@@ -11,7 +11,7 @@ do
 	declare -A new
 	while IFS=: read -r lno text
 	do
-		if sed -ne ${lno}p "$file" | grep -Eq '^\s*#|@notranslate'
+		if sed -ne ${lno}p "$file" | grep -Eq '^\s*(#|")|@notranslate'
 		then
 			continue
 		fi

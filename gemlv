@@ -235,10 +235,8 @@ class cfgparser(object):
 				m = re.search(self.var['regex'], ln)
 				if m:
 					grps = []
-					n = 0
-					for grp in m.groups():
-						n += 1
-						if n in self.var['splitgroups']:
+					for n, grp in enumerate(m.groups()):
+						if n+1 in self.var['splitgroups']:
 							if grp is None:
 								grp = []
 							else:
@@ -810,6 +808,19 @@ def gpg_sign_data(message, author_address):
 	if sgn.data == '':
 		raise GnuPGSignError(sgn.stderr)
 	return sgn.data
+
+def gpg_export_pubkey(addr):
+	"""Returns the ascii-armoured representation (without BEGIN, END marks, or header)
+	of the public key with the given email address"""
+	data = gpg.export_keys('<%s>'%addr, minimal=True)
+	keydata = ''
+	for line in data.split('\n'):
+		if line.startswith('-'): pass
+		elif line.startswith('='): pass
+		elif line == '': keydata = ''
+		else: keydata += line
+		if line.startswith('-----END'): break
+	return keydata
 
 def show_signature_info(*_x):
 	valid = stck_sign_bad.get_data('signature-valid')
@@ -2817,10 +2828,12 @@ def build_newemail_to_send():
 		signature_part = MIMEBase('application', 'pgp-signature')
 		signed_headers_part = MIMEText('')
 		signed_headers_part.set_type(MIMETYPE_HEADERS)
+		signed_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
+		signed_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
 		for hname, hvalue in email_to_send._headers:
 			# sign main email headers, except base technical ones 
 			# and other headers not being in the recipients' interest
-			if hname not in ['Bcc']:
+			if hname not in ['Bcc'] and not hname.startswith('Content-'):
 				if hname not in CoreTechnicalHeaders:
 					signed_email.add_header(hname, hvalue)
 				signed_headers_part._payload += '%s: %s\n' % (hname, hvalue)
@@ -2841,18 +2854,27 @@ def build_newemail_to_send():
 			# this adds a '\n' at the end of the raw multipart/* part:
 			signed_email.epilogue = ''
 		# produce signature
-		signature = generate_signature(email_to_send, data_to_sign)
+		author_email_address, signature = generate_signature(email_to_send, data_to_sign)
 		signature_part.set_payload(signature)
+		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
+		add_autocrypt_headers(email_to_send, author_email_address)
 		email_to_send.attach(signed_email)
 		email_to_send.attach(signature_part)
 	return email_to_send
+
+def add_autocrypt_headers(eml, author_email_address):
+	hname = 'Autocrypt'
+	keydata = gpg_export_pubkey(author_email_address)
+	hvalue = 'addr=%s; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n', keydata))
+	del eml[hname]
+	eml[hname] = hvalue
 
 def generate_signature(main_new_email, data_to_sign):
 	addr = getaddresses(main_new_email.get_all('From') or [])
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
-	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
+	return author_address, gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
@@ -3797,11 +3819,11 @@ class BasicReuseable():
 	def __exit__(self, exc_type, exc_value, exc_traceback):
 		pass
 
+Timers = {}
+gpg = gnupg.GPG(use_agent=True)
 class GnuPGSignError(Exception):
 	pass
 
-Timers = {}
-gpg = gnupg.GPG(use_agent=True)
 
 
 ### Parse Arguments ###
