@@ -206,7 +206,7 @@ class cfgparser(object):
 			if kvargs.has_key(k): self.var[k] = kvargs[k]
 		suff = '.conf'
 		self.filehandlers = []
-		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff), (name + suff,),:
+		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff),:
 			n = os.path.join(*t)
 			try:
 				fh = open(n, 'r')
