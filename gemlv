@@ -2828,15 +2828,16 @@ def build_newemail_to_send():
 		signature_part = MIMEBase('application', 'pgp-signature')
 		signed_headers_part = MIMEText('')
 		signed_headers_part.set_type(MIMETYPE_HEADERS)
+		signed_headers_part.set_charset('UTF-8')
 		signed_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
 		signed_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
+		signed_headers_part.replace_header(HDR_CTE, 'quoted-printable')
 		for hname, hvalue in email_to_send._headers:
 			# sign main email headers, except base technical ones 
 			# and other headers not being in the recipients' interest
-			if hname not in ['Bcc'] and not hname.startswith('Content-'):
-				if hname not in CoreTechnicalHeaders:
-					signed_email.add_header(hname, hvalue)
-				signed_headers_part._payload += '%s: %s\n' % (hname, hvalue)
+			if hname not in ['Bcc'] and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+				signed_email.add_header(hname, hvalue)
+				signed_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=email_to_send).encode('quoted-printable'))
 		signed_email.attach(signed_headers_part)
 		# move all attachments under the signed email
 		for part in email_to_send.get_payload():
@@ -2865,7 +2866,7 @@ def build_newemail_to_send():
 def add_autocrypt_headers(eml, author_email_address):
 	hname = 'Autocrypt'
 	keydata = gpg_export_pubkey(author_email_address)
-	hvalue = 'addr=%s; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n', keydata))
+	hvalue = 'addr=%s; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n ', keydata).rstrip())
 	del eml[hname]
 	eml[hname] = hvalue
 
