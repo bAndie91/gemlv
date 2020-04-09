@@ -10,6 +10,7 @@ import gtk
 import gobject
 import glib
 import pango
+import locale
 import gettext
 import email
 from email.mime.multipart import MIMEMultipart
@@ -2903,6 +2904,10 @@ def update_composer_status_message():
 	status_msgs = [_("Size: %s") % (human_size(size),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
 	if x_sent_date_last:
+		try:
+			dt = email.utils.parsedate_tz(x_sent_date_last)
+			x_sent_date_last = time.strftime('%c', time.localtime(email.utils.mktime_tz(dt)))
+		except TypeError: pass
 		status_msgs.append(_("Sent on %s") % (x_sent_date_last,))
 	tb_comp_label.set_labels(status_msgs)
 
@@ -3675,6 +3680,7 @@ def on_edit_message(tb):
 PROGNAME = 'gemlv'
 VERSION = '0.1'
 USERAGENT = PROGNAME + '/' + VERSION
+locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 setproctitle.setproctitle(PROGNAME)
