@@ -727,7 +727,7 @@ def load_parts(eml, model, parent):
 	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	pixb = None
 	
-	iterator = model.append(parent, [eml, label, stock, pixb])
+	iterator = model.append(parent, [eml, label, stock, pixb, {}])
 	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
 	if PartPrimary is None and content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
@@ -737,21 +737,36 @@ def load_parts(eml, model, parent):
 		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
-			encrypted_part = eml.get_payload()[1]
+			pgp_metadata_part = eml.get_payload()[0]
+			load_parts(pgp_metadata_part, model, iterator)
+			encrypted_part_num = 1
+			encrypted_part = eml.get_payload()[encrypted_part_num]
 			encrypted_data = encrypted_part.as_string()
 			decrypt = gpg.decrypt(encrypted_data)
 			if decrypt.ok:
-				load_parts(eml.get_payload()[0], model, iterator)
 				decrypted_eml = email.message_from_string(decrypt.data)
 				load_parts(decrypted_eml, model, iterator)
-				# Display an open padlock icon
-				model[model.iter_nth_child(iterator, 1)][2] = None
-				model[model.iter_nth_child(iterator, 1)][3] = gtk.icon_theme_get_default().load_icon('changes-allow', gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
-				for other_part in eml.get_payload()[2:]:
-					load_parts(other_part, model, iterator)
-				return
+				iconname = 'changes-allow'
 			else:
+				iconname = 'changes-prevent'
+			
+			if decrypt.key_id is not None:
+				# it's a encrypted and signed message, store signatue info for later
+				model[model.iter_nth_child(iterator, encrypted_part_num)][4]['gpg'] = {
+					'valid': decrypt.valid,
+					'stderr': decrypt.stderr,
+					'username': decrypt.username,
+				}
+			
+			for other_part in eml.get_payload()[2:]:
+				load_parts(other_part, model, iterator)
+			
+			# Display an open/locked padlock icon
+			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
+			model[model.iter_nth_child(iterator, encrypted_part_num)][3] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+			if not decrypt.ok:
 				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
+			return
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
@@ -813,6 +828,7 @@ def gpg_sign_data(message, author_address):
 def gpg_export_pubkey(addr):
 	"""Returns the ascii-armoured representation (without BEGIN, END marks, or header)
 	of the public key with the given email address"""
+	
 	data = gpg.export_keys('<%s>'%addr, minimal=True)
 	keydata = ''
 	for line in data.split('\n'):
@@ -860,30 +876,40 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_open2.set_sensitive(False)
 	btn_save2.set_sensitive(False)
 	gpg_msg = get_gpg_signed_data_from_mime_part(eml)
-	for parent_level, parent_part in get_all_parent_parts(eml):
-		if parent_part.get_content_type() == 'multipart/signed':
-			sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
-			if parent_level == 1 and eml.get_content_type() == sign_protocol:
-				# This part is the signature itself. Skip signature verification.
-				continue
-			stck_sign_bad.show()
-			if sign_protocol is not None:
-				for sibling_part in parent_part.get_payload():
-					if sibling_part.get_content_type() == sign_protocol:
-						sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
-						stck_sign_bad.set_data('signature-valid', sign_verify.valid)
-						stck_sign_bad.set_data('signature-info-text', sign_verify.stderr)
-						if sign_verify.valid:
-							stck_sign_bad.hide()
-							stck_sign_good.show()
-						break
-			if stck_sign_bad.get_visible():
-				if not bypass_signature_verify: return
-			break
+	gpg_signature_valid = None
+	eml_data = Parts[get_part_iter(eml)][4]
+	if eml_data.has_key('gpg'):
+		gpg = eml_data['gpg']
+		gpg_signature_valid = gpg['valid']
+		gpg_signature_info = gpg['stderr']
+	else:
+		for parent_level, parent_part, parent_data in get_all_parent_parts(eml):
+			if parent_part.get_content_type() == 'multipart/signed':
+				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
+				if parent_level == 1 and eml.get_content_type() == sign_protocol:
+					# This part is the signature itself. Skip signature verification.
+					continue
+				if sign_protocol is not None:
+					for sibling_part in parent_part.get_payload():
+						if sibling_part.get_content_type() == sign_protocol:
+							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
+							gpg_signature_valid = sign_verify.valid
+							gpg_signature_info = sign_verify.stderr
+							break
+				break
+			else:
+				# The MIME part we are about to show itself is not signed, but
+				# included in a signed MIME part.
+				gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
+	if gpg_signature_valid is not None:
+		stck_sign_bad.set_data('signature-valid', gpg_signature_valid)
+		stck_sign_bad.set_data('signature-info-text', gpg_signature_info)
+		if gpg_signature_valid:
+			stck_sign_good.show()
 		else:
-			# The MIME part we are about to show itself is not signed, but
-			# included in a signed MIME part.
-			gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
+			stck_sign_bad.show()
+			if not bypass_signature_verify:
+				return
 	
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
@@ -2527,10 +2553,13 @@ def get_part_by_itpath(itpath = None):
 	model = Parts
 	return model.get_value(model.get_iter(itpath), 0)
 
-def get_all_parent_parts(part_asked):
+def get_part_iter(part_asked):
 	lookup = {'iter': None}
 	Parts.foreach(lambda model, path, it, userdata: (userdata.__setitem__('iter', it), model[it][0] == part_asked)[1], lookup)
-	it = lookup['iter']
+	return lookup['iter']
+
+def get_all_parent_parts(part_asked):
+	it = get_part_iter(part_asked)
 	level = 0
 	while True:
 		it = Parts.iter_parent(it)
@@ -2538,7 +2567,7 @@ def get_all_parent_parts(part_asked):
 		if it is None:
 			break
 		else:
-			yield level, Parts[it][0]
+			yield level, Parts[it][0], Parts[it][4]
 
 def load_toolitems(toolbar, toolitems):
 	items = []
@@ -2867,7 +2896,7 @@ def build_newemail_to_send():
 def add_autocrypt_headers(eml, author_email_address):
 	hname = 'Autocrypt'
 	keydata = gpg_export_pubkey(author_email_address)
-	hvalue = 'addr=%s; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+	hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n ', keydata).rstrip())
 	del eml[hname]
 	eml[hname] = hvalue
 
@@ -3909,7 +3938,7 @@ panel_view_subject = gtk.Label(' ')
 spanel_view_subject = Marquee(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
+Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
