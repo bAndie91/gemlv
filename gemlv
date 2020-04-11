@@ -2855,6 +2855,7 @@ def build_newemail_to_send():
 	del email_to_send[HDR_XQID]
 	if toggle_sign.get_active():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
+		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
 		signature_part = MIMEBase('application', 'pgp-signature')
 		signed_headers_part = MIMEText('')
 		signed_headers_part.set_type(MIMETYPE_HEADERS)
