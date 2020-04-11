@@ -842,6 +842,7 @@ def gpg_export_pubkey(addr):
 def show_signature_info(*_x):
 	valid = stck_sign_bad.get_data('signature-valid')
 	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO if valid else gtk.MESSAGE_WARNING)
+	dlg.set_resizable(True)
 	dlg.set_title(_("Signature info"))
 	dlg.set_icon_name('mail-signed')
 	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
