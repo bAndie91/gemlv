@@ -885,6 +885,11 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		gpg_signature_info = gpg['stderr']
 	else:
 		for parent_level, parent_part, parent_data in get_all_parent_parts(eml):
+			if parent_data.has_key('gpg'):
+				gpg = parent_data['gpg']
+				gpg_signature_valid = gpg['valid']
+				gpg_signature_info = gpg['stderr']
+				break
 			if parent_part.get_content_type() == 'multipart/signed':
 				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
 				if parent_level == 1 and eml.get_content_type() == sign_protocol:
@@ -2467,6 +2472,8 @@ def change_font(tv, s):
 
 def on_select_parts(selection):
 	itpaths = selection.get_selected_rows()[1]
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
 	if len(itpaths) > 1:
 		panel_btnbox.show()
 		lbl_right.set_markup(_("Multiple (%s) selected attachments") % (len(itpaths)))
@@ -3859,6 +3866,7 @@ class BasicReuseable():
 
 Timers = {}
 gpg = gnupg.GPG(use_agent=True)
+gpg.encoding = 'utf-8'
 class GnuPGSignError(Exception):
 	pass
 
