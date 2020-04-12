@@ -822,7 +822,7 @@ def verify_gpg_signature(message, signature):
 def gpg_sign_data(message, author_address):
 	sgn = gpg.sign(message, keyid=('<%s>'%author_address), detach=True)
 	if sgn.data == '':
-		raise GnuPGSignError(sgn.stderr)
+		raise GnuPGSignError(sgn)
 	return sgn.data
 
 def gpg_export_pubkey(addr):
@@ -2679,6 +2679,12 @@ def act_send():
 		e.message = _("Crypto-signing error") + '\n\n' + e.message
 		display_error(e)
 		return
+	except GnuPGEncryptError as e:
+		if e.status == 'invalid recipient':
+			# TODO: choose GPG recipients
+			pass
+		display_error(e)
+		return
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -2856,6 +2862,20 @@ def build_newemail():
 	part_body.replace_header(HDR_CTE, enc)
 	part_body.set_payload(text)
 
+def make_protected_headers_part(eml):
+	protected_headers_part = MIMEText('')
+	protected_headers_part.set_type(MIMETYPE_HEADERS)
+	protected_headers_part.set_charset('UTF-8')
+	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
+	protected_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
+	protected_headers_part.replace_header(HDR_CTE, 'quoted-printable')
+	for hname, hvalue in eml._headers:
+		# sign main email headers, except base technical ones 
+		# and other headers not being in the recipients' interest
+		if hname not in ['Bcc'] and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+			protected_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=eml).encode('quoted-printable'))
+	return protected_headers_part
+
 def build_newemail_to_send():
 	build_newemail()
 	email_to_send = email.message_from_string(NewEmail.as_string())
@@ -2866,27 +2886,20 @@ def build_newemail_to_send():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
 		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
 		signature_part = MIMEBase('application', 'pgp-signature')
-		signed_headers_part = MIMEText('')
-		signed_headers_part.set_type(MIMETYPE_HEADERS)
-		signed_headers_part.set_charset('UTF-8')
-		signed_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
-		signed_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
-		signed_headers_part.replace_header(HDR_CTE, 'quoted-printable')
+		protected_headers_part = make_protected_headers_part(email_to_send)
+		signed_email.attach(protected_headers_part)
 		for hname, hvalue in email_to_send._headers:
-			# sign main email headers, except base technical ones 
-			# and other headers not being in the recipients' interest
 			if hname not in ['Bcc'] and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
 				signed_email.add_header(hname, hvalue)
-				signed_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=email_to_send).encode('quoted-printable'))
-		signed_email.attach(signed_headers_part)
 		# move all attachments under the signed email
 		for part in email_to_send.get_payload():
 			signed_email.attach(part)
 			email_to_send._payload.remove(part)
-		# change the root rfc822 email to a multipart/signed email
+		# change the root MIME email to a multipart/signed email
 		email_to_send.set_type('multipart/signed')
 		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
-		# produce data to be signed
+		# produce signature
+		signed_email = email.message_from_string(signed_email.as_string())
 		data_to_sign = signed_email.as_string()
 		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
 		if signed_email.get_content_maintype() == 'multipart' and data_to_sign[-1] != '\n':
@@ -2894,11 +2907,9 @@ def build_newemail_to_send():
 			# there is no trailing '\n' after the closing boundary;
 			# this adds a '\n' at the end of the raw multipart/* part:
 			signed_email.epilogue = ''
-		# produce signature
 		author_email_address, signature = generate_signature(email_to_send, data_to_sign)
 		signature_part.set_payload(signature)
 		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
-		add_autocrypt_headers(email_to_send, author_email_address)
 		email_to_send.attach(signed_email)
 		email_to_send.attach(signature_part)
 	
@@ -2911,6 +2922,9 @@ def build_newemail_to_send():
 			if email_to_send.has_key(hname):
 				saved_headers[hname] = email_to_send[hname]
 				del email_to_send[hname]
+		if not toggle_sign.get_active():
+			protected_headers_part = make_protected_headers_part(email_to_send)
+			email_to_send._payload = [protected_headers_part] + email_to_send._payload
 		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
 		email_to_send.set_payload([])
 		email_to_send.set_type('multipart/encrypted')
@@ -2924,6 +2938,9 @@ def build_newemail_to_send():
 				del email_to_send[hname]
 				email_to_send[hname] = '...'
 	
+	if toggle_sign.get_active():
+		add_autocrypt_headers(email_to_send, author_email_address)
+	
 	return email_to_send
 
 def gpg_encrypt_email(eml):
@@ -2933,8 +2950,7 @@ def gpg_encrypt_email(eml):
 		recipients.extend([a[1] for a in getaddresses(eml.get_all(hname) or [])])
 	crypt = gpg.encrypt(eml.as_string(), map(lambda r: '<%s>'%r, recipients), always_trust=True)
 	if not crypt.ok:
-		raise GnuPGEncryptError(crypt.stderr)
-		# TODO: handle exception at caller
+		raise GnuPGEncryptError(crypt)
 	return crypt.data
 
 def add_autocrypt_headers(eml, author_email_address):
@@ -2944,8 +2960,8 @@ def add_autocrypt_headers(eml, author_email_address):
 	del eml[hname]
 	eml[hname] = hvalue
 
-def generate_signature(main_new_email, data_to_sign):
-	addr = getaddresses(main_new_email.get_all('From') or [])
+def generate_signature(email_root, data_to_sign):
+	addr = getaddresses(email_root.get_all('From') or [])
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
@@ -2962,7 +2978,6 @@ def act_save_edit(save_as=False):
 	if filename is not None:
 		build_newemail()
 		# TODO: 'save in encrypted' option
-		NewEmail = build_newemail_to_send()
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
@@ -3908,10 +3923,15 @@ class BasicReuseable():
 Timers = {}
 gpg = gnupg.GPG(use_agent=True)
 gpg.encoding = 'utf-8'
-class GnuPGSignError(Exception):
-	pass
-class GnuPGEncryptError(Exception):
-	pass
+class GnuPGError(Exception):
+	def __init__(self, x):
+		if isinstance(x, gnupg.Crypt):
+			for k, v in x.__dict__.iteritems(): setattr(self, k, v)
+			self.message = x.stderr
+		else:
+			self.message = x
+class GnuPGSignError(GnuPGError): pass
+class GnuPGEncryptError(GnuPGError): pass
 
 
 ### Parse Arguments ###
