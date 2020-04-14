@@ -41,8 +41,15 @@ Email viewer and composer for local emails in GTK
 	- preserve symlinks
 	- save Message-ID, Content-Type in Extended Attributes
 - Encryption
-	- decrypt encrypted Email (GPG, GnuPG format is supported)
-	- verify GPG signature
+	- decrypt encrypted Email when open (MIME/PGP format is supported)
+	- verify GPG signatures, warn if mismatch
+		- both attached signature and signature which is embedded in the pgp message
+	- encrypt message and attachments before send
+		- hide Bcc recipients in the encrypted message
+		- obfuscate headers
+	- sign email message and attachments (MIME/PGP)
+	- set [Autocrypt](https://autocrypt.org) header
+	- sign and/or encrypt headers too (`text/rfc822-headers` MIME part)
 - [Gravatar](http://www.gravatar.com/) support
 	- you can configure the url to fetch an avatar picture for en email address:
 		- files in precedence: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
@@ -172,10 +179,6 @@ folder structure.
 
 **A.** Consult the docs of your `sendmail` installation. If you have not any, install a tool providing
 `sendmail` command; there are more of them.
-
-**Q.** Why encryption and digital signing do not do anything?
-
-**A.** They are not yet implemented. I do want to implement them.
 
 **Q.** Python 2 ?
 
