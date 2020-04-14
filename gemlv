@@ -2917,6 +2917,7 @@ def build_newemail_to_send():
 		crypt_meta_part = MIMEBase('application', 'pgp-encrypted')
 		crypt_meta_part.set_payload('Version: 1\n')
 		crypt_email = MIMEBase(*MIMETYPE_OCTETSTREAM.split('/'))
+		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
 		saved_headers = {}
 		for hname in ['Bcc']:
 			if email_to_send.has_key(hname):
