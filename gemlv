@@ -2872,7 +2872,7 @@ def make_protected_headers_part(eml):
 	for hname, hvalue in eml._headers:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
-		if hname not in ['Bcc'] and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
 			protected_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=eml).encode('quoted-printable'))
 	return protected_headers_part
 
@@ -2889,7 +2889,7 @@ def build_newemail_to_send():
 		protected_headers_part = make_protected_headers_part(email_to_send)
 		signed_email.attach(protected_headers_part)
 		for hname, hvalue in email_to_send._headers:
-			if hname not in ['Bcc'] and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+			if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
 				signed_email.add_header(hname, hvalue)
 		# move all attachments under the signed email
 		for part in email_to_send.get_payload():
@@ -2918,11 +2918,6 @@ def build_newemail_to_send():
 		crypt_meta_part.set_payload('Version: 1\n')
 		crypt_email = MIMEBase(*MIMETYPE_OCTETSTREAM.split('/'))
 		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
-		saved_headers = {}
-		for hname in ['Bcc']:
-			if email_to_send.has_key(hname):
-				saved_headers[hname] = email_to_send[hname]
-				del email_to_send[hname]
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
 			email_to_send._payload = [protected_headers_part] + email_to_send._payload
@@ -2932,8 +2927,6 @@ def build_newemail_to_send():
 		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-encrypted')
 		email_to_send.attach(crypt_meta_part)
 		email_to_send.attach(crypt_email)
-		for hname, hvalue in saved_headers.iteritems():
-			email_to_send[hname] = hvalue
 		for hname in HeadersObfuscate:
 			if email_to_send.has_key(hname):
 				del email_to_send[hname]
@@ -2946,10 +2939,17 @@ def build_newemail_to_send():
 
 def gpg_encrypt_email(eml):
 	recipients = []
-	for hname in ['From', 'To', 'Cc']:
-		# TODO: warn if there is Bcc (can not encrypt for her without exposing her address in pgp message)
-		recipients.extend([a[1] for a in getaddresses(eml.get_all(hname) or [])])
-	crypt = gpg.encrypt(eml.as_string(), map(lambda r: '<%s>'%r, recipients), always_trust=True)
+	hidden_recipients = []
+	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
+		for hname in hnames:
+			array.extend(['<%s>'%a[1] for a in getaddresses(eml.get_all(hname) or [])])
+	extra_args = []
+	for r in hidden_recipients:
+		extra_args.extend(['--hidden-recipient', r])
+	email_to_encrypt = email.message_from_string(eml.as_string())
+	for hname in DontLeakHeaders:
+		del email_to_encrypt[hname]
+	crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
 	if not crypt.ok:
 		raise GnuPGEncryptError(crypt)
 	return crypt.data
@@ -3898,6 +3898,9 @@ for h in DateTimeHeaders:
 HeadersObfuscate = [
 	'Subject',
 	'Thread-Topic',
+]
+DontLeakHeaders = [
+	'Bcc',
 ]
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'

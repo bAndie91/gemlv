@@ -6,7 +6,7 @@ Maintainer: Andras Hrubak <andreas@uucp.hu>
 Architecture: all
 Version: 0.1
 Depends: python-gtk2, python-magic
-Recommends: mimeopen-gui, python-xattr, python-fuzzywuzzy, python-gnupg (>= 3.0.7)
+Recommends: mimeopen-gui, python-xattr, python-fuzzywuzzy, python-gnupg (>= 0.4.1)
 Suggests:
 Provides: 
 Replaces: 
