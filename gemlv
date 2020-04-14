@@ -10,6 +10,7 @@ import gtk
 import gobject
 import glib
 import pango
+import locale
 import gettext
 import email
 from email.mime.multipart import MIMEMultipart
@@ -35,6 +36,7 @@ import threading
 import time
 import hashlib
 import urllib2
+import gnupg
 import ctypes
 from ctypes.util import find_library
 try:
@@ -65,6 +67,19 @@ except ImportError:
 class gtkWindow(gtk.Window):
 	def set_icon_name(self, name):
 		self.set_icon(gtk.icon_theme_get_default().load_icon(name, gtk.ICON_SIZE_SMALL_TOOLBAR, 0))
+
+class gtkScrolledLabelView(gtk.ScrolledWindow):
+	def __init__(self, text=None):
+		super(self.__class__, self).__init__()
+		self.label = gtk.Label()
+		self.label.set_alignment(0, 0)
+		self.label.set_selectable(True)
+		self.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		self.add_with_viewport(self.label)
+		if text is not None:
+			self.set_text(text)
+	def set_text(self, text):
+		self.label.set_markup('<tt>' + glib.markup_escape_text(text) + '</tt>')
 
 class LabelsToolItem(gtk.ToolItem):
 	def __init__(self):
@@ -191,7 +206,7 @@ class cfgparser(object):
 			if kvargs.has_key(k): self.var[k] = kvargs[k]
 		suff = '.conf'
 		self.filehandlers = []
-		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff), (name + suff,),:
+		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff),:
 			n = os.path.join(*t)
 			try:
 				fh = open(n, 'r')
@@ -221,10 +236,8 @@ class cfgparser(object):
 				m = re.search(self.var['regex'], ln)
 				if m:
 					grps = []
-					n = 0
-					for grp in m.groups():
-						n += 1
-						if n in self.var['splitgroups']:
+					for n, grp in enumerate(m.groups()):
+						if n+1 in self.var['splitgroups']:
 							if grp is None:
 								grp = []
 							else:
@@ -559,11 +572,16 @@ def main_thread_alive():
 			break
 	return alive
 
+RE_HEADERPARAM = '(\\b%s)(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
+
 def get_header_parameter(text, param):
-	for g1, g2 in re.findall('\\b' + re.escape(param) + '=(?:\x22([^\x22]+)\x22|([^\s;]+))', text or ''):
-		if g1 != '': return g1
-		if g2 != '': return g2
+	for left, right, dqval, val in re.findall(RE_HEADERPARAM % (re.escape(param),), text or ''):
+		if dqval != '': return dqval
+		if val != '': return val
 	return None
+
+def set_header_parameter(eml, hname, param, pvalue):
+	return eml.set_param(param, pvalue, hname)
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
@@ -604,11 +622,17 @@ def fix_unquoted_comma(s):
 		if probably_realname_norm == '' or probably_realname_norm.startswith('"') or probably_realname.find(',')==-1:
 			return m.group(0)
 		else:
-			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))
+			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
 	return re.sub('(^|,)(.+)(<)', repl, s)
 
 def getaddresses(array):
 	return email.utils.getaddresses(map(fix_unquoted_comma, array))
+
+def getaddress(s):
+	addrs = getaddresses([s or ''])
+	if len(addrs) == 0:
+		return None
+	return addrs[0]
 
 ### private functions ###
 
@@ -698,19 +722,54 @@ def load_parts(eml, model, parent):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
+	content_type = eml.get_content_type()
 	
-	label = PMU_MIME + glib.markup_escape_text(eml.get_content_type()) + PMU_MIME_CLOSE
+	label = PMU_MIME + glib.markup_escape_text(content_type) + PMU_MIME_CLOSE
 	filename = decode_mimetext(eml.get_filename())
 	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
 	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
 	pixb = None
 	
-	iterator = model.append(parent, [eml, label, stock, pixb])
-	# Note, buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
-	if PartPrimary is None and eml.get_content_type() == MIMETYPE_TEXT:
+	iterator = model.append(parent, [eml, label, stock, pixb, {}])
+	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
+	if PartPrimary is None and content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
-	if PartSecondary is None and eml.get_content_type() == MIMETYPE_HTML:
+	if PartSecondary is None and content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
+	if content_type == 'multipart/encrypted':
+		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
+		if crypto_protocol == 'application/pgp-encrypted':
+			# RFC3156
+			pgp_metadata_part = eml.get_payload()[0]
+			load_parts(pgp_metadata_part, model, iterator)
+			encrypted_part_num = 1
+			encrypted_part = eml.get_payload()[encrypted_part_num]
+			encrypted_data = encrypted_part.as_string()
+			decrypt = gpg.decrypt(encrypted_data)
+			if decrypt.ok:
+				decrypted_eml = email.message_from_string(decrypt.data)
+				load_parts(decrypted_eml, model, iterator)
+				iconname = 'changes-allow'
+			else:
+				iconname = 'changes-prevent'
+			
+			if decrypt.key_id is not None:
+				# it's a encrypted and signed message, store signatue info for later
+				model[model.iter_nth_child(iterator, encrypted_part_num)][4]['gpg'] = {
+					'valid': decrypt.valid,
+					'stderr': decrypt.stderr,
+					'username': decrypt.username,
+				}
+			
+			for other_part in eml.get_payload()[2:]:
+				load_parts(other_part, model, iterator)
+			
+			# Display an open/locked padlock icon
+			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
+			model[model.iter_nth_child(iterator, encrypted_part_num)][3] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+			if not decrypt.ok:
+				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
+			return
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
@@ -752,12 +811,117 @@ def get_email_part_size_net(eml):
 	if raw_part is None: raw_part = eml.as_string()
 	return len(raw_part)
 
-def load_part(eml, filt=None):
+def get_gpg_signed_data_from_mime_part(eml):
+	gpg_msg = eml.as_string().replace('\n', '\r\n')
+	return gpg_msg
+
+def verify_gpg_signature(message, signature):
+	sgn_r, sgn_w = os.pipe()
+	sgn_fh = os.fdopen(sgn_w, 'w')
+	sgn_fh.write(signature)
+	sgn_fh.close()
+	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
+
+def gpg_sign_data(message, author_address):
+	sgn = gpg.sign(message, keyid=('<%s>'%author_address), detach=True)
+	if sgn.data == '':
+		raise GnuPGSignError(sgn)
+	return sgn.data
+
+def gpg_export_pubkey(addr):
+	"""Returns the ascii-armoured representation (without BEGIN, END marks, or header)
+	of the public key with the given email address"""
+	
+	data = gpg.export_keys('<%s>'%addr, minimal=True)
+	keydata = ''
+	for line in data.split('\n'):
+		if line.startswith('-'): pass
+		elif line.startswith('='): pass
+		elif line == '': keydata = ''
+		else: keydata += line
+		if line.startswith('-----END'): break
+	return keydata
+
+def show_signature_info(*_x):
+	valid = stck_sign_bad.get_data('signature-valid')
+	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO if valid else gtk.MESSAGE_WARNING)
+	dlg.set_resizable(True)
+	dlg.set_title(_("Signature info"))
+	dlg.set_icon_name('mail-signed')
+	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
+	dlg.set_markup(glib.markup_escape_text(_("Digital signature is validated. See details below.") if valid else _("The digital signature on this email/attachment could not be validated. The email might be forged.")))
+	if not valid:
+		dlg.add_action_widget(StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
+	dlg.add_buttons(gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE)
+	dlg.set_default_response(gtk.RESPONSE_CLOSE)
+	
+	carea = dlg.get_content_area()
+	carea.pack_start(gtkScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
+	
+	dlg.show_all()
+	resp = dlg.run()
+	if resp == gtk.RESPONSE_APPLY:
+		load_part(stck_sign_bad.get_data('email-part'), filt=stck_sign_bad.get_data('filtering'), bypass_signature_verify=True)
+	dlg.destroy()
+
+def load_part(eml, filt=None, bypass_signature_verify=False):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
 	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 	loaded_text = None
+	
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
+	stck_sign_bad.set_data('email-part', eml)
+	stck_sign_bad.set_data('filtering', filt)
+	stck_sign_bad.set_data('signature-valid', None)
+	stck_sign_bad.set_data('signature-info-text', 'n/a')
+	btn_open2.set_sensitive(False)
+	btn_save2.set_sensitive(False)
+	gpg_msg = get_gpg_signed_data_from_mime_part(eml)
+	gpg_signature_valid = None
+	eml_data = Parts[get_part_iter(eml)][4]
+	if eml_data.has_key('gpg'):
+		gpg = eml_data['gpg']
+		gpg_signature_valid = gpg['valid']
+		gpg_signature_info = gpg['stderr']
+	else:
+		for parent_level, parent_part, parent_data in get_all_parent_parts(eml):
+			if parent_data.has_key('gpg'):
+				gpg = parent_data['gpg']
+				gpg_signature_valid = gpg['valid']
+				gpg_signature_info = gpg['stderr']
+				break
+			if parent_part.get_content_type() == 'multipart/signed':
+				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
+				if parent_level == 1 and eml.get_content_type() == sign_protocol:
+					# This part is the signature itself. Skip signature verification.
+					continue
+				if sign_protocol is not None:
+					for sibling_part in parent_part.get_payload():
+						if sibling_part.get_content_type() == sign_protocol:
+							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
+							gpg_signature_valid = sign_verify.valid
+							gpg_signature_info = sign_verify.stderr
+							break
+				break
+			else:
+				# The MIME part we are about to show itself is not signed, but
+				# included in a signed MIME part.
+				gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
+	if gpg_signature_valid is not None:
+		stck_sign_bad.set_data('signature-valid', gpg_signature_valid)
+		stck_sign_bad.set_data('signature-info-text', gpg_signature_info)
+		if gpg_signature_valid:
+			stck_sign_good.show()
+		else:
+			stck_sign_bad.show()
+			if not bypass_signature_verify:
+				return
+	
+	btn_open2.set_sensitive(True)
+	btn_save2.set_sensitive(True)
 	
 	if eml['Content-Location']:
 		uri = eml['Content-Location']
@@ -771,7 +935,7 @@ def load_part(eml, filt=None):
 		filt = get_filter_by_mime(ct_main, ct_sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == type([]) and (eml.preamble is not None or eml.epilogue is not None):
+		if type(eml.get_payload()) == type([]) and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
 			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 			set_content_text(text)
 			loaded_text = text
@@ -820,9 +984,9 @@ def load_part(eml, filt=None):
 		panel_btnbox.hide()
 		panel_content_image.hide()
 		spanel_content.show()
-	if spanel_content.get_data('loaded-part') != eml:
+	if spanel_content.get_data('-loaded-part') != eml:
 		spanel_content.get_vadjustment().set_value(0.0)
-	spanel_content.set_data('loaded-part', eml)
+	spanel_content.set_data('-loaded-part', eml)
 	if ct_main == 'text' and loaded_text is not None:
 		spanel_content.set_data('last-loaded-text', loaded_text)
 
@@ -872,7 +1036,7 @@ def decode_header(s, unfold=False, eml=None):
 			encodings = ['utf-8']
 			if eml:
 				for _x, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part['Content-Type'] or '', re.I)
+					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
 					if m:
 						encodings.append(m.group(1))
 			for encoding in encodings:
@@ -1013,7 +1177,7 @@ def get_headers_markup(eml):
 				for realname, addr in getaddresses([hval]):
 					realname = decode_header(realname, eml=eml)
 					addr_mu = glib.markup_escape_text(addr)
-					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"').encode('utf-8'), addr_mu)) if realname else addr_mu
+					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"').encode('utf-8'), addr_mu)) if realname else addr_mu  # @notranslate
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
@@ -1099,11 +1263,10 @@ def get_stock_by_mime(main, sub):
 		'text/calendar': 'x-office-calendar',
 		'inode/directory': gtk.STOCK_DIRECTORY,
 		'inode/x-empty': 'document-new',
+		'multipart/digest': 'emblem-mail',
 	}
 	full = main + '/' + sub
 	
-	if full == 'multipart/digest':
-		return 'emblem-mail'
 	if assoc_full.has_key(full):
 		return assoc_full[full]
 	elif assoc_main.has_key(main):
@@ -1113,7 +1276,7 @@ def get_stock_by_mime(main, sub):
 		return main + '-' + sub
 	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
 		return main + '-x-generic'
-
+	
 	return gtk.STOCK_FILE
 
 def sighandler(sign, frame):
@@ -1935,7 +2098,7 @@ def act_reply(compose_type):
 			composer_maintain_references_headers()
 			
 			reply_fulladdress = guess_reply_address()
-			reply_address = email.utils.parseaddr(reply_fulladdress)[1]
+			reply_address = getaddress(reply_fulladdress)[1]
 			listaddress = get_listaddress_main()
 			
 			if compose_type == COMPOSE_REPLY:
@@ -1944,8 +2107,9 @@ def act_reply(compose_type):
 				skip_addresses = [my_address, reply_address, '']
 				rcpt_addresses = []
 				
-				if reply_address != '' and reply_address != my_address:
+				if reply_address and reply_address != my_address:
 					add_composer_header('To', reply_fulladdress)
+					rcpt_addresses.append(reply_address)
 				for h in 'To', 'Cc':
 					for addrspec in filter_out_addresses(skip_addresses, get_all_headers_main(h)):
 						# get_all_headers_main() gives back realnames decoded
@@ -2323,6 +2487,8 @@ def change_font(tv, s):
 
 def on_select_parts(selection):
 	itpaths = selection.get_selected_rows()[1]
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
 	if len(itpaths) > 1:
 		panel_btnbox.show()
 		lbl_right.set_markup(_("Multiple (%s) selected attachments") % (len(itpaths)))
@@ -2410,6 +2576,22 @@ def get_part_by_itpath(itpath = None):
 	model = Parts
 	return model.get_value(model.get_iter(itpath), 0)
 
+def get_part_iter(part_asked):
+	lookup = {'iter': None}
+	Parts.foreach(lambda model, path, it, userdata: (userdata.__setitem__('iter', it), model[it][0] == part_asked)[1], lookup)
+	return lookup['iter']
+
+def get_all_parent_parts(part_asked):
+	it = get_part_iter(part_asked)
+	level = 0
+	while True:
+		it = Parts.iter_parent(it)
+		level += 1
+		if it is None:
+			break
+		else:
+			yield level, Parts[it][0], Parts[it][4]
+
 def load_toolitems(toolbar, toolitems):
 	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
@@ -2495,18 +2677,29 @@ def validate_all_comp_headers():
 	return True
 
 def act_send():
-	msg = ''
+	err_msg = ''
 	if not validate_all_comp_headers():
 		return
 	if not get_composer_subject():
-		msg += _("No Subject.") + '\n'
+		err_msg += _("No Subject.") + '\n'
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		msg += _("No any Recipient.") + '\n'
-	if msg != '':
-		msg += _("Send anyway?")
-		if not question(msg, (_("Send"), 'mail-send')):
+		err_msg += _("No any Recipient.") + '\n'
+	if err_msg != '':
+		err_msg += _("Send anyway?")
+		if not question(err_msg, (_("Send"), 'mail-send')):
 			return
-	build_newemail()
+	try:
+		email_to_send = build_newemail_to_send()
+	except GnuPGSignError as e:
+		e.message = _("Crypto-signing error") + '\n\n' + e.message
+		display_error(e)
+		return
+	except GnuPGEncryptError as e:
+		if e.status == 'invalid recipient':
+			# TODO: choose GPG recipients
+			pass
+		display_error(e)
+		return
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -2517,12 +2710,7 @@ def act_send():
 	
 	carea = dlg.get_content_area()
 	progressbar = gtk.ProgressBar()
-	details = gtk.ScrolledWindow()
-	details_text = gtk.Label()
-	details_text.set_alignment(0, 0)
-	details_text.set_selectable(True)
-	details.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	details.add_with_viewport(details_text)
+	details = gtkScrolledLabelView()
 	carea.pack_start(progressbar, False, True)
 	carea.pack_start(details, True, True)
 	
@@ -2536,10 +2724,10 @@ def act_send():
 	details.hide()
 	btn_show_details.hide()
 	
-	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details_text))
+	thrd = threading.Thread(target=sending_thread, args=(dlg, progressbar, btn_cancel, btn_show_details, details, email_to_send))
 	thrd.start()
 
-def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text):
+def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widget, email_to_send):
 	global StopSending
 	StopSending = False
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -2565,7 +2753,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 	child_write.close()
 	set_blocking(parent_write, False)
 	resp = ''
-	text = NewEmail.as_string()
+	text = email_to_send.as_string()
 	pos = 0
 	bufsize = 4096
 	length = len(text)
@@ -2618,13 +2806,13 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
 		sendmail_queue_id = resp.strip().split('\n')[-1]
-		add_composer_header('X-Queue-ID', sendmail_queue_id)
+		add_composer_header(HDR_XQID, sendmail_queue_id)
 		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
 			origin_email_file = win_main.get_data('email-file')
-			MsgId = NewEmail[HDR_MID]
+			MsgId = email_to_send[HDR_MID]
 			for xattrname in win_comp.get_data('add-msgid-xattr-on-send'):
 				append_xattrs(origin_email_fh, {xattrname: MsgId}, origin_email_file, glue=',')
 		# Save queue id to the composed email file's xattr.
@@ -2636,7 +2824,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_text)
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
-	details_text.set_markup('<tt>' + glib.markup_escape_text(resp) + '</tt>')
+	details_widget.set_text(resp)
 	update_composer_status_message()
 	gtk.threads_leave()
 
@@ -2689,6 +2877,112 @@ def build_newemail():
 	part_body.replace_header(HDR_CTE, enc)
 	part_body.set_payload(text)
 
+def make_protected_headers_part(eml):
+	protected_headers_part = MIMEText('')
+	protected_headers_part.set_type(MIMETYPE_HEADERS)
+	protected_headers_part.set_charset('UTF-8')
+	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
+	protected_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
+	protected_headers_part.replace_header(HDR_CTE, 'quoted-printable')
+	for hname, hvalue in eml._headers:
+		# sign main email headers, except base technical ones 
+		# and other headers not being in the recipients' interest
+		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+			protected_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=eml).encode('quoted-printable'))
+	return protected_headers_part
+
+def build_newemail_to_send():
+	build_newemail()
+	email_to_send = email.message_from_string(NewEmail.as_string())
+	del email_to_send[HDR_XSD]
+	del email_to_send[HDR_XQID]
+	
+	if toggle_sign.get_active():
+		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
+		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
+		signature_part = MIMEBase('application', 'pgp-signature')
+		protected_headers_part = make_protected_headers_part(email_to_send)
+		signed_email.attach(protected_headers_part)
+		for hname, hvalue in email_to_send._headers:
+			if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
+				signed_email.add_header(hname, hvalue)
+		# move all attachments under the signed email
+		for part in email_to_send.get_payload():
+			signed_email.attach(part)
+			email_to_send._payload.remove(part)
+		# change the root MIME email to a multipart/signed email
+		email_to_send.set_type('multipart/signed')
+		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+		# produce signature
+		signed_email = email.message_from_string(signed_email.as_string())
+		data_to_sign = signed_email.as_string()
+		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
+		if signed_email.get_content_maintype() == 'multipart' and data_to_sign[-1] != '\n':
+			data_to_sign += '\n'
+			# there is no trailing '\n' after the closing boundary;
+			# this adds a '\n' at the end of the raw multipart/* part:
+			signed_email.epilogue = ''
+		author_email_address, signature = generate_signature(email_to_send, data_to_sign)
+		signature_part.set_payload(signature)
+		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
+		email_to_send.attach(signed_email)
+		email_to_send.attach(signature_part)
+	
+	if toggle_encrypt.get_active():
+		crypt_meta_part = MIMEBase('application', 'pgp-encrypted')
+		crypt_meta_part.set_payload('Version: 1\n')
+		crypt_email = MIMEBase(*MIMETYPE_OCTETSTREAM.split('/'))
+		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
+		if not toggle_sign.get_active():
+			protected_headers_part = make_protected_headers_part(email_to_send)
+			email_to_send._payload = [protected_headers_part] + email_to_send._payload
+		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
+		email_to_send.set_payload([])
+		email_to_send.set_type('multipart/encrypted')
+		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-encrypted')
+		email_to_send.attach(crypt_meta_part)
+		email_to_send.attach(crypt_email)
+		for hname in HeadersObfuscate:
+			if email_to_send.has_key(hname):
+				del email_to_send[hname]
+				email_to_send[hname] = '...'
+	
+	if toggle_sign.get_active():
+		add_autocrypt_headers(email_to_send, author_email_address)
+	
+	return email_to_send
+
+def gpg_encrypt_email(eml):
+	recipients = []
+	hidden_recipients = []
+	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
+		for hname in hnames:
+			array.extend(['<%s>'%a[1] for a in getaddresses(eml.get_all(hname) or [])])
+	extra_args = []
+	for r in hidden_recipients:
+		extra_args.extend(['--hidden-recipient', r])
+	email_to_encrypt = email.message_from_string(eml.as_string())
+	for hname in DontLeakHeaders:
+		del email_to_encrypt[hname]
+	crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
+	if not crypt.ok:
+		raise GnuPGEncryptError(crypt)
+	return crypt.data
+
+def add_autocrypt_headers(eml, author_email_address):
+	hname = 'Autocrypt'
+	keydata = gpg_export_pubkey(author_email_address)
+	hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+	del eml[hname]
+	eml[hname] = hvalue
+
+def generate_signature(email_root, data_to_sign):
+	addr = getaddresses(email_root.get_all('From') or [])
+	if len(addr) != 1:
+		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
+	author_address = addr[0][1]
+	return author_address, gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
+
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
 	ask_overwrite = False
@@ -2699,6 +2993,7 @@ def act_save_edit(save_as=False):
 		filename = choose_save_file(_("Draft") + subj + '.eml')
 	if filename is not None:
 		build_newemail()
+		# TODO: 'save in encrypted' option
 		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
@@ -2715,6 +3010,10 @@ def update_composer_status_message():
 	status_msgs = [_("Size: %s") % (human_size(size),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
 	if x_sent_date_last:
+		try:
+			dt = email.utils.parsedate_tz(x_sent_date_last)
+			x_sent_date_last = time.strftime('%c', time.localtime(email.utils.mktime_tz(dt)))
+		except TypeError: pass
 		status_msgs.append(_("Sent on %s") % (x_sent_date_last,))
 	tb_comp_label.set_labels(status_msgs)
 
@@ -3304,16 +3603,10 @@ def drag_part_end(wdg, context):
 	if tmp_dir_path:
 		recursive_rm(tmp_dir_path)
 
-def act_encrypt():
-	pass
-
-def act_sign():
-	pass
-
 def act_dispos_notif():
 	if open_composer():
 		NewEmail.set_type('multipart/report')
-		NewEmail.set_param('report-type', 'disposition-notification', header='Content-Type')
+		NewEmail.set_param('report-type', 'disposition-notification', header=HDR_CT)
 		
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
@@ -3363,7 +3656,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, ''])
+		Attachments.append(None, [dn_part, _("Ask Disposition Notification"), 'mail-mark-read', None, ''])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -3493,6 +3786,7 @@ def on_edit_message(tb):
 PROGNAME = 'gemlv'
 VERSION = '0.1'
 USERAGENT = PROGNAME + '/' + VERSION
+locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 setproctitle.setproctitle(PROGNAME)
@@ -3507,8 +3801,9 @@ PMU_WARN_CLOSE = '</span>'
 PMU_SUBJ = '<big>'
 PMU_SUBJ_CLOSE = '</big>'
 PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
-PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color="gray30">%s</span></i>'
+PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color=\'gray30\'>%s</span></i>'
 PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
+HDR_CT = 'Content-Type'
 HDR_CD = 'Content-Disposition'
 HDR_CTE = 'Content-Transfer-Encoding'
 HDR_DNT = 'Disposition-Notification-To'
@@ -3518,12 +3813,14 @@ HDR_OR = 'Original-Recipient'
 HDR_MID = 'Message-ID'
 HDR_REF = 'References'
 HDR_XSD = 'X-Sent-Date'
+HDR_XQID = 'X-Queue-ID'
 MIMETYPE_OCTETSTREAM = 'application/octet-stream'
 MIMETYPE_EMAIL = 'message/rfc822'
 MIMETYPE_URILIST = 'text/uri-list'
 MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
+MIMETYPE_HEADERS = 'text/rfc822-headers'
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
 Precedences = ['list', 'junk', 'bulk']
@@ -3608,7 +3905,7 @@ EditExcludedHeaders = [
 	'Received-*',
 	'X-Originating-IP',
 	# TODO: technical headers
-	#'Content-Type',
+	#HDR_CT,
 	#'X-MS-*',
 	#'X-*',
 ]
@@ -3620,6 +3917,12 @@ AddressbookHeaders = [
 	'To',
 	'Cc',
 	'Bcc',
+]
+CoreTechnicalHeaders = [
+	HDR_CT,
+	HDR_CTE,
+	HDR_CD,
+	'MIME-Version',
 ]
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
@@ -3641,6 +3944,13 @@ AutocompletionHeaders = {
 	'Priority': Priorities,
 	'Precedence': Precedences,
 }
+HeadersObfuscate = [
+	'Subject',
+	'Thread-Topic',
+]
+DontLeakHeaders = [
+	'Bcc',
+]
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
 XATTR_ORIGIN = 'user.xdg.origin.email.message-id'
@@ -3664,6 +3974,17 @@ class BasicReuseable():
 		pass
 
 Timers = {}
+gpg = gnupg.GPG(use_agent=True)
+gpg.encoding = 'utf-8'
+class GnuPGError(Exception):
+	def __init__(self, x):
+		if isinstance(x, gnupg.Crypt):
+			for k, v in x.__dict__.iteritems(): setattr(self, k, v)
+			self.message = x.stderr
+		else:
+			self.message = x
+class GnuPGSignError(GnuPGError): pass
+class GnuPGEncryptError(GnuPGError): pass
 
 
 ### Parse Arguments ###
@@ -3742,7 +4063,7 @@ panel_view_subject = gtk.Label(' ')
 spanel_view_subject = Marquee(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf)
+Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
@@ -3871,6 +4192,8 @@ toolbuttons = [
 	(None, 'mail-forward', "Forwarded", None, None),
 	(None, 'mail-mark-read', "MDN is sent", None, None),
 	(None, 'mail-mark-junk', "Spam", None, None),
+	(None, 'mail-signed-verified', "Valid signature", show_signature_info, None),
+	(None, 'dialog-warning', "Invalid signature", show_signature_info, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save and Keep Structure", act_save, act_save_struct),
@@ -3879,7 +4202,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, x_, btn_open2, btn_save2, x_, x, x, btn_font \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, x_, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
@@ -4007,8 +4330,8 @@ for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 toolbuttons = [
 	(None, LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, StockToggleToolButton('dialog-password'), "Encrypt", act_encrypt, None),
-	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", act_sign, None),
+	(None, StockToggleToolButton('dialog-password'), "Encrypt", None, None),
+	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
 	(None, StockToggleToolButton('mail-mark-read'), "Disposition Notification", act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
 	("Unimportant", StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
@@ -4018,7 +4341,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_edit_message),
 	ToolItemDeclaration_font(panel_edit_message),
 ]
-tb_comp_label, x_, x, x, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
+tb_comp_label, x_, toggle_encrypt, toggle_sign, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
 = load_toolitems(tb_comp_controls, toolbuttons)
 toggle_rqdn.connect('toggled', on_toggled)
 toggle_unimportant.connect('toggled', on_toggled)
@@ -4124,7 +4447,11 @@ else:
 	stck_fwd.hide()
 	stck_mdn.hide()
 	stck_spam.hide()
+	stck_sign_good.hide()
+	stck_sign_bad.hide()
 
 gtk.main()
 if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
+
+# TODO: make .set_label and .set_text consistent on gtk.Label()s

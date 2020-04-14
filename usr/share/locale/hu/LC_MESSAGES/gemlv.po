@@ -283,8 +283,8 @@ msgstr "Kiveszed a <tt>%s</tt> mappából át a <tt>%s</tt>-ba?"
 msgid "Take out"
 msgstr "Ki"
 
-msgid "Disposition Notification"
-msgstr "Tértivevény"
+msgid "Ask Disposition Notification"
+msgstr "Tértivevény kérése"
 
 msgid "Disposition Notification: {subject}"
 msgstr "Tértivevény: {subject}"
@@ -379,3 +379,30 @@ msgstr "Érvénytelen bevitel"
 
 msgid "Strange input; maybe double check"
 msgstr "Szokatlan bevitel; ellenőrizze"
+
+msgid "Signature info"
+msgstr "Aláírás infó"
+
+msgid "Digital signature is validated. See details below."
+msgstr "A digitális aláírás ellenőrizve. Részletek lent."
+
+msgid "The digital signature on this email/attachment could not be validated. The email might be forged."
+msgstr "A digital aláírás ezen az emailen/csatolmányon nem érvényes vagy nem lehet ellenőrizni. Lehetséges, hogy hamis."
+
+msgid "View anyway"
+msgstr "Megtekintés mégis"
+
+msgid "Valid signature"
+msgstr "Érvényes aláírás"
+
+msgid "Invalid signature"
+msgstr "Érvénytelen aláírás"
+
+msgid "Decryption error"
+msgstr "Titkosítás-visszafejtési hiba"
+
+msgid "No 'From' address (or more of them) given to match a GPG key to crypto-sign with."
+msgstr "Nincs 'From' feladó cím (vagy több van), ami alapján GPG kulcsot találnék az aláírás elvégzéséhez."
+
+msgid "Crypto-signing error"
+msgstr "Hiba digitális aláírás közben"
