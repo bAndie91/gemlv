@@ -790,7 +790,9 @@ def load_part(eml, filt=None):
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
-				label = label + '\n' + _("Size: %s" % (human_size(get_email_part_size_net(eml)),))
+				content_description = eml['Content-Description']
+				if content_description is not None: label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
+				label += '\n' + _("Size: %s") % (human_size(get_email_part_size_net(eml)),)
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()

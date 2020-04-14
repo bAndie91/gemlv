@@ -362,6 +362,9 @@ msgstr "Részletek elrejtése"
 msgid "Size: %s"
 msgstr "Méret: %s"
 
+msgid "Content Description by sender: %s%s%s"
+msgstr "Tartalom leírása a küldő szerint: %s%s%s"
+
 msgid "Sent on %s"
 msgstr "Elküldve %s"
 
