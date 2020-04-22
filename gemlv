@@ -1025,10 +1025,10 @@ def decode_mimetext(s):
 
 def decode_header(s, unfold=False, eml=None):
 	chunks = []
+	if unfold:
+		s = re.sub('\r?\n\s*', ' ', s)
 	for chars, encoding in email.header.decode_header(s):
 		if encoding is None:
-			if unfold:
-				chars = re.sub('\r?\n\s*', ' ', chars)
 			# encoding is not specified in this header
 			# first try to decode in UTF-8
 			# then guess by other available encodings in the email
@@ -1129,11 +1129,9 @@ def load_gravatar(addr, container):
 
 def get_listaddress_main():
 	try:
-		# Hopefully there is only one list address.
+		# Assuming there is only one list address.
 		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []))[0]['to']
-	except IndexError:
-		listaddress = None
-	except KeyError:
+	except (IndexError, KeyError):
 		listaddress = None
 	return listaddress
 
@@ -2068,6 +2066,7 @@ def act_reply(compose_type):
 		subj = get_one_header_main('Subject') or ''
 		body = '\n\n' + get_user_signature()
 		my_address = guess_my_address()
+		add_composer_header('From', my_address)
 		
 		if compose_type == COMPOSE_FORWARD:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
@@ -2075,6 +2074,7 @@ def act_reply(compose_type):
 			pre = _("Fwd: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
+			# TODO: maintain Thread-Topic header here in forwards too?
 			add_composer_header('To', '')
 			composer_maintain_references_headers()
 			
