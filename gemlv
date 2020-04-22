@@ -2801,13 +2801,14 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		with BasicReuseable(_("Email is sent.")) as s:
 			dlg.set_title(s)
 			dlg.set_markup(s)
-		win_comp.set_data('email-sent', True)
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
 		sendmail_queue_id = resp.strip().split('\n')[-1]
 		add_composer_header(HDR_XQID, sendmail_queue_id)
 		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
+		win_comp.set_data('email-sent', True)
+		panel_edit_message.get_buffer().set_modified(False)
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
@@ -2989,8 +2990,14 @@ def act_save_edit(save_as=False):
 	if filename is None or save_as:
 		ask_overwrite = True
 		subj = get_composer_subject()
-		if subj: subj = ' - ' + subj
-		filename = choose_save_file(_("Draft") + subj + '.eml')
+		proposed_filename = ''
+		if not win_comp.get_data('email-sent') or not subj:
+			proposed_filename += _("Draft")
+		if subj:
+			if proposed_filename: proposed_filename += ' - '
+			proposed_filename += subj
+		proposed_filename += '.eml'
+		filename = choose_save_file(proposed_filename)
 	if filename is not None:
 		build_newemail()
 		# TODO: 'save in encrypted' option
