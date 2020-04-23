@@ -1923,13 +1923,30 @@ def on_change_message(wdg):
 	win_comp.set_data('is-auto-saved', False)
 
 def set_composer_text(s):
-	bufr = panel_edit_message.get_buffer()
-	bufr.set_text(s)
-	bufr.place_cursor(bufr.get_start_iter())
+	composer_text_buffer.set_text(s)
+	composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
+
+def clear_composer_text():
+	composer_text_buffer.delete(composer_text_buffer.get_start_iter(), composer_text_buffer.get_end_iter())
 
 def get_composer_text():
-	bufr = panel_edit_message.get_buffer()
-	return bufr.get_text(bufr.get_start_iter(), bufr.get_end_iter(), True)
+	return composer_text_buffer.get_text(composer_text_buffer.get_start_iter(), composer_text_buffer.get_end_iter(), True)
+
+def append_composer_text(text, pre=None, post=None, markername=None, where=lambda:composer_text_buffer.get_end_iter()):
+	if pre is not None:
+		composer_text_buffer.insert(where(), pre)
+	itr = where()
+	if markername is not None:
+		composer_text_buffer.create_mark(markername+'-start', where(), left_gravity=True)
+		itr = composer_text_buffer.get_iter_at_mark(composer_text_buffer.get_mark(markername+'-start'))
+	composer_text_buffer.insert(itr, text)
+	if markername is not None:
+		composer_text_buffer.create_mark(markername+'-end', where(), left_gravity=True)
+	if post is not None:
+		composer_text_buffer.insert(where(), post)
+
+def append_composer_text_user_signature():
+	append_composer_text(get_user_signature(), pre='\n\n', markername='user_signature')
 
 def open_composer():
 	if win_comp.get_visible():
@@ -1958,8 +1975,8 @@ def open_composer():
 	for h in SenderHeaders:
 		add_composer_header(h).cancel()
 	set_composer_subject('')
-	set_composer_text('')
-
+	clear_composer_text()
+	
 	win_comp.set_data('is-an-mdn', False)
 	win_comp.set_data('add-msgid-xattr-on-send', [])
 	win_comp.set_data('saved-to-file', None)
@@ -2056,7 +2073,9 @@ def act_compose():
 		add_composer_agent_headers()
 		add_composer_header('To', '')
 		set_composer_subject('')
-		set_composer_text('\n\n' + get_user_signature())
+		clear_composer_text()
+		append_composer_text_user_signature()
+		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
@@ -2064,7 +2083,9 @@ def act_reply(compose_type):
 	if open_composer():
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
-		body = '\n\n' + get_user_signature()
+		clear_composer_text()
+		append_composer_text_user_signature()
+		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_address = guess_my_address()
 		add_composer_header('From', my_address)
 		
@@ -2091,7 +2112,7 @@ def act_reply(compose_type):
 			pre = _("Re: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
-			body += '\n' + _("Quote:") + '\n\n' + quote_message()
+			append_composer_text(_("Quote:") + '\n\n' + quote_message(), pre='\n', markername='quoted_message')
 			
 			messageid = get_one_header_main(HDR_MID)
 			add_composer_header('In-Reply-To', messageid)
@@ -2120,7 +2141,7 @@ def act_reply(compose_type):
 			elif compose_type == COMPOSE_REPLY_LIST:
 				add_composer_header('To', listaddress)
 		
-		set_composer_text(body)
+		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
@@ -2542,7 +2563,6 @@ def populate_header_menu(label, menu):
 	menu.append(gtk.SeparatorMenuItem())
 	mi = gtk.CheckMenuItem(_("Show All Headers"))
 	mi.set_active(panel_view_header.get_data('all-headers') == True)
-	if panel_view_header.get_data('all-headers'): mi.set_active(True)
 	mi.connect('toggled', act_show_view_headers)
 	menu.append(mi)
 	menu.show_all()
@@ -2563,6 +2583,26 @@ def populate_filters_menu(eml):
 		menu_filters.append(mi)
 	menu_filters.show_all()
 	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
+
+def populate_composer_textview_menu(textview, menu):
+	menu.append(gtk.SeparatorMenuItem())
+	if composer_text_buffer.get_mark('user_signature-start') is None:
+		mi = gtk.MenuItem(_("Insert signature"))
+		def ins_mark(*_x):
+			cursormark = composer_text_buffer.get_insert()
+			append_composer_text(get_user_signature(), markername='user_signature', where=lambda:composer_text_buffer.get_iter_at_mark(cursormark))
+		mi.connect('activate', ins_mark)
+	else:
+		mi = gtk.MenuItem(_("Remove signature"))
+		def del_sign(*_x):
+			m1 = composer_text_buffer.get_mark('user_signature-start')
+			m2 = composer_text_buffer.get_mark('user_signature-end')
+			composer_text_buffer.delete(composer_text_buffer.get_iter_at_mark(m1), composer_text_buffer.get_iter_at_mark(m2))
+			composer_text_buffer.delete_mark(m1)
+			composer_text_buffer.delete_mark(m2)
+		mi.connect('activate', del_sign)
+	menu.append(mi)
+	menu.show_all()
 
 def disable_filters_menu(b=True):
 	menubutton_filters.children()[0].children()[1].set_sensitive(not b)
@@ -2808,7 +2848,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		add_composer_header(HDR_XQID, sendmail_queue_id)
 		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
 		win_comp.set_data('email-sent', True)
-		panel_edit_message.get_buffer().set_modified(False)
+		composer_text_buffer.set_modified(False)
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
@@ -3007,7 +3047,7 @@ def act_save_edit(save_as=False):
 
 def on_after_save_draft():
 	set_unsaved(False)
-	panel_edit_message.get_buffer().set_modified(False)
+	composer_text_buffer.set_modified(False)
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
 	update_composer_status_message()
 
@@ -4244,6 +4284,7 @@ entry_subject = gtk.Entry()
 frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
 panel_edit_message = gtk.TextView()
+composer_text_buffer = panel_edit_message.get_buffer()
 tb_comp_controls = gtk.Toolbar()
 
 win_comp.add(box_compose)
@@ -4286,9 +4327,10 @@ panel_upper.set_position(win_comp.get_default_size()[0]-242)
 panel_compose.set_position(125)
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-panel_edit_message.get_buffer().connect('modified-changed', on_edit_message)
-panel_edit_message.get_buffer().connect('changed', on_change_message)
+composer_text_buffer.connect('modified-changed', on_edit_message)
+composer_text_buffer.connect('changed', on_change_message)
 panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
+panel_edit_message.connect('populate-popup', populate_composer_textview_menu)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
@@ -4408,7 +4450,9 @@ if cliArgs.compose:
 		# Open a clear composer window.
 		add_composer_agent_headers()
 		if not cliArgs.message:
-			set_composer_text('\n\n' + get_user_signature())
+			clear_composer_text()
+			append_composer_text_user_signature()
+			composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 	
 	if cliArgs.mailto:
 		mailto = get_mailto(cliArgs.mailto)
