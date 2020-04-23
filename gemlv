@@ -3817,7 +3817,9 @@ def on_edit_external_done(data):
 def set_unsaved(unsaved=True):
 	win_comp.set_data('is-saved', not unsaved)
 	win_comp.set_data('is-auto-saved', not unsaved)
-	win_comp.set_data('email-sent', False)
+	if unsaved:
+		win_comp.set_data('email-sent', False)
+	
 	s = menubutton_save_draft.get_label()
 	endmark = '*'
 	endmark_re = re.escape(endmark)
@@ -4419,13 +4421,13 @@ if cliArgs.compose:
 		# Import headers.
 		supersedes = []
 		for hname, hval in edit_eml._headers:
-			hname_lc = hname.lower()
+			hname = headercase(hname)
 			hval = decode_header(hval, eml=edit_eml)
-			if hname_lc == 'message-id':
+			if hname == HDR_MID:
 				supersedes.append(hval)
-			elif hname_lc == 'subject':
+			elif hname == 'Subject':
 				set_composer_subject(hval)
-			if any(fnmatch(hname_lc, hdr.lower()) for hdr in EditExcludedHeaders):
+			if any(fnmatch(hname, headercase(hdr)) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
 				pass
 			else:
@@ -4487,6 +4489,8 @@ if cliArgs.compose:
 			attach_path(path, path)
 		del path
 	on_after_save_draft()
+	if any([bool(x) for x in get_composer_headers(HDR_XSD)]):
+		win_comp.set_data('email-sent', True)
 	panel_edit_message.grab_focus()
 else:
 	win_main.show_all()
@@ -4511,3 +4515,5 @@ if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
 
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
+
+# FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
