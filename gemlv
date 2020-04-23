@@ -2586,20 +2586,25 @@ def populate_filters_menu(eml):
 
 def populate_composer_textview_menu(textview, menu):
 	menu.append(gtk.SeparatorMenuItem())
-	if composer_text_buffer.get_mark('user_signature-start') is None:
+	mark_sign_1 = composer_text_buffer.get_mark('user_signature-start')
+	mark_sign_2 = composer_text_buffer.get_mark('user_signature-end')
+	sign_text = None
+	if mark_sign_1 and mark_sign_2:
+		iter_sign_1 = composer_text_buffer.get_iter_at_mark(mark_sign_1)
+		iter_sign_2 = composer_text_buffer.get_iter_at_mark(mark_sign_2)
+		sign_text = composer_text_buffer.get_text(iter_sign_1, iter_sign_2)
+	if mark_sign_1 is None or not sign_text:
 		mi = gtk.MenuItem(_("Insert signature"))
 		def ins_mark(*_x):
+			composer_text_buffer.delete_mark(mark_sign_1)
+			composer_text_buffer.delete_mark(mark_sign_2)
 			cursormark = composer_text_buffer.get_insert()
 			append_composer_text(get_user_signature(), markername='user_signature', where=lambda:composer_text_buffer.get_iter_at_mark(cursormark))
 		mi.connect('activate', ins_mark)
 	else:
 		mi = gtk.MenuItem(_("Remove signature"))
 		def del_sign(*_x):
-			m1 = composer_text_buffer.get_mark('user_signature-start')
-			m2 = composer_text_buffer.get_mark('user_signature-end')
-			composer_text_buffer.delete(composer_text_buffer.get_iter_at_mark(m1), composer_text_buffer.get_iter_at_mark(m2))
-			composer_text_buffer.delete_mark(m1)
-			composer_text_buffer.delete_mark(m2)
+			composer_text_buffer.delete(iter_sign_1, iter_sign_2)
 		mi.connect('activate', del_sign)
 	menu.append(mi)
 	menu.show_all()
