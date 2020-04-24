@@ -1926,27 +1926,12 @@ def set_composer_text(s):
 	composer_text_buffer.set_text(s)
 	composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 
-def clear_composer_text():
-	composer_text_buffer.delete(composer_text_buffer.get_start_iter(), composer_text_buffer.get_end_iter())
-
-def get_composer_text():
-	return composer_text_buffer.get_text(composer_text_buffer.get_start_iter(), composer_text_buffer.get_end_iter(), True)
-
-def append_composer_text(text, pre=None, post=None, markername=None, where=lambda:composer_text_buffer.get_end_iter()):
-	if pre is not None:
-		composer_text_buffer.insert(where(), pre)
-	itr = where()
-	if markername is not None:
-		composer_text_buffer.create_mark(markername+'-start', where(), left_gravity=True)
-		itr = composer_text_buffer.get_iter_at_mark(composer_text_buffer.get_mark(markername+'-start'))
-	composer_text_buffer.insert(itr, text)
-	if markername is not None:
-		composer_text_buffer.create_mark(markername+'-end', where(), left_gravity=True)
-	if post is not None:
-		composer_text_buffer.insert(where(), post)
-
 def append_composer_text_user_signature():
-	append_composer_text(get_user_signature(), pre='\n\n', markername='user_signature')
+	composer_text_buffer.append('\n\n')
+	composer_text_buffer.append_namedrange('user_signature', get_user_signature())
+
+def get_reply_quotation():
+	return _("Quote:") + '\n\n' + quote_message()
 
 def open_composer():
 	if win_comp.get_visible():
@@ -1975,7 +1960,7 @@ def open_composer():
 	for h in SenderHeaders:
 		add_composer_header(h).cancel()
 	set_composer_subject('')
-	clear_composer_text()
+	composer_text_buffer.clear()
 	
 	win_comp.set_data('is-an-mdn', False)
 	win_comp.set_data('add-msgid-xattr-on-send', [])
@@ -2007,6 +1992,7 @@ def auto_save_draft():
 
 def quote_message():
 	if spanel_content.get_data('last-loaded-text') is not None:
+		# TODO: quote only 1 text message part, or mode/all of them?
 		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
 	return ''
 
@@ -2073,7 +2059,7 @@ def act_compose():
 		add_composer_agent_headers()
 		add_composer_header('To', '')
 		set_composer_subject('')
-		clear_composer_text()
+		composer_text_buffer.clear()
 		append_composer_text_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
@@ -2083,7 +2069,7 @@ def act_reply(compose_type):
 	if open_composer():
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
-		clear_composer_text()
+		composer_text_buffer.clear()
 		append_composer_text_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_address = guess_my_address()
@@ -2112,7 +2098,8 @@ def act_reply(compose_type):
 			pre = _("Re: ")
 			if not subj.lower().startswith(pre.lower()): subj = pre + subj
 			set_composer_subject(subj)
-			append_composer_text(_("Quote:") + '\n\n' + quote_message(), pre='\n', markername='quoted_message')
+			composer_text_buffer.append('\n')
+			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 			
 			messageid = get_one_header_main(HDR_MID)
 			add_composer_header('In-Reply-To', messageid)
@@ -2584,29 +2571,88 @@ def populate_filters_menu(eml):
 	menu_filters.show_all()
 	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
 
+class TextBuffer(gtk.TextBuffer):
+	class TextBufferNamedRangeError(Exception):
+		pass
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		self.text_namedranges = {}
+	def set_namedrange(self, rangename, content):
+		self.clear_namedrange(rangename)
+		self.set_end_mark_gravity(rangename, 'right')
+		itr = self.get_namedrange_boundaries(rangename)[0]
+		self.insert(itr, content)
+		self.set_end_mark_gravity(rangename, 'left')
+	def clear_namedrange(self, rangename):
+		self.delete(*self.get_namedrange_boundaries(rangename))
+	def add_namedrange(self, rangename, content, position_iter_cb):
+		if self.text_namedranges.has_key(rangename):
+			raise self.TextBufferNamedRangeError("Range '%s' in TextBuffer is already exists." % (rangename,))  # @notranslate
+		mark_start = self.create_mark(rangename+'-start', position_iter_cb(), left_gravity=True)
+		mark_end = self.create_mark(rangename+'-end', position_iter_cb(), left_gravity=False)
+		self.text_namedranges[rangename] = {'start': mark_start, 'end': mark_end}
+		if content != '':
+			self.set_namedrange(rangename, content)
+		self.set_end_mark_gravity(rangename, 'left')
+	def set_end_mark_gravity(self, rangename, gravity):
+		mark_end = self.text_namedranges[rangename]['end']
+		tmp_iter = self.get_iter_at_mark(mark_end)
+		self.delete_mark(mark_end)
+		mark_end = self.create_mark(rangename+'-end', tmp_iter, left_gravity=bool(gravity=='left'))
+		self.text_namedranges[rangename]['end'] = mark_end
+	def append_namedrange(self, rangename, content=''):
+		return self.add_namedrange(rangename, content, position_iter_cb=self.get_end_iter)
+	def update_namedrange(self, rangename, content='', position_iter_cb=None):
+		if self.text_namedranges.has_key(rangename) and position_iter_cb is None:
+			self.set_namedrange(rangename, content)
+		else:
+			self.delete_namedrange(rangename)
+			if position_iter_cb is None: position_iter_cb = self.get_iter_at_cursor
+			self.add_namedrange(rangename, content, position_iter_cb)
+	def get_iter_at_cursor(self):
+		return self.get_iter_at_mark(self.get_insert())
+	def delete_namedrange(self, rangename):
+		if self.text_namedranges.has_key(rangename):
+			self.clear_namedrange(rangename)
+			self.delete_mark(self.text_namedranges[rangename]['start'])
+			self.delete_mark(self.text_namedranges[rangename]['end'])
+			del self.text_namedranges[rangename]
+	def get_namedrange_boundaries(self, rangename):
+		if not self.text_namedranges.has_key(rangename):
+			raise self.TextBufferNamedRangeError("Range '%s' in TextBuffer is not exists." % (rangename,))  # @notranslate
+		return self.get_iter_at_mark(self.text_namedranges[rangename]['start']), self.get_iter_at_mark(self.text_namedranges[rangename]['end'])
+	def get_namedrange_text(self, rangename):
+		if self.text_namedranges.has_key(rangename):
+			return self.get_text(*self.get_namedrange_boundaries(rangename))
+		else:
+			return None
+	def append(self, content):
+		self.insert(self.get_end_iter(), content)
+	def clear(self):
+		return self.delete(self.get_start_iter(), self.get_end_iter())
+	def get_text_all(self):
+		return self.get_text(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
+
 def populate_composer_textview_menu(textview, menu):
-	menu.append(gtk.SeparatorMenuItem())
-	mark_sign_1 = composer_text_buffer.get_mark('user_signature-start')
-	mark_sign_2 = composer_text_buffer.get_mark('user_signature-end')
-	sign_text = None
-	if mark_sign_1 and mark_sign_2:
-		iter_sign_1 = composer_text_buffer.get_iter_at_mark(mark_sign_1)
-		iter_sign_2 = composer_text_buffer.get_iter_at_mark(mark_sign_2)
-		sign_text = composer_text_buffer.get_text(iter_sign_1, iter_sign_2)
-	if mark_sign_1 is None or not sign_text:
-		mi = gtk.MenuItem(_("Insert signature"))
-		def ins_mark(*_x):
-			composer_text_buffer.delete_mark(mark_sign_1)
-			composer_text_buffer.delete_mark(mark_sign_2)
-			cursormark = composer_text_buffer.get_insert()
-			append_composer_text(get_user_signature(), markername='user_signature', where=lambda:composer_text_buffer.get_iter_at_mark(cursormark))
-		mi.connect('activate', ins_mark)
+	pos = 0
+	if composer_text_buffer.get_namedrange_text('user_signature'):
+		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
+		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
 	else:
-		mi = gtk.MenuItem(_("Remove signature"))
-		def del_sign(*_x):
-			composer_text_buffer.delete(iter_sign_1, iter_sign_2)
-		mi.connect('activate', del_sign)
-	menu.append(mi)
+		mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
+		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('user_signature', get_user_signature()))
+	menu.insert(mi, pos)
+	pos += 1
+	if composer_text_buffer.get_namedrange_text('quoted_message'):
+		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
+		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('quoted_message'))
+	else:
+		mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
+		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('quoted_message', get_reply_quotation()))
+	menu.insert(mi, pos)
+	pos += 1
+	menu.insert(gtk.SeparatorMenuItem(), pos)
+	pos +=1 
 	menu.show_all()
 
 def disable_filters_menu(b=True):
@@ -2916,7 +2962,7 @@ def build_newemail():
 	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
 		NewEmail.add_header(HDR_MID, email.utils.make_msgid())
 	
-	text = get_composer_text()
+	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
 	part_body = NewEmail.get_payload()[0]
@@ -3708,7 +3754,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Ask Disposition Notification"), 'mail-mark-read', None, ''])
+		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, ''])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -3768,7 +3814,7 @@ def act_edit_external():
 	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = '.txt')
 	try:
 		filehandler = os.fdopen(fd, 'w')
-		filehandler.write(get_composer_text())
+		filehandler.write(composer_text_buffer.get_text_all())
 		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
 	except IOError as e:
@@ -4052,7 +4098,7 @@ argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy R
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
-argparser.add_argument('--attach', "--attachment", metavar='FILES', action='append', help=_("Attachment(s)"))
+argparser.add_argument('--attach', '--attachment', metavar='FILES', action='append', help=_("Attachment(s)"))
 argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
 argparser.add_argument('--header', metavar='STRING', action='append', help=_("Add custom header(s) to the new Email"))
@@ -4290,8 +4336,8 @@ panel_subject.set_border_width(4)
 entry_subject = gtk.Entry()
 frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
-panel_edit_message = gtk.TextView()
-composer_text_buffer = panel_edit_message.get_buffer()
+composer_text_buffer = TextBuffer()
+panel_edit_message = gtk.TextView(composer_text_buffer)
 tb_comp_controls = gtk.Toolbar()
 
 win_comp.add(box_compose)
@@ -4388,7 +4434,7 @@ toolbuttons = [
 	(None, None, None, 'space', None),
 	(None, StockToggleToolButton('dialog-password'), "Encrypt", None, None),
 	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
-	(None, StockToggleToolButton('mail-mark-read'), "Disposition Notification", act_req_dispos_notif, None),
+	(None, StockToggleToolButton('mail-mark-read'), "Ask Disposition Notification", act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
 	("Unimportant", StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
 	("Important", StockToggleToolButton('emblem-important'), "Important", act_importance, None),
@@ -4457,7 +4503,7 @@ if cliArgs.compose:
 		# Open a clear composer window.
 		add_composer_agent_headers()
 		if not cliArgs.message:
-			clear_composer_text()
+			composer_text_buffer.clear()
 			append_composer_text_user_signature()
 			composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 	

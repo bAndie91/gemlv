@@ -286,6 +286,9 @@ msgstr "Ki"
 msgid "Ask Disposition Notification"
 msgstr "Tértivevény kérése"
 
+msgid "Disposition Notification"
+msgstr "Tértivevény"
+
 msgid "Disposition Notification: {subject}"
 msgstr "Tértivevény: {subject}"
 
@@ -406,3 +409,16 @@ msgstr "Nincs 'From' feladó cím (vagy több van), ami alapján GPG kulcsot tal
 
 msgid "Crypto-signing error"
 msgstr "Hiba digitális aláírás közben"
+
+msgid "Remove signature"
+msgstr "Aláírás törlése"
+
+msgid "Add signature"
+msgstr "Aláírás"
+
+msgid "Remove quote"
+msgstr "Idézet törlése"
+
+msgid "Quote message"
+msgstr "Üzenet idézése"
+
