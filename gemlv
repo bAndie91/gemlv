@@ -60,7 +60,7 @@ try:
 except ImportError:
 	sys.stderr.write("No module named fuzzywuzzy. Degrading address auto completer.\n")
 	fuzzywuzzy = None
-
+import uuid
 
 ### helper classes, functions ###
 
@@ -2941,6 +2941,10 @@ def iterate_composer_headers():
 		if len(hname) > 0 and len(hval) > 0:
 			yield (hname, hval)
 
+def make_msgid():
+	# Don't leak hostname, IP, or time in generated Message-ID.
+	return '<%s@%s>' % (uuid.uuid4().hex, uuid.uuid4().hex)
+
 def build_newemail():
 	keep_headers = win_comp.get_data('blank-email-default-headers')
 	for hname, hval in NewEmail._headers:
@@ -2960,7 +2964,7 @@ def build_newemail():
 	
 	# if there is not Message-ID but we want to add it to xattrs on successful sending
 	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
-		NewEmail.add_header(HDR_MID, email.utils.make_msgid())
+		NewEmail.add_header(HDR_MID, make_msgid())
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
@@ -3387,12 +3391,13 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
 			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 				# File being attached is an Email (according to mime type or by detected multipart)
-				# TODO - remove sensitive headers?
+				# TODO: remove sensitive headers?
 				part.attach(attachment_email)
 			else:
 				del attachment_email
 				part.set_payload('')
 				enc = None
+				# Load file into memory
 				try:
 					fh = open(attachment_path, 'r')
 				except (IOError, OSError) as e:
