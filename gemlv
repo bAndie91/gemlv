@@ -792,7 +792,7 @@ def get_content_readably(eml):
 
 def get_content_any(eml):
 	s = eml.get_payload(decode=True)
-	# TODO preamble+epilogue instead of as_string?
+	# TODO: preamble+epilogue instead of as_string?
 	if s is None: s = eml.as_string()
 	return s
 
@@ -2917,7 +2917,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
 	details_widget.set_text(resp)
-	update_composer_status_message()
+	update_composer_status_message(do_build=False)
 	gtk.threads_leave()
 
 def act_show_details_on_send_panel(btn, dlg, details):
@@ -3104,11 +3104,15 @@ def on_after_save_draft():
 	set_unsaved(False)
 	composer_text_buffer.set_modified(False)
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
-	update_composer_status_message()
+	update_composer_status_message(do_build=False)
 
-def update_composer_status_message():
-	build_newemail()  # FIXME: it's sometimes an unneccessary duplicate
-	size = len(NewEmail.as_string())
+def get_composed_email_size():
+	return len(NewEmail.as_string())
+
+def update_composer_status_message(do_build=True):
+	if do_build:
+		build_newemail()
+	size = get_composed_email_size()
 	status_msgs = [_("Size: %s") % (human_size(size),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
 	if x_sent_date_last:
