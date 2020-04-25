@@ -1059,24 +1059,27 @@ def get_all_headers_main(hname):
 	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
 
 def get_header_links(s, schemata=['mailto']):
+	# RFC2369
 	l = []
-	uris = re.findall('<([^>]+)>', s)
-	if len(uris) == 0:
+	linkdefs = re.findall('(?:\(([^)]+)\))?\s*<([^>]+)>\s*(?:\(([^)]+)\))?', s)
+	if len(linkdefs) == 0:
 		# workaround for poorly behaved mail lists
-		uris = re.findall('^\s*(\S+)', s)
-	for uri in uris:
+		linkdefs = re.findall('^()\s*(\S+)\s*(.*)', s)
+	for linkdef in linkdefs:
+		comment = linkdef[0] or linkdef[2]
+		uri = linkdef[1]
 		rslt = urlparse.urlsplit(uri)
 		if '*' in schemata or rslt.scheme.lower() in schemata:
 			q = dict((k.lower(), v if len(v)>1 else v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
 			q['to'] = urlparse.unquote(rslt.path)
 			q['uri'] = uri
 			q['split'] = rslt
-			l.append(q)
+			l.append((q, comment))
 	return l
 
 def get_mailto(s):
 	l = get_header_links('<%s>' % (s))
-	if len(l) > 0: return l[0]
+	if len(l) > 0: return l[0][0]
 	stderr(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
@@ -1130,7 +1133,7 @@ def load_gravatar(addr, container):
 def get_listaddress_main():
 	try:
 		# Assuming there is only one list address.
-		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []))[0]['to']
+		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []))[0][0]['to']
 	except (IndexError, KeyError):
 		listaddress = None
 	return listaddress
@@ -2139,14 +2142,15 @@ def shorturl(url, maxlength=72):
 		return None
 
 def act_unsubscribe():
-	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['mailto', 'http', 'https', '*'])
-	if len(links) == 1 and links[0]['split'].scheme == 'mailto':
+	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
+	if len(links) == 1 and links[0][0]['split'].scheme == 'mailto':
 		if open_composer():
 			add_composer_mailto(links[0])
 			on_after_save_draft()
 	else:
 		text = ''
 		for link in links:
+			link, comment = link[:]
 			uri = urlparse.unquote(link['uri'])
 			escuri = glib.markup_escape_text(uri)
 			if link['split'].scheme == 'mailto':
@@ -2157,7 +2161,7 @@ def act_unsubscribe():
 					linktext = escuri
 				else:
 					linktext = glib.markup_escape_text(short)
-			text += '\n\n<a href=\'%s\'>%s</a>' % (escuri, linktext)
+			text += '\n\n<a href=\'%s\'>%s</a> <i>%s</i>' % (escuri, linktext, glib.markup_escape_text(comment))
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe"))
 		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + text)
