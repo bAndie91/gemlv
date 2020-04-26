@@ -410,6 +410,9 @@ msgstr "Nincs 'From' feladó cím (vagy több van), ami alapján GPG kulcsot tal
 msgid "Crypto-signing error"
 msgstr "Hiba digitális aláírás közben"
 
+msgid "Digitally signed by"
+msgstr "Digitálisan aláírta"
+
 msgid "Remove signature"
 msgstr "Aláírás törlése"
 

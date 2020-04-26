@@ -94,13 +94,13 @@ class LabelsToolItem(gtk.ToolItem):
 			if not first:
 				self.box.pack_start(gtk.SeparatorToolItem(), True, False)
 			label = gtk.Label()
-			if type(piece) == str:
+			if isinstance(piece, basestring):
 				label.set_text(piece)
 			elif type(piece) == dict:
 				if piece.has_key('markup'):
 					label.set_markup(piece['markup'])
 				elif piece.has_key('text'):
-					label.set_markup(piece['text'])
+					label.set_text(piece['text'])
 			self.box.pack_start(label, True, False)
 			first = False
 		self.box.show_all()
@@ -170,7 +170,7 @@ class StockButton(gtk.Button):
 		lbl.set_markup(label)
 	def set_icon(self, icon, size=gtk.ICON_SIZE_BUTTON):
 		img, x = self.__get_children()
-		if type(icon) == str:
+		if isinstance(icon, basestring):
 			if icon == '':
 				img.props.visible = False
 			else:
@@ -736,12 +736,17 @@ def load_parts(eml, model, parent):
 		PartPrimary = iterator
 	if PartSecondary is None and content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
+	if content_type == MIMETYPE_HEADERS and eml.get_param('protected-headers', header=HDR_CT) is not None:
+		# Interpret this mime part' content as headers
+		# TODO
+		pass
 	if content_type == 'multipart/encrypted':
 		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
 			pgp_metadata_part = eml.get_payload()[0]
 			load_parts(pgp_metadata_part, model, iterator)
+			
 			encrypted_part_num = 1
 			encrypted_part = eml.get_payload()[encrypted_part_num]
 			encrypted_data = encrypted_part.as_string()
@@ -873,6 +878,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	
 	stck_sign_good.hide()
 	stck_sign_bad.hide()
+	stck_signer.hide()
 	stck_sign_bad.set_data('email-part', eml)
 	stck_sign_bad.set_data('filtering', filt)
 	stck_sign_bad.set_data('signature-valid', None)
@@ -886,12 +892,14 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		gpg = eml_data['gpg']
 		gpg_signature_valid = gpg['valid']
 		gpg_signature_info = gpg['stderr']
+		gpg_signature_signer = gpg['username']
 	else:
 		for parent_level, parent_part, parent_data in get_all_parent_parts(eml):
 			if parent_data.has_key('gpg'):
 				gpg = parent_data['gpg']
 				gpg_signature_valid = gpg['valid']
 				gpg_signature_info = gpg['stderr']
+				gpg_signature_signer = gpg['username']
 				break
 			if parent_part.get_content_type() == 'multipart/signed':
 				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
@@ -904,6 +912,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
 							gpg_signature_valid = sign_verify.valid
 							gpg_signature_info = sign_verify.stderr
+							gpg_signature_signer = sign_verify.username
 							break
 				break
 			else:
@@ -913,6 +922,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if gpg_signature_valid is not None:
 		stck_sign_bad.set_data('signature-valid', gpg_signature_valid)
 		stck_sign_bad.set_data('signature-info-text', gpg_signature_info)
+		stck_signer.set_labels([gpg_signature_signer])
+		stck_signer.show()
 		if gpg_signature_valid:
 			stck_sign_good.show()
 		else:
@@ -1109,7 +1120,7 @@ def set_fskv(key, value):
 	return True
 
 def load_gravatar(addr, container):
-	if not isinstance(addr, str): return
+	assert isinstance(addr, basestring)
 	url = (get_fskv('avatar_url_template') or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G')\
 		.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
 	try:
@@ -1450,8 +1461,8 @@ class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	
 	def __init__(self, chname, val, hntype=None):
-		assert isinstance(chname, str)
-		assert isinstance(val, str) or isinstance(val, unicode)
+		assert isinstance(chname, basestring)
+		assert isinstance(val, basestring)
 		plus = True
 		minus = True
 		
@@ -2687,7 +2698,7 @@ def load_toolitems(toolbar, toolitems):
 	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
 		hid = None
-		if type(fnc_left) == str:
+		if isinstance(fnc_left, basestring):
 			tbi = gtk.SeparatorToolItem()
 			if fnc_left == 'space':
 				tbi.set_draw(False)
@@ -4303,6 +4314,7 @@ toolbuttons = [
 	(None, 'mail-mark-junk', "Spam", None, None),
 	(None, 'mail-signed-verified', "Valid signature", show_signature_info, None),
 	(None, 'dialog-warning', "Invalid signature", show_signature_info, None),
+	(None, LabelsToolItem(), "Digitally signed by", None, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save and Keep Structure", act_save, act_save_struct),
@@ -4311,7 +4323,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, x_, btn_open2, btn_save2, x_, x, x, btn_font \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, stck_signer, x_, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
