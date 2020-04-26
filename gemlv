@@ -644,8 +644,8 @@ def win_main_show(widget, event):
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
 
-def get_email_addresses_in_main_headers(h):
-	return map(lambda x: x[1], getaddresses(Email.get_all(h) or []))
+def get_email_addresses_in_headers(eml, h):
+	return map(lambda x: x[1], getaddresses(eml.get_all(h) or []))
 
 def email_from_file(filename):
 	try:
@@ -656,6 +656,10 @@ def email_from_file(filename):
 		return None, None
 	eml = email.message_from_file(fh)
 	return eml, fh
+
+def load_headers(eml):
+	panel_view_header.set_markup(get_headers_markup(eml))
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header(eml, 'Subject') or '')) + PMU_SUBJ_CLOSE)
 
 def load_file(filename):
 	global Email
@@ -668,7 +672,7 @@ def load_file(filename):
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
-		addrs = get_email_addresses_in_main_headers(h)
+		addrs = get_email_addresses_in_headers(Email, h)
 		if len(addrs) > 0:
 			senderaddr = addrs[0]
 			break
@@ -689,8 +693,7 @@ def load_file(filename):
 	if (Email['List-Unsubscribe'] or '').strip():
 		menubutton_unsubscribe.show()
 	
-	panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header_main('Subject') or '')) + PMU_SUBJ_CLOSE)
+	load_headers(Email)
 	clear_parts(Parts)
 	load_parts(Email, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
@@ -718,7 +721,7 @@ def clear_parts(model):
 	LeafParts = 0
 	model.clear()
 
-def load_parts(eml, model, parent):
+def load_parts(eml, model, parent, enable_protected_headers=False):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
@@ -736,10 +739,10 @@ def load_parts(eml, model, parent):
 		PartPrimary = iterator
 	if PartSecondary is None and content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	if content_type == MIMETYPE_HEADERS and eml.get_param('protected-headers', header=HDR_CT) is not None:
+	if enable_protected_headers and content_type in [MIMETYPE_HEADERS, MIMETYPE_TEXT] and eml.get_param('protected-headers', header=HDR_CT) is not None:
 		# Interpret this mime part' content as headers
-		# TODO
-		pass
+		protected_headers_email = email.message_from_string(eml.get_payload(decode=True))
+		load_headers(protected_headers_email)
 	if content_type == 'multipart/encrypted':
 		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
 		if crypto_protocol == 'application/pgp-encrypted':
@@ -753,9 +756,10 @@ def load_parts(eml, model, parent):
 			decrypt = gpg.decrypt(encrypted_data)
 			if decrypt.ok:
 				decrypted_eml = email.message_from_string(decrypt.data)
-				load_parts(decrypted_eml, model, iterator)
+				load_parts(decrypted_eml, model, iterator, enable_protected_headers=bool(not enable_protected_headers and decrypt.key_id is not None and decrypt.valid))
 				iconname = 'changes-allow'
 			else:
+				load_parts(encrypted_part, model, iterator)
 				iconname = 'changes-prevent'
 			
 			if decrypt.key_id is not None:
@@ -765,6 +769,7 @@ def load_parts(eml, model, parent):
 					'stderr': decrypt.stderr,
 					'username': decrypt.username,
 				}
+			# TODO: load_headers(decrypted_eml) unless there is MIMETYPE_HEADERS part
 			
 			for other_part in eml.get_payload()[2:]:
 				load_parts(other_part, model, iterator)
@@ -775,7 +780,8 @@ def load_parts(eml, model, parent):
 			if not decrypt.ok:
 				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
 			return
-	if type(eml.get_payload()) == type([]):
+	if eml.get_content_maintype() == 'multipart':
+		# TODO: load_headers(protected_headers_email) of signed only mime parts
 		for part in eml.get_payload():
 			load_parts(part, model, iterator)
 	else:
@@ -1062,9 +1068,12 @@ def decode_header(s, unfold=False, eml=None):
 	return ' '.join(chunks)
 
 def get_one_header_main(hname, unfold=True):
-	hval = Email[hname]
+	return get_one_header(Email, hname, unfold)
+
+def get_one_header(eml, hname, unfold=True):
+	hval = eml[hname]
 	if hval is None: return None
-	return decode_header(hval, unfold=unfold, eml=Email)
+	return decode_header(hval, unfold=unfold, eml=eml)
 
 def get_all_headers_main(hname):
 	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
@@ -1170,7 +1179,7 @@ def get_headers_markup(eml):
 		"Expires",
 		"X-Spam",  # @notranslate
 	]
-	from_addresses = get_email_addresses_in_main_headers('From')
+	from_addresses = get_email_addresses_in_headers(eml, 'From')
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
 		if eml[h] is not None:
 			hdrs.remove('Return-Path')
@@ -2541,6 +2550,7 @@ def act_show_view_headers(chkmi):
 	show_view_headers(chkmi.active)
 
 def show_view_headers(show=True):
+	# TODO: protected-headers
 	if show:
 		spanel_view_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 		panel_view_header.set_size_request(-1, -1)
@@ -4580,7 +4590,5 @@ else:
 gtk.main()
 if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
-
-# TODO: make .set_label and .set_text consistent on gtk.Label()s
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
