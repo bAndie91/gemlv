@@ -422,3 +422,8 @@ msgstr "Idézet törlése"
 msgid "Quote message"
 msgstr "Üzenet idézése"
 
+msgid "Set a From or Reply-To address to have Disposition Notification."
+msgstr "Adjon meg Feladó vagy Válasz címet hogy tértivevényt kaphasson."
+
+msgid "Disposition Notification requested but no address given."
+msgstr "Tértivevényt kért de nincs megadva cím hozzá."

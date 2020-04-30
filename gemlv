@@ -1887,7 +1887,7 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headers(search_hname):
+def get_composer_headerboxes(search_hname):
 	search_hnames = None
 	if search_hname is not None:
 		if type(search_hname) == list:
@@ -1899,13 +1899,28 @@ def get_composer_headers(search_hname):
 		hname_cmp = hbox['name'].lower()
 		if hbox.get_visible() or hname_cmp not in [x.lower() for x in SenderHeaders]:
 			if search_hname is None:
-				hlist.append((hbox['name'], hbox['value']))
+				hlist.append(hbox)
 			elif hname_cmp in search_hnames:
-				hlist.append(hbox['value'])
+				hlist.append(hbox)
+	return hlist
+
+def get_composer_headers(search_hname):
+	hlist = []
+	for hbox in get_composer_headerboxes(search_hname):
+		if search_hname is None:
+			hlist.append((hbox['name'], hbox['value']))
+		else:
+			hlist.append(hbox['value'])
 	return hlist
 
 def get_composer_header_last(hname):
 	hdrs = get_composer_headers(hname)
+	if hdrs:
+		return hdrs[-1]
+	return None
+
+def get_composer_headerbox_last(hname):
+	hdrs = get_composer_headerboxes(hname)
 	if hdrs:
 		return hdrs[-1]
 	return None
@@ -2768,13 +2783,15 @@ def validate_all_comp_headers():
 	return True
 
 def act_send():
-	err_msg = ''
 	if not validate_all_comp_headers():
 		return
+	err_msg = ''
 	if not get_composer_subject():
 		err_msg += _("No Subject.") + '\n'
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
 		err_msg += _("No any Recipient.") + '\n'
+	if toggle_rqdn.get_active() and not filter(None, get_composer_headers([HDR_DNT, 'From', 'Reply-To'])):
+		err_msg += _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT) + '\n'
 	if err_msg != '':
 		err_msg += _("Send anyway?")
 		if not question(err_msg, (_("Send"), 'mail-send')):
@@ -2992,6 +3009,10 @@ def build_newemail_to_send():
 	email_to_send = email.message_from_string(NewEmail.as_string())
 	del email_to_send[HDR_XSD]
 	del email_to_send[HDR_XQID]
+	if toggle_rqdn.get_active() and email_to_send[HDR_DNT] == '':
+		for addr in filter(None, get_composer_headers(['From', 'Reply-To'])):
+			email_to_send[HDR_DNT] = addr
+			break
 	
 	if toggle_sign.get_active():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
@@ -3773,11 +3794,9 @@ def act_req_dispos_notif():
 		box_gdr = set_composer_header(HDR_GDR, 'Yes')
 		box_gdr['readonly'] = True
 		
-		Froms = get_composer_headers('From')
-		From = Froms[0]
-		if From == '':
-			From = '[' + _("missing email address") + ']'
-		box_dnt = set_composer_header(HDR_DNT, From)
+		if not filter(None, get_composer_headers(['From', 'Reply-To'])):
+			display_error(_(MSG_NO_ADDRESS_FOR_DNT))
+		box_dnt = set_composer_header(HDR_DNT, '')
 	else:
 		clear_composer_headers(HDR_GDR)
 		clear_composer_headers(HDR_DNT)
@@ -3930,6 +3949,7 @@ MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
 MIMETYPE_HEADERS = 'text/rfc822-headers'
+MSG_NO_ADDRESS_FOR_DNT = "Set a From or Reply-To address to have Disposition Notification."
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
 Precedences = ['list', 'junk', 'bulk']
