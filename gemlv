@@ -657,9 +657,24 @@ def email_from_file(filename):
 	eml = email.message_from_file(fh)
 	return eml, fh
 
-def load_headers(eml):
+def load_headers_multi(emls):
+	eml = MIMEText('')
+	for e in emls:
+		for hname, hvalue in e._headers:
+			del eml[hname]
+			eml[hname] = hvalue
 	panel_view_header.set_markup(get_headers_markup(eml))
 	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header(eml, 'Subject') or '')) + PMU_SUBJ_CLOSE)
+
+def load_headers(eml):
+	global HeadersEmails
+	HeadersEmails = [eml]
+	load_headers_multi(HeadersEmails)
+
+def load_headers_extra(eml):
+	global HeadersEmails
+	HeadersEmails.append(eml)
+	load_headers_multi(HeadersEmails)
 
 def load_file(filename):
 	global Email
@@ -721,7 +736,7 @@ def clear_parts(model):
 	LeafParts = 0
 	model.clear()
 
-def load_parts(eml, model, parent, enable_protected_headers=False):
+def load_parts(eml, model, parent, signature_ok=None):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
@@ -739,16 +754,19 @@ def load_parts(eml, model, parent, enable_protected_headers=False):
 		PartPrimary = iterator
 	if PartSecondary is None and content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	if enable_protected_headers and content_type in [MIMETYPE_HEADERS, MIMETYPE_TEXT] and eml.get_param('protected-headers', header=HDR_CT) is not None:
-		# Interpret this mime part' content as headers
-		protected_headers_email = email.message_from_string(eml.get_payload(decode=True))
-		load_headers(protected_headers_email)
+	if signature_ok and eml.get_param('protected-headers', header=HDR_CT) is not None:
+		# Interpret this mime part's headers as main headers
+		load_headers_extra(eml)
+		if content_type in [MIMETYPE_HEADERS, MIMETYPE_TEXT]:
+			# Interpret this mime part's content as headers
+			protected_headers_email = email.message_from_string(eml.get_payload(decode=True))
+			load_headers_extra(protected_headers_email)
 	if content_type == 'multipart/encrypted':
 		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
 			pgp_metadata_part = eml.get_payload()[0]
-			load_parts(pgp_metadata_part, model, iterator)
+			load_parts(pgp_metadata_part, model, iterator, signature_ok=signature_ok)
 			
 			encrypted_part_num = 1
 			encrypted_part = eml.get_payload()[encrypted_part_num]
@@ -756,10 +774,10 @@ def load_parts(eml, model, parent, enable_protected_headers=False):
 			decrypt = gpg.decrypt(encrypted_data)
 			if decrypt.ok:
 				decrypted_eml = email.message_from_string(decrypt.data)
-				load_parts(decrypted_eml, model, iterator, enable_protected_headers=bool(not enable_protected_headers and decrypt.key_id is not None and decrypt.valid))
+				load_parts(decrypted_eml, model, iterator, signature_ok=bool(decrypt.key_id is not None and decrypt.valid))
 				iconname = 'changes-allow'
 			else:
-				load_parts(encrypted_part, model, iterator)
+				load_parts(encrypted_part, model, iterator, signature_ok=signature_ok)
 				iconname = 'changes-prevent'
 			
 			if decrypt.key_id is not None:
@@ -769,10 +787,9 @@ def load_parts(eml, model, parent, enable_protected_headers=False):
 					'stderr': decrypt.stderr,
 					'username': decrypt.username,
 				}
-			# TODO: load_headers(decrypted_eml) unless there is MIMETYPE_HEADERS part
 			
 			for other_part in eml.get_payload()[2:]:
-				load_parts(other_part, model, iterator)
+				load_parts(other_part, model, iterator, signature_ok=signature_ok)
 			
 			# Display an open/locked padlock icon
 			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
@@ -781,9 +798,9 @@ def load_parts(eml, model, parent, enable_protected_headers=False):
 				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
 			return
 	if eml.get_content_maintype() == 'multipart':
-		# TODO: load_headers(protected_headers_email) of signed only mime parts
+		# TODO: load_headers_extra(protected_headers_email) of signed only (not encrypted) mime parts
 		for part in eml.get_payload():
-			load_parts(part, model, iterator)
+			load_parts(part, model, iterator, signature_ok=signature_ok)
 	else:
 		LeafParts += 1
 
@@ -4592,3 +4609,4 @@ if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
+# FIXME: consider protected headers wherever possible
