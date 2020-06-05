@@ -2160,7 +2160,7 @@ def act_unsubscribe():
 	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
 	if len(links) == 1 and links[0][0]['split'].scheme == 'mailto':
 		if open_composer():
-			add_composer_mailto(links[0])
+			add_composer_mailto(links[0][0])
 			on_after_save_draft()
 	else:
 		text = ''
