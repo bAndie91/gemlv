@@ -1974,7 +1974,7 @@ def open_composer():
 	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
-	add_composer_From_hidden()
+	add_composer_From(hidden=True)
 	for h in SenderHeaders:
 		add_composer_header(h).cancel()
 	set_composer_subject('')
@@ -2063,12 +2063,13 @@ def guess_reply_address():
 			return get_one_header_main(h)
 	return None
 
-def add_composer_From_hidden():
+def add_composer_From(hidden=False):
 	addr = guess_my_address()
 	if addr is not None:
 		name = get_gecos_name()
 		box = add_composer_header('From', email.utils.formataddr((name, addr)))
-		box.cancel()
+		if hidden:
+			box.cancel()
 		return True
 	return False
 
@@ -2161,6 +2162,8 @@ def act_unsubscribe():
 	if len(links) == 1 and links[0][0]['split'].scheme == 'mailto':
 		if open_composer():
 			add_composer_mailto(links[0][0])
+			add_composer_From()
+			# TODO: guess real name in reply's From address 
 			on_after_save_draft()
 	else:
 		text = ''
