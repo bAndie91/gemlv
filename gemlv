@@ -2190,7 +2190,7 @@ def scroll_textview(tv, rect, scrwin):
 
 def act_report_spam(considered_as_spam = True):
 	emailfile = os.path.abspath(cliArgs.FILE)
-	run_async('gemlv-report-%s' % 'spam' if considered_as_spam else 'ham', [emailfile], None)
+	run_async('gemlv-report-%s' % ('spam' if considered_as_spam else 'ham'), [emailfile], None)
 
 def runcmd_thread(args, input_fd, out_buffer, vb):
 	reader, writer = get_pipe_handlers(1)
