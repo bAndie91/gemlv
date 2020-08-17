@@ -2968,16 +2968,13 @@ def build_newemail():
 		if hname.lower() not in keep_headers:
 			del NewEmail[hname]
 	for hname, hval in iterate_composer_headers():
-		enchunks = []
-		for chunk in hval.split(' '):
-			try:
-				enchunk = make_header([(chunk, None)])
-			except UnicodeDecodeError:
-				enchunk = make_header([(chunk, 'UTF-8')])
-			enchunks.append(str(enchunk))
+		try:
+			mime_encoded_header = make_header([(hval, None)], header_name=hname)
+		except UnicodeDecodeError:
+			mime_encoded_header = make_header([(hval, 'UTF-8')], header_name=hname)
 		if hname.lower() in keep_headers:
 			del NewEmail[hname]
-		NewEmail.add_header(hname, ' '.join(enchunks))
+		NewEmail.add_header(hname, str(mime_encoded_header))
 	
 	# if there is not Message-ID but we want to add it to xattrs on successful sending
 	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
