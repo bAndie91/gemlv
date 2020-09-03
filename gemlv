@@ -2051,6 +2051,7 @@ def add_composer_mailto(mailto):
 		set_composer_subject(mailto['subject'])
 	if mailto.has_key('body'):
 		set_composer_text(mailto['body'])
+	# TODO: carefully safely support 'attach' parameter
 
 def guess_my_address():
 	if Email is None: return None
