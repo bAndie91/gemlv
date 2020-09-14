@@ -185,4 +185,4 @@ folder structure.
 **A.** Yes. It is not banned. Is it?
 
 # issues
-Please submit issues via PR to some file `issue/TITLE.txt`.
+Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
