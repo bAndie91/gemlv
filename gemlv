@@ -431,7 +431,7 @@ def timer2_call(iden, func, args):
 def timer2_flush():
 	for iden in Timers2.keys():
 		glib.source_remove(Timers2[iden]['handle'])
-		timer_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
+		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 def add_key_binding(widget, keyname, callback):
 	accelgroup = gtk.AccelGroup()
@@ -4339,7 +4339,8 @@ btn_save.connect('clicked', lambda wdg: act_save())
 btn_save_struct.connect('clicked', lambda wdg: act_save_struct())
 panel_content_image.connect('size-allocate', on_allocate_panel_content_image)
 panel_content.set_editable(False)
-panel_content.set_wrap_mode(gtk.WRAP_WORD)
+panel_content.set_wrap_mode(getattr(gtk, 'WRAP_'+((Props['ui/view/body/wrapmode'] or 'WORD').upper().replace('-', '_'))))
+panel_content.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once(1.5, lambda: Props.__setitem__('ui/view/body/wrapmode', tv.get_wrap_mode().value_nick)))
 panel_content.connect('scroll-event', on_scroll_on_button_font, panel_content, gtk.gdk.CONTROL_MASK)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
@@ -4472,6 +4473,8 @@ panel_compose.set_position(int(Props['ui/composer/headers/height'] or 125))
 panel_compose.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/headers/height', paned.get_position())))
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+panel_edit_message.set_wrap_mode(getattr(gtk, 'WRAP_'+((Props['ui/composer/body/wrapmode'] or 'WORD').upper().replace('-', '_'))))
+panel_edit_message.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/body/wrapmode', tv.get_wrap_mode().value_nick)))
 composer_text_buffer.connect('modified-changed', on_edit_message)
 composer_text_buffer.connect('changed', on_change_message)
 panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
