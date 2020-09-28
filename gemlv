@@ -249,6 +249,45 @@ class cfgparser(object):
 		for fh in self.filehandlers:
 			fh.close()
 
+class PropertyTree(dict):
+	def __init__(self, *args):
+		super(self.__class__, self).__init__(*args)
+		self.savedprops = {}
+		self.write_delay = 1.2
+		self.APPNAME = 'gemlv'
+		import xdg
+	def _read(self, propname):
+		propvalue = super(self.__class__, self).get(propname)
+		if propvalue is None:
+			for d in xdg.BaseDirectory.xdg_config_dirs:
+				path = os.path.join(d, self.APPNAME, 'prop', propname)
+				if os.path.exists(path):
+					with open(path, 'r') as f:
+						propvalue = f.read()
+					break
+		return propvalue
+	def __getitem__(self, propname):
+		propvalue = self._read(propname)
+		if propvalue is not None:
+			self.savedprops[propname] = propvalue
+			super(self.__class__, self).__setitem__(propname, propvalue)
+		return propvalue
+	def get(self, propname, default):
+		propvalue = self.__getitem__(propname)
+		if propvalue is None: return default
+		return propvalue
+	def __setitem__(self, propname, propvalue):
+		super(self.__class__, self).__setitem__(propname, propvalue)
+		timer2_once(self.write_delay, self._write_all, reschedule=False)
+	def _write_all(self):
+		for propname, propvalue in self.iteritems():
+			propvalue = str(propvalue)
+			if self.savedprops.get(propname) != propvalue:
+				propfile = os.path.join(xdg.BaseDirectory.save_config_path(self.APPNAME), 'prop', propname)
+				os.mkdir(os.path.dirname(propfile))
+				open(propfile, 'w').write(propvalue)
+				self.savedprops[propname] = propvalue
+
 class pipereader(object):
 	def __init__(self, inputstr, cmd, args=[], exitdict=None):
 		self.exitdict = exitdict
@@ -358,6 +397,33 @@ def timer_once(iden, sec, func, func_args=()):
 def timer_call(data):
 	func = data[0]
 	args = data[1]
+	func(*args)
+	return False
+
+# TODO: move time* to timer2*
+def timer2_once(sec, func, func_args=(), reschedule=True, iden=None):
+	if iden is None:
+		iden = func.__name__
+	if Timers2.has_key(iden):
+		if reschedule:
+			Timers2[iden]['cancel']()
+		else:
+			return
+	if func is not None:
+		Timers2[iden] = {
+			'handle': glib.timeout_add(int(sec*1000), timer2_call, iden, func, func_args),
+			'func': func,
+			'args': func_args,
+			'cancel': lambda: timer_cancel(iden),
+		}
+
+def timer2_cancel(iden):
+	if iden in Timers2:
+		glib.source_remove(Timers2[iden]['handle'])
+		del Timers2[iden]
+
+def timer2_call(iden, func, args):
+	del Timers2[iden]
 	func(*args)
 	return False
 
@@ -4101,6 +4167,7 @@ class BasicReuseable():
 		pass
 
 Timers = {}
+Timers2 = {}  # TODO: move timer* to timer2*
 gpg = gnupg.GPG(use_agent=True)
 gpg.encoding = 'utf-8'
 class GnuPGError(Exception):
