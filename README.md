@@ -52,9 +52,10 @@ Email viewer and composer for local emails in GTK
 	- sign and/or encrypt headers too (`text/rfc822-headers` MIME part)
 - [Gravatar](http://www.gravatar.com/) support
 	- you can configure the url to fetch an avatar picture for en email address:
-		- files in precedence: `~/.config/gemlv/avatar_url_template`, `/etc/gemlv/avatar_url_template`
+		- files in precedence: `~/.config/gemlv/prop/avatar/url_template`, `/etc/gemlv/prop/avatar/url_template`
 		- content: `https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G`
 		- template vars: `email`, `email_md5`
+- Remember UI elements size and position
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
 	- supported networks and filters

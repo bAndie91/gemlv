@@ -61,6 +61,8 @@ except ImportError:
 	sys.stderr.write("No module named fuzzywuzzy. Degrading address auto completer.\n")
 	fuzzywuzzy = None
 import uuid
+import xdg.BaseDirectory
+
 
 ### helper classes, functions ###
 
@@ -255,7 +257,6 @@ class PropertyTree(dict):
 		self.savedprops = {}
 		self.write_delay = 1.2
 		self.APPNAME = 'gemlv'
-		import xdg
 	def _read(self, propname):
 		propvalue = super(self.__class__, self).get(propname)
 		if propvalue is None:
@@ -284,7 +285,7 @@ class PropertyTree(dict):
 			propvalue = str(propvalue)
 			if self.savedprops.get(propname) != propvalue:
 				propfile = os.path.join(xdg.BaseDirectory.save_config_path(self.APPNAME), 'prop', propname)
-				os.mkdir(os.path.dirname(propfile))
+				mkdir(os.path.dirname(propfile))
 				open(propfile, 'w').write(propvalue)
 				self.savedprops[propname] = propvalue
 
@@ -414,7 +415,7 @@ def timer2_once(sec, func, func_args=(), reschedule=True, iden=None):
 			'handle': glib.timeout_add(int(sec*1000), timer2_call, iden, func, func_args),
 			'func': func,
 			'args': func_args,
-			'cancel': lambda: timer_cancel(iden),
+			'cancel': lambda: timer2_cancel(iden),
 		}
 
 def timer2_cancel(iden):
@@ -426,6 +427,11 @@ def timer2_call(iden, func, args):
 	del Timers2[iden]
 	func(*args)
 	return False
+
+def timer2_flush():
+	for iden in Timers2.keys():
+		glib.source_remove(Timers2[iden]['handle'])
+		timer_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 def add_key_binding(widget, keyname, callback):
 	accelgroup = gtk.AccelGroup()
@@ -704,7 +710,7 @@ def getaddress(s):
 
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
-	saved_font = get_fskv('font')
+	saved_font = Props['ui/view/font']
 	if saved_font is not None: change_font(panel_content, saved_font)
 	panel_content.set_data('saved-font', get_current_font(panel_content))
 	if cliArgs.FILE:
@@ -1056,6 +1062,16 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if ct_main == 'text' and loaded_text is not None:
 		spanel_content.set_data('last-loaded-text', loaded_text)
 
+def on_window_configure(widget, event):
+	if widget == win_main:
+		winname = 'view'
+	elif widget == win_comp:
+		winname = 'composer'
+	else:
+		raise Exception("should not happen")
+	for k, v in ('position/x', event.x), ('position/y', event.y), ('width', event.width), ('height', event.height):
+		Props['ui/%s/%s' % (winname, k)] = v
+
 def on_allocate_panel_content_image(wdg, alloc):
 	pxb = wdg.get_data('pixbuf')
 	if pxb is not None:
@@ -1149,34 +1165,9 @@ def get_mailto(s):
 	stderr(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
-def get_fskv(key):
-	"""
-	Filesystem as key-value store
-	"""
-	for t in (os.environ['HOME'], '.config', PROGNAME, key), (os.path.sep, 'etc', PROGNAME, key),:
-		n = os.path.join(*t)
-		fh = None
-		try:
-			fh = open(n, 'r')
-		except IOError:
-			pass
-		if fh is not None:
-			return ''.join(fh.readlines())
-	return None
-
-def set_fskv(key, value):
-	try:
-		dir = os.path.join(os.environ['HOME'], '.config', PROGNAME)
-		mkdir(dir)
-		open(os.path.join(dir, key), 'w').write(value)
-	except IOError as e:
-		display_error(e)
-		return False
-	return True
-
 def load_gravatar(addr, container):
 	if not isinstance(addr, str): return
-	url = (get_fskv('avatar_url_template') or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G')\
+	url = (Props['avatar/url_template'] or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G')\
 		.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
 	try:
 		web = urllib2.urlopen(url)
@@ -2541,7 +2532,7 @@ def act_font_switch(tv):
 		else: f = f['string']
 	else:
 		f = tv.get_data('saved-font')['string']
-	set_fskv('font', f)
+	Props['ui/view/font'] = f
 	change_font(tv, f)
 
 def act_font(tv):
@@ -2551,7 +2542,7 @@ def act_font(tv):
 	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	if dlg.run() == gtk.RESPONSE_OK:
 		font_name = dlg.get_font_name()
-		set_fskv('font', font_name)
+		Props['ui/view/font'] = font_name
 		change_font(tv, font_name)
 		font = get_current_font(tv)
 		if font['family'] == 'monospace':
@@ -2569,7 +2560,7 @@ def on_scroll_on_button_font(wdg, evt, textview, modmask):
 		font.set_size(font.get_size() + delta * pango.SCALE)
 		textview.modify_font(font)
 		textview.set_data('saved-font', get_current_font(panel_content))
-		set_fskv('font', str(font))
+		Props['ui/view/font'] = str(font)
 		return True
 
 def change_font(tv, s):
@@ -4168,6 +4159,7 @@ class BasicReuseable():
 
 Timers = {}
 Timers2 = {}  # TODO: move timer* to timer2*
+Props = PropertyTree()
 gpg = gnupg.GPG(use_agent=True)
 gpg.encoding = 'utf-8'
 class GnuPGError(Exception):
@@ -4232,7 +4224,8 @@ gtk.gdk.threads_init()
 ### Build GUI ###
 
 win_main = gtkWindow()
-win_main.set_default_size(832, 450)
+win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view/height'] or 450))
+win_main.connect('configure-event', on_window_configure)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
 add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
@@ -4309,7 +4302,8 @@ panel_right.pack_start(tb_controls, False, True)
 win_main.set_icon_name('emblem-mail')
 win_main.set_geometry_hints(min_width=100, min_height=250)
 toolbar.set_style(gtk.TOOLBAR_BOTH)
-panel_view.set_position(124)
+panel_view.set_position(int(Props['ui/view/headers/height'] or 124))
+panel_view.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/view/headers/height', paned.get_position())))
 spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
 spanel_view_header.connect('size-allocate', resize_panel_view_header)
 panel_view_header.set_line_wrap(True)
@@ -4324,7 +4318,8 @@ panel_view_subject.set_selectable(True)
 panel_view_subject.set_padding(5, 4)
 panel_view_subject.set_alignment(0, 0)
 panel_view_subject.set_justify(gtk.JUSTIFY_LEFT)
-panel_body.set_position(175)
+panel_body.set_position(int(Props['ui/view/attachments/width'] or 175))
+panel_body.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/view/attachments/width', paned.get_position())))
 spanel_parts.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_content.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 panel_parts.set_headers_visible(False)
@@ -4404,7 +4399,8 @@ btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 ### Build Composer GUI ###
 
 win_comp = gtkWindow()
-win_comp.set_default_size(*win_main.get_default_size())
+win_comp.set_default_size(int(Props['ui/composer/width'] or win_main.get_default_size()[0]), int(Props['ui/composer/height'] or win_main.get_default_size()[1]))
+win_comp.connect('configure-event', on_window_configure)
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
 add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda a,b,c,d: act_close_edit())
 add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
@@ -4470,8 +4466,10 @@ panel_attachments.connect('drag-data-received', drop_attachment_reorder_data)
 panel_attachments.connect('drag-drop', drop_attachment_reorder_drop)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
-panel_upper.set_position(win_comp.get_default_size()[0]-242)
-panel_compose.set_position(125)
+panel_upper.set_position(int(Props['ui/composer/headers/width'] or (win_comp.get_default_size()[0] - 242)))
+panel_upper.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/headers/width', paned.get_position())))
+panel_compose.set_position(int(Props['ui/composer/headers/height'] or 125))
+panel_compose.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/headers/height', paned.get_position())))
 entry_subject.connect('changed', on_edit_subject)
 spanel_edit_message.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 composer_text_buffer.connect('modified-changed', on_edit_message)
@@ -4651,6 +4649,9 @@ else:
 	stck_sign_bad.hide()
 
 gtk.main()
+if Timers2.keys():
+	stderr(_("Executing outstanding timers."))
+timer2_flush()
 if len(threading.enumerate()) > 1:
 	stderr(_("Waiting background threads to complete."))
 
