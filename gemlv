@@ -2360,17 +2360,17 @@ def act_save_struct():
 def act_save_struct_inner(savedir, iterator):
 	part = Parts[iterator][0]
 	itpath = Parts.get_path(iterator)
-	myname = decode_mimetext(part.get_filename())
-	if myname is not None:
-		myname = os.path.basename(myname)
+	mimepart_name = decode_mimetext(part.get_filename())
+	if mimepart_name is not None:
+		mimepart_name = os.path.basename(mimepart_name)
 	if Parts.iter_has_child(iterator):
-		if myname is None:
-			myname = part_filename_by_iteratorpath(itpath, prefix='multipart', add_extension=False)
+		if mimepart_name is None:
+			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='multipart', add_extension=False)
 		body = part.get_payload(decode=True)
 		if body is None and (part.preamble is not None or part.epilogue is not None):
 			savefile = os.path.join(savedir, part_filename_by_iteratorpath(itpath, prefix='part', add_extension='txt'))
 			save_to_file(part, savefile, consider_preamble=True)
-		mysavedir = os.path.join(savedir, myname)
+		mysavedir = os.path.join(savedir, mimepart_name)
 		try:
 			mkdir(mysavedir)
 		except OSError as e:
@@ -2390,13 +2390,13 @@ def act_save_struct_inner(savedir, iterator):
 			except OSError as e:
 				display_error(e)
 	else:
-		if myname is None:
+		if mimepart_name is None:
 			body = part.get_payload(decode=True)
 			if body is None or len(body) == 0:
 				# Skip empty noname parts.
 				return
-			myname = part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True)
-		savefile = os.path.join(savedir, myname)
+			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True)
+		savefile = os.path.join(savedir, mimepart_name)
 		save_to_file(part, savefile)
 
 def act_save():
@@ -3167,6 +3167,8 @@ def act_save_edit(save_as=False):
 		if subj:
 			if proposed_filename: proposed_filename += ' - '
 			proposed_filename += subj
+		# replace slash to similar-looking unicode char
+		proposed_filename = re.sub('/', '⁄', proposed_filename)
 		proposed_filename += '.eml'
 		filename = choose_save_file(proposed_filename)
 	if filename is not None:
