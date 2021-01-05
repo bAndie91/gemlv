@@ -1369,6 +1369,7 @@ def act_close_edit():
 	else:
 		toggle_rqdn.set_sensitive(True)
 		return True
+	# FIXME: properly remove named ranges from textbuffer
 
 def act_button(func):
 	if type(func) != type(()):
@@ -2010,11 +2011,10 @@ def get_reply_quotation():
 
 def open_composer():
 	if win_comp.get_visible():
-		act_close_edit()
+		act_close_edit()  # FIXME: dont do this
 	if win_comp.get_visible():
 		win_comp.set_urgency_hint(True)
 		win_comp.present()
-		win_comp.set_urgency_hint(False)
 		return False
 	
 	global NewEmail
