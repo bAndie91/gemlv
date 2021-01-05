@@ -1357,7 +1357,7 @@ def act_quit():
 
 def act_close_edit():
 	if not win_comp.get_data('email-sent') and not win_comp.get_data('is-saved'):
-		if not question(_("Message is not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE), (_("Continue Editing"), gtk.STOCK_EDIT)):
+		if not question(_("Message is being edited, not saved.\nClose anyway?"), (None, gtk.STOCK_QUIT if cliArgs.compose else gtk.STOCK_CLOSE), (_("Continue Editing"), gtk.STOCK_EDIT)):
 			return True
 	win_comp.hide()
 	glib.source_remove(Timers['auto-save-draft'])
@@ -1368,8 +1368,9 @@ def act_close_edit():
 		return False
 	else:
 		toggle_rqdn.set_sensitive(True)
+		composer_text_buffer.delete_namedrange('user_signature')
+		composer_text_buffer.delete_namedrange('quoted_message')
 		return True
-	# FIXME: properly remove named ranges from textbuffer
 
 def act_button(func):
 	if type(func) != type(()):
@@ -2009,13 +2010,17 @@ def append_composer_text_user_signature():
 def get_reply_quotation():
 	return _("Quote:") + '\n\n' + quote_message()
 
-def open_composer():
+def open_composer(reason):
 	if win_comp.get_visible():
-		act_close_edit()  # FIXME: dont do this
-	if win_comp.get_visible():
-		win_comp.set_urgency_hint(True)
-		win_comp.present()
-		return False
+		cur_reason = win_comp.get_data('reason')
+		if cur_reason == reason:
+			win_comp.set_urgency_hint(True)
+			win_comp.present()
+			return False
+		else:
+			act_close_edit()
+			if win_comp.get_visible():
+				return False
 	
 	global NewEmail
 	NewEmail = MIMEMultipart('mixed')
@@ -2051,7 +2056,12 @@ def remove_old_draft():
 	last_draft_name = win_comp.get_data('last-auto-saved-draft-file-name')
 	if last_draft_name:
 		draft_dir = get_autosave_dir()
-		os.unlink(os.path.join(draft_dir, last_draft_name))
+		draft_file = os.path.join(draft_dir, last_draft_name)
+		try:
+			os.unlink(draft_file)
+		except OSError as e:
+			if e.errno not in [os.errno.ENOENT]:
+				raise
 
 def auto_save_draft():
 	if not win_comp.get_data('is-auto-saved'):
@@ -2131,7 +2141,7 @@ def add_composer_From_hidden():
 	return False
 
 def act_compose():
-	if open_composer():
+	if open_composer(reason=COMPOSE_NEW):
 		add_composer_agent_headers()
 		add_composer_header('To', '')
 		set_composer_subject('')
@@ -2142,7 +2152,7 @@ def act_compose():
 		panel_edit_message.grab_focus()
 
 def act_reply(compose_type):
-	if open_composer():
+	if open_composer(reason=compose_type):
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
 		composer_text_buffer.clear()
@@ -2217,7 +2227,7 @@ def shorturl(url, maxlength=72):
 def act_unsubscribe():
 	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
 	if len(links) == 1 and links[0][0]['split'].scheme == 'mailto':
-		if open_composer():
+		if open_composer(reason=COMPOSE_UNSUB):
 			add_composer_mailto(links[0][0])
 			on_after_save_draft()
 	else:
@@ -3789,7 +3799,7 @@ def drag_part_end(wdg, context):
 		recursive_rm(tmp_dir_path)
 
 def act_dispos_notif():
-	if open_composer():
+	if open_composer(reason=COMPOSE_MDN):
 		NewEmail.set_type('multipart/report')
 		NewEmail.set_param('report-type', 'disposition-notification', header=HDR_CT)
 		
@@ -4056,7 +4066,7 @@ VAL_PRIORITY = [{
 VAL_PRECEDENCE = [{
 	'require': '^(?i)(%s)$' % '|'.join(Precedences),
 	}]
-COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD = range(5)
+COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD, COMPOSE_MDN, COMPOSE_UNSUB = range(7)
 Email = None
 PartPrimary = None
 PartSecondary = None
@@ -4550,7 +4560,7 @@ btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, 
 
 if cliArgs.compose:
 	setproctitle.setproctitle(PROGNAME+'-compose')
-	open_composer()
+	open_composer(reason=COMPOSE_NEW)
 	if cliArgs.FILE:
 		# Open existing Email for edit.
 		win_comp.set_data('saved-to-file', cliArgs.FILE)

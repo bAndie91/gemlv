@@ -61,8 +61,8 @@ msgstr "Dátum"
 msgid "Priority"
 msgstr "Elsőbbség"
 
-msgid "Message is not saved.\nClose anyway?"
-msgstr "Az üzenet nincs mentve.\nMégis bezárod?"
+msgid "Message is being edited, not saved.\nClose anyway?"
+msgstr "Az üzenet szerkesztés alatt, nincs mentve.\nMégis bezárod?"
 
 msgid "Fwd: "
 msgstr "Tov: "
