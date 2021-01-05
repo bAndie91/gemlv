@@ -6,19 +6,26 @@ install:
 	ln -snvf gemlv /usr/bin/gemlv-compose
 	ln -snvf gemlv /usr/bin/gemlv-mailto
 	cp -va gemlv-report gemlv-report-spam gemlv-report-ham /usr/bin/
-	[ -d /etc/gemlv ] || mkdir /etc/gemlv
+	mkdir -p /etc/gemlv
 	cp -va filters.conf /etc/gemlv/
+	mkdir -p /usr/share/doc/gemlv
+	cp -va LICENSE /usr/share/doc/gemlv/
 	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
 	do echo /"$${f%.*}".mo;\
 	  msgfmt -o /"$${f%.*}".mo "$$f"; \
 	done
 
 uninstall:
-	rm -v /usr/share/applications/gemlv.desktop
-	rm -v /usr/share/applications/gemlv-compose.desktop
-	rm -v /usr/bin/gemlv
-	rm -v /usr/bin/gemlv-compose /usr/bin/gemlv-mailto
-	rm -v /usr/bin/gemlv-report /usr/bin/gemlv-report-spam /usr/bin/gemlv-report-ham
-	rm -v /etc/gemlv/filters.conf
-	rmdir -v /etc/gemlv || true
+	[ ! -e /usr/share/applications/gemlv.desktop ] || rm -v /usr/share/applications/gemlv.desktop
+	[ ! -e /usr/share/applications/gemlv-compose.desktop ] || rm -v /usr/share/applications/gemlv-compose.desktop
+	[ ! -e /usr/bin/gemlv ] || rm -v /usr/bin/gemlv
+	[ ! -e /usr/bin/gemlv-compose ] || rm -v /usr/bin/gemlv-compose
+	[ ! -e /usr/bin/gemlv-mailto ] || rm -v /usr/bin/gemlv-mailto
+	[ ! -e /usr/bin/gemlv-report ] || rm -v /usr/bin/gemlv-report
+	[ ! -e /usr/bin/gemlv-report-spam ] || rm -v /usr/bin/gemlv-report-spam
+	[ ! -e /usr/bin/gemlv-report-ham ] || rm -v /usr/bin/gemlv-report-ham
+	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
+	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
+	[ ! -e /usr/share/doc/gemlv/LICENSE ] || rm -v /usr/share/doc/gemlv/LICENSE
+	[ ! -e /usr/share/doc/gemlv/ ] || rmdir -v /usr/share/doc/gemlv/
 	rm -v /usr/share/locale/*/LC_MESSAGES/gemlv.mo
