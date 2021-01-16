@@ -2641,6 +2641,7 @@ def populate_filters_menu(eml):
 	for mi in menu_filters.children():
 		menu_filters.remove(mi)
 	uniqfilt = {}
+	rmi_group = None
 	for filt in get_filters_by_mime(eml.get_content_maintype(), eml.get_content_subtype()):
 		if filt[0] == '': continue
 		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
@@ -2648,11 +2649,16 @@ def populate_filters_menu(eml):
 		lbl = filt[0]
 		if lbl == 'sh':
 			lbl = ' '.join(re.findall('(^\S+|\d*[<>]+(?:&\d+|\s*\S+)|[;\|&]+\s*\S+)', filt[1][1]))
-		mi = gtk.MenuItem(lbl)
-		mi.connect('activate', lambda mi, eml, filt: load_part(eml, filt), eml, filt)
+		mi = gtk.RadioMenuItem(group=rmi_group, label=lbl, use_underline=False)
+		if rmi_group is None: mi.set_active(True)  # check the first menu item on menu creation
+		mi.connect('activate', filters_menu_filter_selected, eml, filt)
 		menu_filters.append(mi)
+		rmi_group = mi
 	menu_filters.show_all()
 	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
+
+def filters_menu_filter_selected(mi_selected, eml, filt):
+	load_part(eml, filt)
 
 class TextBuffer(gtk.TextBuffer):
 	class TextBufferNamedRangeError(Exception):
