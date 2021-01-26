@@ -489,15 +489,18 @@ def set_dialog_icon_name(dlg, icon):
 	img = dlg.get_content_area().children()[0].children()[0]
 	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
-def choose_dialog(action, filename=None, multifile=False):
-	global LastFolder
+def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False):
+	global FileChooserLastFolder
 	selected = None
+	
+	assert (multifile and not ask_overwrite) or not multifile
+	assert (ask_overwrite and action == gtk.FILE_CHOOSER_ACTION_SAVE) or not ask_overwrite
 	
 	btn_accept_stock = gtk.STOCK_SAVE
 	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
 		btn_accept_stock = gtk.STOCK_OPEN
 	dlg = gtk.FileChooserDialog(parent=get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
-	if LastFolder is not None: dlg.set_current_folder(LastFolder)
+	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
 		dlg.set_select_multiple(True)
@@ -511,18 +514,22 @@ def choose_dialog(action, filename=None, multifile=False):
 			if multifile:
 				selected = dlg.get_filenames()
 			else:
-				selected = dlg.get_filename()
+				tmp_selected = dlg.get_filename()
+				if ask_overwrite and os.path.lexists(tmp_selected):
+					if not question(_("This file already exists:") + ('\n<tt>%s</tt>\n' % (glib.markup_escape_text(os.path.basename(tmp_selected)))) + _("Overwrite?"), (None, gtk.STOCK_SAVE)):
+						continue
+				selected = tmp_selected
 			break
 		elif resp == gtk.RESPONSE_NO:
 			dlg.set_current_folder(os.getcwd())
 		else:
 			break
-	LastFolder = dlg.get_current_folder()
+	FileChooserLastFolder = dlg.get_current_folder()
 	dlg.destroy()
 	return selected
 
-def choose_save_file(filename=None):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename)
+def choose_save_file(filename=None, ask_overwrite=False):
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename, ask_overwrite=ask_overwrite)
 
 def choose_save_folder():
 	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
@@ -2331,16 +2338,36 @@ def act_open():
 	run_async(cliArgs.opener, cliArgs.opener_args + [tmppath], [os.unlink, tmppath])
 
 def basenameify(s):
-	# Replace ASCII slash (/) to a similar multibyte char (U+2215 DIVISION SLASH)
+	"""
+	Replace ASCII slash (/) to a similar-looking multibyte char (U+2215 DIVISION SLASH)
+	"""
 	return s.replace('/', u'\u2215')
 
 def calc_attachment_name(part, n=None):
+	"""
+	Return a filename for a given MIME part to save it into a file.
+	The filename is based on the Content-Disposition headers, else the Subject plus the MIME part's index.
+	"""
 	name = decode_mimetext(part.get_filename())
 	if name is None:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s%s" % (basenameify(get_one_header_main('Subject') or _("Email")), sfx, get_extension_by_mime(part.get_content_type()))
-	return name
+		name = "%s - attachment%s%s" % (get_one_header_main('Subject') or _("Email"), sfx, get_extension_by_mime(part.get_content_type()))
+	return basenameify(name)
+
+def find_free_filename(directory=None, nice_name=None, nice_path=None):
+	assert (directory is not None and nice_name is not None and nice_path is None) or (directory is None and nice_name is None and nice_path is not None)
+	
+	if nice_path is not None:
+		return find_free_filename(directory=os.path.dirname(nice_path), nice_name=os.path.basename(nice_path))
+	
+	rootname, ext = os.path.splitext(nice_name)
+	free_path = os.path.join(directory, nice_name)
+	counter = 1
+	while os.path.lexists(free_path):
+		counter += 1
+		free_path = os.path.join(directory, '%s (%d)%s' % (rootname, counter, ext))
+	return os.path.basename(free_path)
 
 def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add_subject=False):
 	part = Parts[itpath][0]
@@ -2379,6 +2406,7 @@ def act_save_struct_inner(savedir, iterator):
 		body = part.get_payload(decode=True)
 		if body is None and (part.preamble is not None or part.epilogue is not None):
 			savefile = os.path.join(savedir, part_filename_by_iteratorpath(itpath, prefix='part', add_extension='txt'))
+			# TODO: should we care about overwriting files here?
 			save_to_file(part, savefile, consider_preamble=True)
 		mysavedir = os.path.join(savedir, mimepart_name)
 		try:
@@ -2407,6 +2435,7 @@ def act_save_struct_inner(savedir, iterator):
 				return
 			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True)
 		savefile = os.path.join(savedir, mimepart_name)
+		# TODO: should we care about overwriting files here?
 		save_to_file(part, savefile)
 
 def act_save():
@@ -2414,7 +2443,7 @@ def act_save():
 	if len(itpaths) == 1:
 		itpath = itpaths[0]
 		eml = get_part_by_itpath(itpath)
-		savefile = choose_save_file(calc_attachment_name(eml))
+		savefile = choose_save_file(find_free_filename(directory=FileChooserLastFolder, nice_name=calc_attachment_name(eml)))
 		if savefile is not None:
 			save_to_file(eml, savefile)
 	elif len(itpaths) > 1:
@@ -2422,7 +2451,7 @@ def act_save():
 		if savedir is not None:
 			for n in range(0, len(itpaths)):
 				eml = get_part_by_itpath(itpaths[n])
-				basename = calc_attachment_name(eml, n)
+				basename = find_free_filename(directory=savedir, nice_name=calc_attachment_name(eml, n))
 				savefile = os.path.join(savedir, basename)
 				save_to_file(eml, savefile)
 
@@ -2466,7 +2495,7 @@ def set_xattrs(fh, attrs, filename='-'):
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	if ask_overwrite:
 		if os.path.lexists(filename):
-			if not question(_("This file already exists:\n%s\nOverwrite?") % (os.path.basename(filename)), (None, gtk.STOCK_SAVE)):
+			if not question(_("This file already exists:") + ('\n<tt>%s</tt>\n' % (glib.markup_escape_text(os.path.basename(filename)))) + _("Overwrite?"), (None, gtk.STOCK_SAVE)):
 				return None
 	try:
 		if eml.get_content_type() == MIMETYPE_SYMLINK:
@@ -3173,9 +3202,7 @@ def generate_signature(email_root, data_to_sign):
 
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
-	ask_overwrite = False
 	if filename is None or save_as:
-		ask_overwrite = True
 		subj = get_composer_subject()
 		proposed_filename = ''
 		if not win_comp.get_data('email-sent') or not subj:
@@ -3183,14 +3210,15 @@ def act_save_edit(save_as=False):
 		if subj:
 			if proposed_filename: proposed_filename += ' - '
 			proposed_filename += subj
-		# replace slash to similar-looking unicode char
-		proposed_filename = re.sub('/', '⁄', proposed_filename)
+		proposed_filename = basenameify(proposed_filename)
 		proposed_filename += '.eml'
-		filename = choose_save_file(proposed_filename)
+		filename = choose_save_file(find_free_filename(directory=FileChooserLastFolder, nice_name=proposed_filename), ask_overwrite=True)
 	if filename is not None:
 		build_newemail()
 		# TODO: 'save in encrypted' option
-		if save_to_file(NewEmail, filename, ask_overwrite=ask_overwrite) == True:
+		# NOTE: do not ask overwrite, because either the file chooser dialog asked it previously,
+		# or we're updating an earlier saved file.
+		if save_to_file(NewEmail, filename, ask_overwrite=False) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
 
@@ -3785,12 +3813,11 @@ def drag_part_data(wdg, context, dnd_data, intid, time):
 				# TODO
 				# Don't handle XDirectSave.
 				# We pretended to support it just to have the remote app read our filename.
-				if False:
-					# TODO support GIO
-					filepath = file_uri_to_path(dest_filename)
-					if filepath is not None:
-						saved = save_to_file(part0, filepath)
-						xds_return_code = 'S' if saved else 'E'
+#				# TODO: support GIO
+#				filepath = file_uri_to_path(dest_filename)
+#				if filepath is not None:
+#					saved = save_to_file(part0, filepath)
+#					xds_return_code = 'S' if saved else 'E'
 				# Fail XDirectSave, remote app should ask us for other target type.
 				dnd_data.set(dnd_data.target, 8, xds_return_code)
 		else:
@@ -4076,7 +4103,7 @@ COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWA
 Email = None
 PartPrimary = None
 PartSecondary = None
-LastFolder = os.getcwd()
+FileChooserLastFolder = os.getcwd()
 OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
@@ -4091,7 +4118,8 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 	]
-# sensitive headers are stripped from forwarded emails and from emails opened for edit
+# sensitive headers are stripped before send
+# TODO: strip sensitive headers
 SensitiveHeaders = [
 	# TODO: sensitive headers
 	'X-getmail-retrieved-from-mailbox',

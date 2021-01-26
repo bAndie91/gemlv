@@ -82,8 +82,11 @@ msgstr "Email"
 msgid "Notice: can not set xattr '%s' on '%s': %s"
 msgstr "Figyelem: nem tudtam a '%s' x-attribútumot beállítani '%s' fájlon: %s"
 
-msgid "This file already exists:\n%s\nOverwrite?"
-msgstr "Ez a fájl már létezik:\n%s\nFelülírod?"
+msgid "This file already exists:"
+msgstr "Ez a fájl már létezik:"
+
+msgid "Overwrite?"
+msgstr "Felülírod?"
 
 msgid "Select Font"
 msgstr "Betűtípus kiválasztása"
