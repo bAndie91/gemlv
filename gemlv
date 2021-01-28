@@ -2181,8 +2181,10 @@ def act_reply(compose_type):
 			composer_maintain_references_headers()
 			
 			email_to_forward = email.message_from_string(Email.as_string())
-			for hdr in SensitiveHeaders:
-				del email_to_forward[hdr]
+			for fwd_header in email_to_forward.keys():
+				fwd_header = headercase(fwd_header)
+				if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
+					del email_to_forward[fwd_header]
 			part = MIMEMessage(email_to_forward)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
 			NewEmail.attach(part)
@@ -4159,12 +4161,22 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 	]
-# sensitive headers are stripped before send
-# TODO: strip sensitive headers
+# sensitive headers are stripped on opening an email for edit
+# TODO: strip sensitive headers before send
 SensitiveHeaders = [
-	# TODO: sensitive headers
+	# TODO: other sensitive headers
 	'X-getmail-retrieved-from-mailbox',
 	'X-GMAIL-LABELS',
+	# headers Clawsmail uses in draft emails:
+	'X-Claws-*', 'S', 'SCF', 'RMID',
+]
+TechnicalHeaders = [
+	# TODO: other technical headers
+	HDR_CT,
+	HDR_CTE,
+	HDR_CT,
+	HDR_CD,
+	'Mime-Version',
 ]
 EditExcludedHeaders = [
 	'Auto-Submitted',
@@ -4175,12 +4187,11 @@ EditExcludedHeaders = [
 	'Received',
 	'Received-*',
 	'X-Originating-IP',
-	# TODO: technical headers
-	#HDR_CT,
 	#'X-MS-*',
 	#'X-*',
 ]
 EditExcludedHeaders.extend(SensitiveHeaders)
+EditExcludedHeaders.extend(TechnicalHeaders)
 AddressbookHeaders = [
 	'From',
 	'Reply-To',
@@ -4657,6 +4668,7 @@ if cliArgs.compose:
 				set_composer_subject(hval)
 			if any(fnmatch(hname, headercase(hdr)) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
+				stderr("Skip header '%s' in email editing." % (hname,))
 				pass
 			else:
 				add_composer_header(hname, hval)
