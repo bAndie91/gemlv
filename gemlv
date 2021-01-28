@@ -17,7 +17,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
-from email.header import make_header
 import re
 from tempfile import mkstemp
 from tempfile import mkdtemp
@@ -1107,8 +1106,11 @@ def resize_panel_view_header(wdg, rect=None):
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
 def decode_mimetext(s):
+	"""
+	Takes one or more '=?...?=' tokens or non-encoded substrings and returns the complete decoded string.
+	"""
 	if s is not None:
-		plain_str, encoding = email.header.decode_header(s)[0]
+		plain_str = ' '.join([x[0] for x in email.Header.decode_header(s)])
 		return plain_str
 	return s
 
@@ -1116,7 +1118,7 @@ def decode_header(s, unfold=False, eml=None):
 	chunks = []
 	if unfold:
 		s = re.sub('\r?\n\s*', ' ', s)
-	for chars, encoding in email.header.decode_header(s):
+	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			# encoding is not specified in this header
 			# first try to decode in UTF-8
@@ -3065,19 +3067,58 @@ def make_msgid():
 	# Don't leak hostname, IP, or time in generated Message-ID.
 	return '<%s@%s>' % (uuid.uuid4().hex, uuid.uuid4().hex)
 
+def encode_header(header_name, header_value):
+	"""
+	Make an RFC 2047-compilant header value string (without line breaks),
+	ie. encode non-ascii-only words, but leave ascii-only words as-is.
+	Encode subsequent non-ascii-only words together to keep space chars.
+	"""
+	chunks = []
+	CHUNK_PLAIN, CHUNK_ENCODED = range(2)
+	separator = ' '
+	prev_word = None
+	prev_chunk = None
+	for word in header_value.split(separator):
+		try:
+			if prev_chunk is not None and word == '':
+				# two or more spaces follow a non-ascii-only word, this might result
+				# in two subsequent MIME-encoded words (two or more spaces between them)
+				# which is in turn decoded as one continuous word instead of two.
+				# ie. whitespace between MIME-encoded words are ignored.
+				# so jump to the CHUNK_ENCODED branch to snap the extra space to the
+				# word before it.
+				raise UnicodeError()
+			chunk = email.Header.make_header([(word, None)], header_name=header_name)
+			chunk_type = CHUNK_PLAIN
+		except (UnicodeDecodeError, UnicodeError):
+			if prev_word is not None:
+				word = prev_word + separator + word
+			chunk = email.Header.make_header([(word, 'UTF-8')], header_name=header_name)
+			chunk_type = CHUNK_ENCODED
+		chunk = chunk.encode()
+		if chunk_type == CHUNK_PLAIN:
+			if prev_chunk is not None:
+				chunks.append(prev_chunk)
+			chunks.append(chunk)
+			prev_word = None
+			prev_chunk = None
+		else:
+			prev_word = word
+			prev_chunk = chunk
+	if prev_chunk is not None:
+		chunks.append(prev_chunk)
+	return separator.join(chunks)
+
 def build_newemail():
 	keep_headers = win_comp.get_data('blank-email-default-headers')
 	for hname, hval in NewEmail._headers:
 		if hname.lower() not in keep_headers:
 			del NewEmail[hname]
 	for hname, hval in iterate_composer_headers():
-		try:
-			mime_encoded_header = make_header([(hval, None)], header_name=hname)
-		except UnicodeDecodeError:
-			mime_encoded_header = make_header([(hval, 'UTF-8')], header_name=hname)
+		mime_encoded_header = encode_header(hname, hval)
 		if hname.lower() in keep_headers:
 			del NewEmail[hname]
-		NewEmail.add_header(hname, str(mime_encoded_header))
+		NewEmail.add_header(hname, mime_encoded_header)
 	
 	# if there is not Message-ID but we want to add it to xattrs on successful sending
 	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
@@ -3189,7 +3230,7 @@ def gpg_encrypt_email(eml):
 def add_autocrypt_headers(eml, author_email_address):
 	hname = 'Autocrypt'
 	keydata = gpg_export_pubkey(author_email_address)
-	hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+	hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
 	del eml[hname]
 	eml[hname] = hvalue
 
