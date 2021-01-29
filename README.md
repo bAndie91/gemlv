@@ -127,6 +127,28 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-H``` Show/Hide headers
 	- ```F4``` edit draft message with external program
 
+
+## Autocrypt implementation status
+
+- [ ] header parsing: compliant parsing of the Autocrypt header
+- [ ] keygen: secret key generation follows Autocrypt UI guidance
+	- call sensible GPG UI program to generate key
+- [ ] peerstate: state is kept according to spec
+- [X] header inject 	 '
+	- gemlv sends Autocrypt header when crypto-sign is turned on
+- [ ] recommend: implements Autocrypt recommendation
+- [ ] encrypt: encrypts outgoing messages properly
+	- [X] body
+	- [ ] headers
+	- [ ] attachments
+- [ ] setup message: proper generation and processing of Autocrypt Setup Message
+- [ ] setup process: follows guidance with respect to Autocrypt account setup
+- [ ] gossip
+	- send Autocrypt-Gossip headers
+	- process incoming Autocrypt and Autocrypt-Gossip headers
+- [ ] uid decorative: UID in key data is only used for decorative purposes, and in particular not for looking up keys for an e-mail address.
+
+
 ## CLI options
 
 ```
