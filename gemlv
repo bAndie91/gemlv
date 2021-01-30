@@ -2889,9 +2889,12 @@ def validate_all_comp_headers():
 				return False
 	return True
 
-def act_send():
+class CanNotPrepareEmailToSend(Exception):
+	pass
+
+def prepare_to_send():
 	if not validate_all_comp_headers():
-		return
+		raise CanNotPrepareEmailToSend()
 	err_msg = ''
 	if not get_composer_subject():
 		err_msg += _("No Subject.") + '\n'
@@ -2902,19 +2905,35 @@ def act_send():
 	if err_msg != '':
 		err_msg += _("Send anyway?")
 		if not question(err_msg, (_("Send"), 'mail-send')):
-			return
+			raise CanNotPrepareEmailToSend()
 	try:
 		email_to_send = build_newemail_to_send()
 	except GnuPGSignError as e:
 		e.message = _("Crypto-signing error") + '\n\n' + e.message
 		display_error(e)
-		return
+		raise CanNotPrepareEmailToSend()
 	except GnuPGEncryptError as e:
 		if e.status == 'invalid recipient':
 			# TODO: choose GPG recipients
 			pass
 		display_error(e)
-		return
+		raise CanNotPrepareEmailToSend()
+	
+	return email_to_send
+
+def act_send_to_file():
+	email_to_send = prepare_to_send()
+	
+	filename = propose_and_confirm_a_filename_to_save_edit()
+	if filename is not None:
+		# NOTE: do not ask overwrite, because the file chooser dialog asked it.
+		save_to_file(email_to_send, filename, ask_overwrite=False)
+		# not calling on_after_save_draft() and not updating win_comp 'saved-to-file' data
+		# because now we're saving the ready-to-send email, not the edit-later one.
+		# the user might not able to read it because it may be encrypted for the recipient.
+
+def act_send():
+	email_to_send = prepare_to_send()
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -3252,22 +3271,24 @@ def generate_signature(email_root, data_to_sign):
 	author_address = addr[0][1]
 	return author_address, gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
 
+def propose_and_confirm_a_filename_to_save_edit():
+	subj = get_composer_subject()
+	proposed_filename = ''
+	if not win_comp.get_data('email-sent') or not subj:
+		proposed_filename += _("Draft")
+	if subj:
+		if proposed_filename: proposed_filename += ' - '
+		proposed_filename += subj
+	proposed_filename = basenameify(proposed_filename)
+	proposed_filename += '.eml'
+	return choose_save_file(find_free_filename(directory=FileChooserLastFolder, nice_name=proposed_filename), ask_overwrite=True)
+
 def act_save_edit(save_as=False):
 	filename = win_comp.get_data('saved-to-file')
 	if filename is None or save_as:
-		subj = get_composer_subject()
-		proposed_filename = ''
-		if not win_comp.get_data('email-sent') or not subj:
-			proposed_filename += _("Draft")
-		if subj:
-			if proposed_filename: proposed_filename += ' - '
-			proposed_filename += subj
-		proposed_filename = basenameify(proposed_filename)
-		proposed_filename += '.eml'
-		filename = choose_save_file(find_free_filename(directory=FileChooserLastFolder, nice_name=proposed_filename), ask_overwrite=True)
+		filename = propose_and_confirm_a_filename_to_save_edit()
 	if filename is not None:
 		build_newemail()
-		# TODO: 'save in encrypted' option
 		# NOTE: do not ask overwrite, because either the file chooser dialog asked it previously,
 		# or we're updating an earlier saved file.
 		if save_to_file(NewEmail, filename, ask_overwrite=False) == True:
@@ -4608,7 +4629,7 @@ menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
 toolbuttons = [
-	("Send", 'mail-send', None, act_send, None),
+	("Send", 'mail-send', "Send\nRight click: Save As in ready-to-send format", act_send, act_send_to_file),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save As...", act_save_edit, (act_save_edit, True)),
 	("Addressbook", 'x-office-address-book', None, act_addressbook, None),
 	("Attach File", 'mail-attachment', None, act_attach, None),

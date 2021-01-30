@@ -187,6 +187,9 @@ msgstr "Minden fejléc mutatása"
 msgid "Send"
 msgstr "Küldés"
 
+msgid "Send\nRight click: Save As in ready-to-send format"
+msgstr "Küldés\nobb klikk: Mentés másként küldésre-kész formában"
+
 msgid "Save\nRight click: Save As..."
 msgstr "Mentés\njobb klikk: Mentés másként..."
 
