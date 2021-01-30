@@ -901,7 +901,8 @@ def verify_gpg_signature(message, signature):
 	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
 
 def gpg_sign_data(message, author_address):
-	sgn = gpg.sign(message, keyid=('<%s>'%author_address), detach=True)
+	gpg_uid = '<%s>'%author_address
+	sgn = gpg.sign(message, keyid=gpg_uid, detach=True, extra_args=['--local-user', gpg_uid])
 	if sgn.data == '':
 		raise GnuPGSignError(sgn)
 	return sgn.data
@@ -914,8 +915,8 @@ def gpg_export_pubkey(addr):
 	keydata = ''
 	for line in data.split('\n'):
 		if line.startswith('-'): pass
-		elif line.startswith('='): pass
-		elif line == '': keydata = ''
+		elif line.startswith('='): pass  # skip checksum
+		elif line == '': keydata = ''  # end of headers, data begins
 		else: keydata += line
 		if line.startswith('-----END'): break
 	return keydata
@@ -3209,7 +3210,7 @@ def build_newemail_to_send():
 			# there is no trailing '\n' after the closing boundary;
 			# this adds a '\n' at the end of the raw multipart/* part:
 			signed_email.epilogue = ''
-		author_email_address, signature = generate_signature(email_to_send, data_to_sign)
+		signature = generate_signature(email_to_send, data_to_sign)
 		signature_part.set_payload(signature)
 		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
 		email_to_send.attach(signed_email)
@@ -3235,8 +3236,7 @@ def build_newemail_to_send():
 				del email_to_send[hname]
 				email_to_send[hname] = '...'
 	
-	if toggle_sign.get_active():
-		add_autocrypt_headers(email_to_send, author_email_address)
+	add_autocrypt_headers(email_to_send)
 	
 	return email_to_send
 
@@ -3257,19 +3257,30 @@ def gpg_encrypt_email(eml):
 		raise GnuPGEncryptError(crypt)
 	return crypt.data
 
-def add_autocrypt_headers(eml, author_email_address):
+def add_autocrypt_headers(eml):
 	hname = 'Autocrypt'
+	try:
+		author_email_address = find_signature_author_address(eml)
+	except GnuPGSignError:
+		return
 	keydata = gpg_export_pubkey(author_email_address)
-	hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
-	del eml[hname]
-	eml[hname] = hvalue
+	if keydata:
+		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+		del eml[hname]
+		eml[hname] = hvalue
 
-def generate_signature(email_root, data_to_sign):
+def find_signature_author_address(email_root):
+	"""
+	Find out with which GPG uid (email address) the email should be signed with.
+	"""
 	addr = getaddresses(email_root.get_all('From') or [])
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
-	return author_address, gpg_sign_data(data_to_sign.replace('\n', '\r\n'), author_address)
+	return author_address
+
+def generate_signature(email_root, data_to_sign):
+	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), find_signature_author_address(email_root))
 
 def propose_and_confirm_a_filename_to_save_edit():
 	subj = get_composer_subject()
@@ -4292,9 +4303,9 @@ gpg = gnupg.GPG(use_agent=True)
 gpg.encoding = 'utf-8'
 class GnuPGError(Exception):
 	def __init__(self, x):
-		if isinstance(x, gnupg.Crypt):
+		if isinstance(x, (gnupg.Crypt, gnupg.Sign, gnupg.Verify, gnupg.ExportResult)):
 			for k, v in x.__dict__.iteritems(): setattr(self, k, v)
-			self.message = x.stderr
+			if hasattr(x, 'stderr'): self.message = x.stderr
 		else:
 			self.message = x
 class GnuPGSignError(GnuPGError): pass
