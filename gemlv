@@ -3152,27 +3152,35 @@ def build_newemail_to_send():
 	email_to_send = email.message_from_string(NewEmail.as_string())
 	del email_to_send[HDR_XSD]
 	del email_to_send[HDR_XQID]
+	
+	# set the Disposition-Notification-To header if the user has not set it.
 	if toggle_rqdn.get_active() and email_to_send[HDR_DNT] == '':
 		for addr in filter(None, get_composer_headers(['From', 'Reply-To'])):
 			email_to_send[HDR_DNT] = addr
 			break
 	
+	# crypto-sign
 	if toggle_sign.get_active():
 		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
 		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
 		signature_part = MIMEBase('application', 'pgp-signature')
+		
+		# make a MIME part containing the email's headers as a mean to sign headers as well.
 		protected_headers_part = make_protected_headers_part(email_to_send)
 		signed_email.attach(protected_headers_part)
+		# copy over the email's headers to the attached signed email. this is another way to sign headers.
 		for hname, hvalue in email_to_send._headers:
 			if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
 				signed_email.add_header(hname, hvalue)
-		# move all attachments under the signed email
+		
+		# move all attachments over to the signed email.
 		for part in email_to_send.get_payload():
 			signed_email.attach(part)
-			email_to_send._payload.remove(part)
-		# change the root MIME email to a multipart/signed email
+		email_to_send.set_payload([])
+		# change the root MIME email type to indicate that it is (including) a signed email.
 		email_to_send.set_type('multipart/signed')
 		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+		
 		# produce signature
 		signed_email = email.message_from_string(signed_email.as_string())
 		data_to_sign = signed_email.as_string()
@@ -3188,6 +3196,7 @@ def build_newemail_to_send():
 		email_to_send.attach(signed_email)
 		email_to_send.attach(signature_part)
 	
+	# gpg encryption
 	if toggle_encrypt.get_active():
 		crypt_meta_part = MIMEBase('application', 'pgp-encrypted')
 		crypt_meta_part.set_payload('Version: 1\n')
