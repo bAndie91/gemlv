@@ -382,6 +382,7 @@ def recursive_rm(path):
 			if e.errno == os.errno.EISDIR:
 				for x in os.listdir(path):
 					recursive_rm(os.path.join(path, x))
+				os.rmdir(path)
 			else:
 				raise
 	except OSError as e:
@@ -907,11 +908,76 @@ def gpg_sign_data(message, author_address):
 		raise GnuPGSignError(sgn)
 	return sgn.data
 
-def gpg_export_pubkey(addr):
-	"""Returns the ascii-armoured representation (without BEGIN, END marks, or header)
-	of the public key with the given email address"""
+def get_uids_from_key0(gpg_handle):
+	"""
+	Return list of (the email part of) all UIDs in the 0th key on the keyring.
+	"""
+	uids = []
+	for uid_full in gpg_handle.list_keys()[0]['uids']:
+		uid_mail = re.findall(r'(<[^<]+>)\s*$', uid_full)[0]
+		uids.append(uid_mail)
+	return uids
+
+def gpg_strip_all_uids(key_data, except_uid):
+	print GnuPG_stripped_UIDs_keyring
+	if GnuPG_stripped_UIDs_keyring.has_key(key_data) and GnuPG_stripped_UIDs_keyring[key_data].has_key(except_uid):
+		return GnuPG_stripped_UIDs_keyring[key_data][except_uid]
 	
-	data = gpg.export_keys('<%s>'%addr, minimal=True)
+	# open an ephemeral gpg handle to manipulate the key in it
+	tmp_gpghome = mkdtemp(prefix = PROGNAME + '-gpghome_')
+	tmp_gpg = gnupg.GPG(use_agent=True, gnupghome=tmp_gpghome)
+	tmp_gpg.import_keys(key_data)
+	
+	try:
+		from io import StringIO
+	except ImportError:
+		from cStringIO import StringIO
+	
+	# gather info about UIDs
+	uids_to_del = []
+	for uid_n, uid in enumerate(get_uids_from_key0(tmp_gpg)):
+		if uid != except_uid:
+			# if this uid is not the one we want to keep, then sign up for delete
+			uid_n += 1  # uid indexing is 1-based in gpg edit-key mode
+			uids_to_del.append(uid_n)
+	
+	commands = []
+	# delete uids in reverse order not to mess up the indexing
+	for uid_n in reversed(uids_to_del):
+		# entry these commands into gpg's edit-key mode
+		commands.extend(['uid %d' % uid_n, 'deluid', 'y'])
+	commands.extend(['save', 'y'])
+	
+	# instanciate an arbitrary class just to be able to capture the output of our custom gpg command
+	result = gnupg.Verify(tmp_gpg)
+	# execute gpg command
+	tmp_gpg._handle_io(['--command-fd', '0', '--edit-key', except_uid], StringIO(u'\n'.join(commands)), result)
+	
+	# verify that there is no other uid than except_uid
+	extra_uids = filter(lambda uid: uid != except_uid, get_uids_from_key0(tmp_gpg))
+	if extra_uids:
+		raise GnuPGError(_("Could not remove extra email identities (UIDs) from public key. Can not protect privacy of these email addresses: ")+';'.join(extra_uids))
+	
+	# maintain in-mempry cache
+	new_key_data = tmp_gpg.export_keys(except_uid, minimal=True)
+	if not GnuPG_stripped_UIDs_keyring.has_key(key_data):
+		GnuPG_stripped_UIDs_keyring[key_data] = {}
+	GnuPG_stripped_UIDs_keyring[key_data][except_uid] = new_key_data
+	
+	# drop temporary dir
+	recursive_rm(tmp_gpghome)
+	return new_key_data
+
+def gpg_export_pubkey(addr):
+	"""
+	Returns the ascii-armoured representation (without BEGIN, END marks, or header)
+	of the public key with the given email address. Removes all UIDs from the key
+	except the selected one.
+	"""
+	
+	gpg_uid = '<%s>' % addr
+	data = gpg.export_keys(gpg_uid, minimal=True)
+	data = gpg_strip_all_uids(data, gpg_uid)
 	keydata = ''
 	for line in data.split('\n'):
 		if line.startswith('-'): pass
@@ -962,15 +1028,15 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	gpg_signature_valid = None
 	eml_data = Parts[get_part_iter(eml)][4]
 	if eml_data.has_key('gpg'):
-		gpg = eml_data['gpg']
-		gpg_signature_valid = gpg['valid']
-		gpg_signature_info = gpg['stderr']
+		gpg_info = eml_data['gpg']
+		gpg_signature_valid = gpg_info['valid']
+		gpg_signature_info = gpg_info['stderr']
 	else:
 		for parent_level, parent_part, parent_data in get_all_parent_parts(eml):
 			if parent_data.has_key('gpg'):
-				gpg = parent_data['gpg']
-				gpg_signature_valid = gpg['valid']
-				gpg_signature_info = gpg['stderr']
+				gpg_info = parent_data['gpg']
+				gpg_signature_valid = gpg_info['valid']
+				gpg_signature_info = gpg_info['stderr']
 				break
 			if parent_part.get_content_type() == 'multipart/signed':
 				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
@@ -4310,6 +4376,7 @@ class GnuPGError(Exception):
 			self.message = x
 class GnuPGSignError(GnuPGError): pass
 class GnuPGEncryptError(GnuPGError): pass
+GnuPG_stripped_UIDs_keyring = {}
 
 
 ### Parse Arguments ###
@@ -4770,7 +4837,7 @@ if cliArgs.compose:
 			attach_path(path, path)
 		del path
 	on_after_save_draft()
-	if any([bool(x) for x in get_composer_headers(HDR_XSD)]):
+	if any(bool(x) for x in get_composer_headers(HDR_XSD)):
 		win_comp.set_data('email-sent', True)
 	panel_edit_message.grab_focus()
 else:

@@ -49,7 +49,8 @@ Email viewer and composer for local emails in GTK
 		- obfuscate headers
 	- sign email message and attachments (MIME/PGP)
 	- set [Autocrypt](https://autocrypt.org) header
-	- sign and/or encrypt headers too (`text/rfc822-headers` MIME part)
+		- remove UIDs from the gpg public key which are not disclosed in the current email, so protecting these email addresses from leakage
+	- sign and encrypt headers too (headers repeated both in the encapsulated email and in a `text/rfc822-headers` MIME part)
 - [Gravatar](http://www.gravatar.com/) support
 	- you can configure the url to fetch an avatar picture for en email address:
 		- files in precedence: `~/.config/gemlv/prop/avatar/url_template`, `/etc/gemlv/prop/avatar/url_template`
@@ -106,7 +107,7 @@ Email viewer and composer for local emails in GTK
 	- compose mode (```gemlv --compose```)
 	- addresses
 		- ```--from '"Anna Ann" <me@example.net>'```
-		- ```--to bud@example.net,Carl\ <carl@example.net>```
+		- ```--to bud@example.net,Carl\ \<carl@example.net\>```
 		- ```--cc ...```
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
@@ -139,8 +140,8 @@ Email viewer and composer for local emails in GTK
 - [ ] recommend: implements Autocrypt recommendation
 - [ ] encrypt: encrypts outgoing messages properly
 	- [X] body
-	- [ ] headers
-	- [ ] attachments
+	- [X] headers
+	- [X] attachments
 - [ ] setup message: proper generation and processing of Autocrypt Setup Message
 - [ ] setup process: follows guidance with respect to Autocrypt account setup
 - [ ] gossip
