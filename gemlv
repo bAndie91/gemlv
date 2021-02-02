@@ -1743,7 +1743,7 @@ class compose_header_box(gtk.HBox):
 		
 		if name in AddressbookHeaders:
 			abook = []
-			load_addressbook(callback = lambda addr, userdata: abook.append(addr), display_error = False)
+			load_addressbook(callback = lambda addr, userdata: abook.append(addr), show_errors = False)
 			self.set_autocomplete_list(abook)
 		elif name in AutocompletionHeaders.keys():
 			self.set_autocomplete_list(AutocompletionHeaders[name])
@@ -3412,18 +3412,42 @@ def update_composer_toolbar_toggle_buttons():
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
-def get_addressbook_path():
+def get_singlefile_addressbook_path():
 	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
+def get_addressbook_directory_path():
+	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook.d')
 
-def load_addressbook(callback, display_error = True, userdata = None):
-	try:
-		for ln in open(get_addressbook_path(), 'r'):
-			callback(ln.strip(), userdata)
-	except IOError as e:
-		if display_error:
+def get_addressbook_files_paths():
+	files = []
+	default_abook_file_path = get_singlefile_addressbook_path()
+	if os.path.exists(default_abook_file_path):
+		files.append(default_abook_file_path)
+	def file_found(files, dirname, entries):
+		for entryname in entries:
+			entrypath = os.path.join(dirname, entryname)
+			if os.path.isfile(entrypath):
+				files.append(entrypath)
+	os.path.walk(get_addressbook_directory_path(), file_found, files)
+	return files
+
+def load_addressbook(callback, show_errors = True, userdata = None):
+	abook_files = get_addressbook_files_paths()
+	if abook_files:
+		for abook_path in abook_files:
+			try:
+				for ln in open(abook_path, 'r'):
+					callback(ln.strip(), userdata)
+			except IOError as e:
+				if show_errors:
+					display_error(e)
+				else:
+					stderr(str(e))
+	else:
+		e = _("There is no addressbook file. Create one in ~/Mail/.addressbook.d/ directory.")
+		if show_errors:
 			display_error(e)
 		else:
-			stderr(str(e))
+			stderr(e)
 		return False
 	return True
 
@@ -3454,7 +3478,8 @@ def act_addressbook():
 		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], selection.get_selected_rows()[1]))
 	def click_edit(_x):
 		click_close()
-		run_async(cliArgs.opener, [get_addressbook_path()], None)
+		run_async(cliArgs.opener, [get_singlefile_addressbook_path()], None)
+		run_async(cliArgs.opener, [get_addressbook_directory_path()], None)
 	def click_close(*_x):
 		win.destroy()
 		win_comp.remove_data('addressbook-window')
@@ -3475,7 +3500,7 @@ def act_addressbook():
 	b_edit = StockButton(stock=gtk.STOCK_EDIT)
 	b_close = StockButton(stock=gtk.STOCK_CLOSE)
 	
-	load_addressbook(callback = lambda addr, userdata: mod.append([addr, '']), display_error = True)
+	load_addressbook(callback = lambda addr, userdata: mod.append([addr, '']), show_errors = True)
 	update_addressbook_highlights(mod)
 	
 	win.set_transient_for(win_comp)
