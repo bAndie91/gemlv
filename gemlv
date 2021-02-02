@@ -1880,7 +1880,9 @@ class compose_header_box(gtk.HBox):
 				for x in self.parent.children():
 					if x.hntype == self.HNTYPE_MENU: n += 1
 					if n > 1: break
-				if n < 2: return False
+				if n < 2:
+					self['value'] = ''
+					return False
 			self.parent.remove(self)
 			update_composer_toolbar_toggle_buttons()
 		if self['name'] in RecipientHeaders:
