@@ -3738,10 +3738,11 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 
 def attach__internal(parent_iter=None, content_disposition_params={}, basename=None, part=None, mime=None):
 	global NewEmail
-	if parent_iter is None:
-		parent_part = NewEmail
-	else:
-		while True:
+	while True:
+		if parent_iter is None:
+			parent_part = NewEmail
+			break
+		else:
 			parent_part = Attachments[parent_iter][0]
 			if type(parent_part.get_payload()) == list: break
 			parent_iter = Attachments.iter_parent(parent_iter)
