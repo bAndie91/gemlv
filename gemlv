@@ -1308,11 +1308,11 @@ def get_headers_markup(eml):
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for realname, addr in getaddresses([hval]):
-					realname = decode_header(realname, eml=eml)
+				for realname_mimetext, addr in getaddresses([hval]):
 					addr_mu = glib.markup_escape_text(addr)
-					mailto_link = urllib2.quote('"%s" <%s>' % (realname.replace('"', '\\"').encode('utf-8'), addr_mu)) if realname else addr_mu  # @notranslate
-					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link, addr_mu)
+					realname = decode_header(realname_mimetext, eml=eml)
+					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr))) if realname else addr_mu  # @notranslate
+					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link_mu, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
@@ -3122,6 +3122,11 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		if emailfile is not None:
 			# Note: queue id won't be saved in xattributes if you have not saved the email before sent.
 			append_xattrs(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
+		# Save recipient to the auto addressbook.
+		recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
+		recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
+		for recipient_name, recipient_address in getaddresses(recipients_flat):
+			auto_addressbook_add(email.utils.formataddr((decode_header(recipient_name, eml=email_to_send), recipient_address)), recipient_address)
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
@@ -3535,6 +3540,14 @@ def act_addressbook():
 	win.show_all()
 	win_comp.set_data('addressbook-window', win)
 	win_comp.set_data('addressbook-model', mod)
+
+def auto_addressbook_add(abook_line, email_key):
+	addresses = []
+	load_addressbook(callback = lambda addr, addresses: addresses.append(addr), show_errors=False, userdata=addresses)
+	if all(addr[1] != email_key for addr in getaddresses(addresses)):
+		path = os.path.join(get_addressbook_directory_path(), 'gemlv.auto')
+		with open(path, 'a') as fh:
+			fh.write(abook_line+'\n')
 
 def walk_multipart(eml, leaf_only=False, depth=0):
 	if not leaf_only:
