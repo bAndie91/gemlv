@@ -25,6 +25,12 @@ install:
 	  msgfmt -o /"$${f%.*}".mo "$$f"; \
 	done
 
+locales:
+	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
+	do \
+	  msgfmt -o "$${f%.*}".mo "$$f"; \
+	done
+
 uninstall:
 	[ ! -e /usr/share/applications/gemlv.desktop ] || rm -v /usr/share/applications/gemlv.desktop
 	[ ! -e /usr/share/applications/gemlv-compose.desktop ] || rm -v /usr/share/applications/gemlv-compose.desktop

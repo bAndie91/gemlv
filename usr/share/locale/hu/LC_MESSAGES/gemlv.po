@@ -196,8 +196,11 @@ msgstr "Mentés\njobb klikk: Mentés másként..."
 msgid "Addressbook"
 msgstr "Címtár"
 
-msgid "Attach File"
-msgstr "Fájl csatolása"
+msgid "Attach Files"
+msgstr "Fájlok csatolása"
+
+msgid "Attach"
+msgstr "Csatolás"
 
 msgid "Encrypt"
 msgstr "Titkosítás"

@@ -112,7 +112,7 @@ Email viewer and composer for local emails in GTK
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
 	- message body (```--message "..."```)
-	- attachments (```--attach file1:file2:dir1:dir2```)
+	- attachments (```--attach file1 --attach file2 --attach dir1/```)
 	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368
 - hotkeys
 	- ```Ctrl-Q``` quit
@@ -155,30 +155,27 @@ Email viewer and composer for local emails in GTK
 ```
 usage: gemlv [-h] [--compose] [--from FROM] [--to ADDRESSES] [--cc ADDRESSES]
              [--bcc ADDRESSES] [--subject STRING] [--message STRING]
-             [--mailto URL] [--attach FILES] [--localedir DIR]
-             [--opener COMMAND]
+             [--mailto URL] [--attach FILE] [--localedir DIR]
+             [--opener COMMAND] [--header STRING]
              [FILE]
 
 positional arguments:
-  FILE              Raw Email file for read or continue editing (default:
-                    None)
+  FILE              Raw Email file for read or continue editing (default: None)
 
 optional arguments:
-  -h, --help        show this help message and exit
-  --compose         Write a new Email (default: False)
-  --from FROM       New Email's writer's name and address (default: None)
-  --to ADDRESSES    New Email's Recipients, comma-separated list (default:
-                    None)
-  --cc ADDRESSES    Carbon Copy Recipients, comma-separated list (default:
-                    None)
-  --bcc ADDRESSES   Blind Carbon Copy Recipients, comma-separated list
-                    (default: None)
-  --subject STRING  Subject (default: None)
-  --message STRING  Message body (default: None)
-  --mailto URL      Full 'mailto:' link (default: None)
-  --attach FILES    Attachments, colon-separated list (default: None)
-  --localedir DIR   L10n base directory (default: None)
-  --opener COMMAND  File opener command (default: mimeopen-gui)
+  -h, --help          show this help message and exit
+  --compose           Write a new Email (default: False)
+  --from FROM         New Email's writer's name and address (default: None)
+  --to ADDRESSES      New Email's Recipients, comma-separated list (default: None)
+  --cc ADDRESSES      Carbon Copy Recipients, comma-separated list (default: None)
+  --bcc ADDRESSES     Blind Carbon Copy Recipients, comma-separated list (default: None)
+  --subject STRING    Subject (default: None)
+  --message STRING    Message body (default: None)
+  --mailto URL        Full 'mailto:' link (default: None)
+  --attach FILES, --attachment FILES     Attachment(s) (default: None)
+  --localedir DIR     L10n base directory (default: None)
+  --opener COMMAND    File opener command (default: mimeopen-gui)
+  --header STRING     Add custom header(s) to the new Email (default: None)
 ```
 
 ## FAQ

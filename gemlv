@@ -181,6 +181,16 @@ class StockButton(gtk.Button):
 			img.set_from_pixbuf(icon)
 			img.props.visible = True
 
+def add_gtk_icon_to_stock(icon_name, label_str):
+	gtk.stock_add([(icon_name, _(label_str), 0, 0, None)])
+	iconsource = gtk.IconSource()
+	iconsource.set_icon_name(icon_name)
+	iconset = gtk.IconSet()
+	iconset.add_source(iconsource)
+	icon_factory = gtk.IconFactory()
+	icon_factory.add(icon_name, iconset)
+	icon_factory.add_default()
+
 class Marquee(gtk.ScrolledWindow):
 	def __init__(self, child):
 		assert isinstance(child, gtk.Widget)
@@ -489,7 +499,7 @@ def set_dialog_icon_name(dlg, icon):
 	img = dlg.get_content_area().children()[0].children()[0]
 	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
-def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False):
+def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, custom_accept_button_stock=None):
 	global FileChooserLastFolder
 	selected = None
 	
@@ -499,6 +509,8 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False):
 	btn_accept_stock = gtk.STOCK_SAVE
 	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
 		btn_accept_stock = gtk.STOCK_OPEN
+	if custom_accept_button_stock is not None:
+		btn_accept_stock = custom_accept_button_stock
 	dlg = gtk.FileChooserDialog(parent=get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
 	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
@@ -534,11 +546,11 @@ def choose_save_file(filename=None, ask_overwrite=False):
 def choose_save_folder():
 	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
 
-def choose_open_file():
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN)
+def choose_open_file(custom_accept_button_stock=None):
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, custom_accept_button_stock=custom_accept_button_stock)
 
-def choose_open_files():
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True)
+def choose_open_files(custom_accept_button_stock=None):
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock)
 
 def get_pipe_handlers(npairs):
 	pipes = []
@@ -3567,7 +3579,7 @@ def debug_multipart(eml):
 		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
 
 def act_attach():
-	filenames = choose_open_files()
+	filenames = choose_open_files(custom_accept_button_stock='mail-attachment')
 	if len(filenames) != 0:
 		for filename in filenames:
 			attach_path(filename, filename)
@@ -4470,6 +4482,8 @@ gtk.gdk.threads_init()
 
 ### Build GUI ###
 
+add_gtk_icon_to_stock('mail-attachment', "Attach")
+
 win_main = gtkWindow()
 win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view/height'] or 450))
 win_main.connect('configure-event', on_window_configure)
@@ -4751,7 +4765,7 @@ toolbuttons = [
 	("Send", 'mail-send', "Send\nRight click: Save As in ready-to-send format", act_send, act_send_to_file),
 	(None, gtk.STOCK_SAVE, "Save\nRight click: Save As...", act_save_edit, (act_save_edit, True)),
 	("Addressbook", 'x-office-address-book', None, act_addressbook, None),
-	("Attach File", 'mail-attachment', None, act_attach, None),
+	("Attach Files", 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
