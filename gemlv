@@ -3611,7 +3611,7 @@ def on_composer_attachments_row_changed(model, itpath, iterator):
 	model[iterator][4] = human_size(get_email_part_size_net(part))
 	model.handler_unblock(hid)
 
-def attach_blob(data, parent_iter=None):
+def attach_blob(data, parent_iter=None, check_unique_file=True):
 	mime = get_mime_by_data(data)
 	ct_main, ct_sub = mime.split('/')
 	basename = 'file%s' % (get_extension_by_mime(mime),)
@@ -3648,7 +3648,7 @@ def make_relative_symlink(point_to, symlink_path):
 	assert os.path.isabs(point_to)
 	return os.path.relpath(point_to, os.path.join(symlink_path, os.path.pardir))
 
-def attach_path(original_path, root_attachment_path, parent_iter=None):
+def attach_path(original_path, root_attachment_path, parent_iter=None, check_unique_file=True):
 	root_attachment_path = os.path.abspath(root_attachment_path)
 	attachment_path = original_path
 	mime = None
@@ -3746,7 +3746,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None):
 	
 	if os.path.isdir(attachment_path) and not isalink:
 		for entry in os.listdir(attachment_path):
-			if not attach_path(os.path.join(attachment_path, entry), root_attachment_path, iterator):
+			if not attach_path(os.path.join(attachment_path, entry), root_attachment_path, iterator, check_unique_file=False):
 				return False
 	return True
 
