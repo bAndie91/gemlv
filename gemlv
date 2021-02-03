@@ -477,6 +477,12 @@ def display_error(e):
 	dlg.run()
 	dlg.destroy()
 
+def display_info_modal(text):
+	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
+	dlg.set_title(_("Info"))
+	dlg.run()
+	dlg.destroy()
+
 def question(msg, stock_yes=None, stock_no=None, parent=None):
 	dlg = gtk.MessageDialog(parent or get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
 	dlg.set_markup(msg)
@@ -3621,15 +3627,20 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
 	else:
-		enc = analyze_for_optimal_encoding(data[0:2048])
+		enc = analyze_for_optimal_encoding(data[0:4096*3])
 		part.add_header(HDR_CTE, enc)
 		part.set_payload(data.encode(enc))
+	if check_unique_file and not check_unique_attachment(part):
+		display_info_modal(_("This file is already attached."))
+		return False
 	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
 	return True
 
 def is_safe_symlink(target, root):
-	# Return True if target is within root or target itself is root.
-	# target and root are absolute paths
+	"""
+	Return True if target is within root or target itself is root.
+	target and root are absolute paths.
+	"""
 	assert os.path.isabs(target)
 	assert os.path.isabs(root)
 	sep = re.escape(os.path.sep)
@@ -3691,7 +3702,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 					# neither to an other symlink but something which exists (likely a normal file or a directory),
 					# so attach the resolved 'unsafe' file instead of the original symlink.
 					attachment_path = symlink_target_abs
-					# TODO what should happen with unsafe files which linked multiple times?
+					# TODO: what should happen with unsafe files which linked multiple times?
 					break
 		
 		content_disposition_params = {}
@@ -3742,6 +3753,13 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 				fh.close()
 	
 	basename = os.path.basename(original_path)
+	
+	if check_unique_file and not check_unique_attachment(part):
+		display_info_modal(_("This file is already attached.")+'\n'+basename)
+		# returning True indicates that the caller can proceed attaching additional file,
+		# because there was not an error in the attachment, since this file is already attached.
+		return True
+	
 	iterator = attach__internal(parent_iter=parent_iter, content_disposition_params=content_disposition_params, basename=basename, part=part, mime=mime)
 	
 	if os.path.isdir(attachment_path) and not isalink:
@@ -3784,6 +3802,10 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 			add_already_attached_parts(iterator, attachment_email)
 	
 	return iterator
+
+def check_unique_attachment(mimepart):
+	"""compare MIME part's checksum to the other attachments. allow empty files."""
+	# TODO
 
 def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 	if callback(eml):
