@@ -460,12 +460,14 @@ def get_current_window():
 					w = par
 	return None
 
-def display_error(e):
+def display_error(e, suppl_text=None):
 	text = None
-	if isinstance(e, OSError) or isinstance(e, IOError):
-		text = '%s (#%d)' % (e.strerror, e.errno)
+	if hasattr(e, 'strerror'):
+		text = e.strerror
+		if hasattr(e, 'errno'):
+			text += ' (code %d)' % e.errno
 		if e.filename is not None:
-			text += '\n%s' % (e.filename)
+			suppl_text = e.filename
 	elif isinstance(e, Exception):
 		text = e.message
 	elif type(e) == type([]):
@@ -473,15 +475,26 @@ def display_error(e):
 	if text is None:
 		text = str(e)
 	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(get_current_window())
 	dlg.set_title(_("Error"))
+	if suppl_text is not None:
+		dlg.set_resizable(True)
+		carea = dlg.get_content_area()
+		carea.pack_start(gtkScrolledLabelView(suppl_text), True, True)
+	dlg.show_all()
 	dlg.run()
 	dlg.destroy()
 
-def display_info_modal(text):
-	dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
+def display_info_box_async(text, suppl_text=None):
+	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(get_current_window())
 	dlg.set_title(_("Info"))
-	dlg.run()
-	dlg.destroy()
+	if suppl_text is not None:
+		dlg.set_resizable(True)
+		carea = dlg.get_content_area()
+		carea.pack_start(gtkScrolledLabelView(suppl_text), True, True)
+	dlg.get_widget_for_response(gtk.RESPONSE_OK).connect('clicked', lambda btn, dlg: dlg.destroy(), dlg)
+	dlg.show_all()
 
 def question(msg, stock_yes=None, stock_no=None, parent=None):
 	dlg = gtk.MessageDialog(parent or get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
@@ -865,7 +878,7 @@ def load_parts(eml, model, parent):
 			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
 			model[model.iter_nth_child(iterator, encrypted_part_num)][3] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
 			if not decrypt.ok:
-				display_error('%s\n%s\n%s' % (_("Decryption error"), decrypt.status, decrypt.stderr))
+				display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
 			return
 	if type(eml.get_payload()) == type([]):
 		for part in eml.get_payload():
@@ -2275,7 +2288,7 @@ def act_reply(compose_type):
 			part = MIMEMessage(email_to_forward)
 			part.add_header(HDR_CD, 'attachment', filename=fwdname)
 			NewEmail.attach(part)
-			Attachments.append(None, [part, fwdname, 'emblem-mail', None, ''])
+			Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or subj)
@@ -2996,8 +3009,7 @@ def prepare_to_send():
 	try:
 		email_to_send = build_newemail_to_send()
 	except GnuPGSignError as e:
-		e.message = _("Crypto-signing error") + '\n\n' + e.message
-		display_error(e)
+		display_error(_("Crypto-signing error"), e.message)
 		raise CanNotPrepareEmailToSend()
 	except GnuPGEncryptError as e:
 		if e.status == 'invalid recipient':
@@ -3343,7 +3355,11 @@ def gpg_encrypt_email(eml):
 	email_to_encrypt = email.message_from_string(eml.as_string())
 	for hname in DontLeakHeaders:
 		del email_to_encrypt[hname]
-	crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
+	try:
+		crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
+	except Exception as err:
+		display_error(_("Encryption error"), str(err))
+		raise err
 	if not crypt.ok:
 		raise GnuPGEncryptError(crypt)
 	return crypt.data
@@ -3631,7 +3647,7 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 		part.add_header(HDR_CTE, enc)
 		part.set_payload(data.encode(enc))
 	if check_unique_file and not check_unique_attachment(part):
-		display_info_modal(_("This file is already attached."))
+		display_info_box_async(_("This file is already attached"))
 		return False
 	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
 	return True
@@ -3755,7 +3771,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	basename = os.path.basename(original_path)
 	
 	if check_unique_file and not check_unique_attachment(part):
-		display_info_modal(_("This file is already attached.")+'\n'+basename)
+		display_info_box_async(_("This file is already attached:"), basename)
 		# returning True indicates that the caller can proceed attaching additional file,
 		# because there was not an error in the attachment, since this file is already attached.
 		return True
@@ -3784,7 +3800,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None, ''])
+	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
@@ -3803,16 +3819,37 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	
 	return iterator
 
+def calc_attachment_checksum(part):
+	data = part.get_payload(decode=True)
+	if data is None or data == '': return None
+	return hashlib.md5(data).hexdigest()
+
 def check_unique_attachment(mimepart):
-	"""compare MIME part's checksum to the other attachments. allow empty files."""
-	# TODO
+	"""
+	Compare mimepart checksum to the other attachments in NewEmail.
+	Return true if no attachment matched or mimepart is an empty MIME part, false otherwise.
+	"""
+	
+	checksum = calc_attachment_checksum(mimepart)
+	if checksum is None: return True
+	result = {'checksum': checksum, 'unique': True}
+	
+	def compare_checksums(ts_model, ts_path, ts_iter, result):
+		cksum = ts_model[ts_path][5]
+		if cksum == result['checksum']:
+			result['unique'] = False
+			# terminate foreach() loop:
+			return True
+	
+	Attachments.foreach(compare_checksums, result)
+	return result['unique']
 
 def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 	if callback(eml):
 		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
 		icon = get_stock_by_mime(ct_main, ct_sub)
-		iterator = Attachments.append(root_iter, [eml, name, icon, None, ''])
+		iterator = Attachments.append(root_iter, [eml, name, icon, None, '', calc_attachment_checksum(eml)])
 		subparts = eml.get_payload()
 		if type(subparts) == list:
 			for subpart in subparts:
@@ -3842,7 +3879,7 @@ def drop_attachment_drop(wdg, context, x, y, time):
 		wdg.drag_get_data(context, target, time)
 		wdg.drag_unhighlight()
 	else:
-		display_error(_("Can not manage any of these types: %s") % (context.targets,))
+		display_error(_("Can not manage any of these types:"), repr(context.targets))
 		context.finish(accept, False, time)
 	return accept
 
@@ -3860,7 +3897,7 @@ def drop_attachment_data(wdg, context, x, y, data, intid, time):
 						success = False
 						break
 				else:
-					display_error(_("Unrecognized URI:")+'\n'+uri)
+					display_error(_("Unrecognized URI:"), uri)
 			if success is None:
 				# All uri are attached successfuly.
 				success = True
@@ -4109,7 +4146,7 @@ def act_dispos_notif():
 		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
 		dn_part.set_payload(dn_text)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, ''])
+		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -4701,7 +4738,7 @@ menu_add_header = gtk.Menu()
 panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str)
+Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)
 Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()

@@ -202,6 +202,12 @@ msgstr "Fájlok csatolása"
 msgid "Attach"
 msgstr "Csatolás"
 
+msgid "This file is already attached."
+msgstr "Már csatolva van ez a fájl."
+
+msgid "This file is already attached:"
+msgstr "Már csatolva van ez a fájl:"
+
 msgid "Encrypt"
 msgstr "Titkosítás"
 
@@ -350,8 +356,8 @@ msgstr "Továbbítva"
 msgid "MDN is sent"
 msgstr "MDN küldve"
 
-msgid "Can not manage any of these types: %s"
-msgstr "Egyik tipust sem kezelem ezek közül: %s"
+msgid "Can not manage any of these types:"
+msgstr "Egyik tipust sem kezelem ezek közül:"
 
 msgid "Unrecognized URI:"
 msgstr "Értelmezetlen URI:"
@@ -418,6 +424,9 @@ msgstr "Nincs 'From' feladó cím (vagy több van), ami alapján GPG kulcsot tal
 
 msgid "Crypto-signing error"
 msgstr "Hiba digitális aláírás közben"
+
+msgid "Encryption error"
+msgstr "Hiba titkosítás közben"
 
 msgid "Remove signature"
 msgstr "Aláírás törlése"
