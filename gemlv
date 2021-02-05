@@ -1342,7 +1342,7 @@ def get_headers_markup(eml):
 				for realname_mimetext, addr in getaddresses([hval]):
 					addr_mu = glib.markup_escape_text(addr)
 					realname = decode_header(realname_mimetext, eml=eml)
-					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr))) if realname else addr_mu  # @notranslate
+					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr)).encode('utf-8')) if realname else addr_mu  # @notranslate
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link_mu, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
