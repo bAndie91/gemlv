@@ -950,7 +950,6 @@ def get_uids_from_key0(gpg_handle):
 	return uids
 
 def gpg_strip_all_uids(key_data, except_uid):
-	print GnuPG_stripped_UIDs_keyring
 	if GnuPG_stripped_UIDs_keyring.has_key(key_data) and GnuPG_stripped_UIDs_keyring[key_data].has_key(except_uid):
 		return GnuPG_stripped_UIDs_keyring[key_data][except_uid]
 	
@@ -1008,6 +1007,8 @@ def gpg_export_pubkey(addr):
 	
 	gpg_uid = '<%s>' % addr
 	data = gpg.export_keys(gpg_uid, minimal=True)
+	if data == '':
+		raise GnuPGError(_("Could not find public key for %s.") % (gpg_uid,))
 	data = gpg_strip_all_uids(data, gpg_uid)
 	keydata = ''
 	for line in data.split('\n'):
@@ -3370,7 +3371,11 @@ def add_autocrypt_headers(eml):
 		author_email_address = find_signature_author_address(eml)
 	except GnuPGSignError:
 		return
-	keydata = gpg_export_pubkey(author_email_address)
+	keydata = None
+	try:
+		keydata = gpg_export_pubkey(author_email_address)
+	except GnuPGError:
+		pass
 	if keydata:
 		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
 		del eml[hname]
