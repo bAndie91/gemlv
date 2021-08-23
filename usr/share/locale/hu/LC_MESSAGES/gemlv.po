@@ -448,3 +448,6 @@ msgstr "Adjon meg Feladó vagy Válasz címet hogy tértivevényt kaphasson."
 
 msgid "Disposition Notification requested but no address given."
 msgstr "Tértivevényt kért de nincs megadva cím hozzá."
+
+msgid "Save to Sent"
+msgstr "Mentés a Küldöttek közé"

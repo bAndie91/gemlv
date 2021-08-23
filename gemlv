@@ -3130,11 +3130,15 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	btn_close.connect('clicked', lambda x: dlg.destroy())
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
+	
+	btn_save_sent = StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
+	btn_save_sent.connect('clicked', on_save_sent)
+	dlg.get_action_area().pack_start(btn_save_sent, False, False)
+	
 	if status.code == 0 and status.signal == 0:
 		set_dialog_icon_name(dlg, gtk.STOCK_APPLY)
-		with BasicReuseable(_("Email is sent.")) as s:
-			dlg.set_title(s)
-			dlg.set_markup(s)
+		dlg.set_title(_("Email is sent."))
+		dlg.set_markup(_("Email is sent."))
 		if win_comp.get_data('is-an-mdn'):
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
@@ -3155,6 +3159,8 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		if emailfile is not None:
 			# Note: queue id won't be saved in xattributes if you have not saved the email before sent.
 			append_xattrs(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
+		# Show button to save sent email in 'Sent/' folder
+		btn_save_sent.show_all()
 		# Save recipient to the auto addressbook.
 		recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
 		recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
@@ -3417,6 +3423,20 @@ def act_save_edit(save_as=False):
 		if save_to_file(NewEmail, filename, ask_overwrite=False) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
+
+def on_save_sent(*X):
+	"""invoked by "Save" button on the "Email is Sent" dialog."""
+	global FileChooserLastFolder
+	lastfolder = FileChooserLastFolder
+	origin_email_file = win_main.get_data('email-file')
+	if origin_email_file:
+		inbox_folder = os.path.dirname(origin_email_file)
+	else:
+		inbox_folder = os.getcwd()
+	sent_folder = os.path.join(inbox_folder, 'Sent')
+	FileChooserLastFolder = sent_folder
+	act_save_edit(save_as=True)
+	FileChooserLastFolder = lastfolder
 
 def on_after_save_draft():
 	set_unsaved(False)
