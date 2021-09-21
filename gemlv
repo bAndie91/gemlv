@@ -1209,7 +1209,7 @@ def decode_mimetext(s):
 	Takes one or more '=?...?=' tokens or non-encoded substrings and returns the complete decoded string.
 	"""
 	if s is not None:
-		plain_str = ' '.join([x[0] for x in email.Header.decode_header(s)])
+		plain_str = ' '.join([s.decode(encoding or 'ascii', 'replace') for s, encoding in email.Header.decode_header(s)])
 		return plain_str
 	return s
 
