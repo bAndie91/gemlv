@@ -841,7 +841,7 @@ def load_parts(eml, model, parent):
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb, {}])
-	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is translated to text/plain by email module
+	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is reported as text/plain by email module
 	if PartPrimary is None and content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
 	if PartSecondary is None and content_type == MIMETYPE_HTML:
@@ -1112,7 +1112,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		filt = get_filter_by_mime(ct_main, ct_sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == type([]) and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
+		if type(eml.get_payload()) == list and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
 			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 			set_content_text(text)
 			loaded_text = text
