@@ -4585,14 +4585,14 @@ GnuPG_stripped_UIDs_keyring = {}
 
 argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 argparser.add_argument('--compose', action='store_true', help=_("Write a new Email"))
-argparser.add_argument('--from', metavar='FROM', help=_("New Email's writer's name and address"))
-argparser.add_argument('--to', metavar='ADDRESSES', help=_("New Email's Recipients, comma-separated list"))
-argparser.add_argument('--cc', metavar='ADDRESSES', help=_("Carbon Copy Recipients, comma-separated list"))
-argparser.add_argument('--bcc', metavar='ADDRESSES', help=_("Blind Carbon Copy Recipients, comma-separated list"))
+argparser.add_argument('--from', metavar='ADDRESS', help=_("New Email's writer's name and address"))
+argparser.add_argument('--to', metavar='ADDRESS', action='append', help=_("New Email's Recipients, repeatable"))
+argparser.add_argument('--cc', metavar='ADDRESS', action='append', help=_("Carbon Copy Recipients, repeatable"))
+argparser.add_argument('--bcc', metavar='ADDRESS', action='append', help=_("Blind Carbon Copy Recipients, repeatable"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
-argparser.add_argument('--attach', '--attachment', metavar='FILES', action='append', help=_("Attachment(s)"))
+argparser.add_argument('--attach', '--attachment', metavar='FILE', action='append', help=_("Attachment file's path, repeatable"))
 argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
 argparser.add_argument('--header', metavar='STRING', action='append', help=_("Add custom header(s) to the new Email"))
@@ -4605,10 +4605,6 @@ if os.path.basename(sys.argv[0]).find('mailto') > -1:
 	sysargv.insert(1, '--mailto')
 cliArgs = argparser.parse_args(args=sysargv)
 del sysargv
-for attr in ['to', 'cc', 'bcc']:
-	if getattr(cliArgs, attr) is not None:
-		# TODO: fix email address-line parsing here
-		setattr(cliArgs, attr, re.split('\s*,\s*', getattr(cliArgs, attr)))
 if not cliArgs.compose and not cliArgs.FILE:
 	stderr(_("Either compose mode or FILE is needed."))
 	os._exit(1)

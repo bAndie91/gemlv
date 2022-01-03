@@ -109,20 +109,20 @@ msgstr "Ez egy többrészes MIME Email."
 msgid "Write a new Email"
 msgstr "Új Email írása"
 
-msgid "New Email's Recipients, comma-separated list"
-msgstr "Az új Email címzettje, vesszővel tagolt lista"
+msgid "New Email's Recipients, repeatable"
+msgstr "Az új Email címzettje, ismételhető"
 
-msgid "Carbon Copy Recipients, comma-separated list"
-msgstr "Másolat-címzettek, vesszővel tagolt lista"
+msgid "Carbon Copy Recipients, repeatable"
+msgstr "Másolat-címzettek, ismételhető"
 
-msgid "Blind Carbon Copy Recipients, comma-separated list"
-msgstr "Titkos másolat címek, vesszővel tagolt lista"
+msgid "Blind Carbon Copy Recipients, repeatable"
+msgstr "Titkos másolat címek, ismételhető"
 
 msgid "Message body"
 msgstr "Üzenet szövege"
 
-msgid "Attachment(s)"
-msgstr "Csatolmány(ok)"
+msgid "Attachment file's path, repeatable"
+msgstr "Csatolmány fájl elérési útvonala, ismételhető"
 
 msgid "L10n base directory"
 msgstr "L10n alapkönyvtár"
