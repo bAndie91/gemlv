@@ -3598,6 +3598,7 @@ def update_addressbook_highlights(abook_model=None):
 def act_addressbook():
 	def dblclick(_x, evt):
 		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
+			if not win_comp.get_visible(): return
 			flt_pathinfo = treeview.get_path_at_pos(int(evt.x), int(evt.y))
 			if flt_pathinfo is not None:
 				iterator_path = listfilter.convert_path_to_child_path(flt_pathinfo[0])
@@ -3616,7 +3617,9 @@ def act_addressbook():
 		win_comp.remove_data('addressbook-window')
 		win_comp.remove_data('addressbook-mod')
 	
-	if win_comp.get_data('addressbook-window'): return
+	if win_comp.get_data('addressbook-window'):
+		win_comp.get_data('addressbook-window').present()
+		return True
 	
 	win = gtk.Window()
 	box = gtk.VBox(False, 3)
@@ -3634,6 +3637,7 @@ def act_addressbook():
 	load_addressbook(callback = lambda addr, userdata: mod.append([addr, '']), show_errors = True)
 	update_addressbook_highlights(mod)
 	
+	win.set_title(_("Addressbook"))
 	win.set_transient_for(win_comp)
 	win.set_modal(False)
 	win.set_default_size(280, 400)
@@ -3664,8 +3668,11 @@ def act_addressbook():
 	box_buttons.pack_start(b_edit, True, False)
 	box_buttons.pack_start(b_close, True, False)
 	win.show_all()
+	if not win_comp.get_visible(): b_add.hide()
 	win_comp.set_data('addressbook-window', win)
 	win_comp.set_data('addressbook-model', mod)
+	
+	return True
 
 def auto_addressbook_add(abook_line, email_key):
 	addresses = []
@@ -4644,6 +4651,7 @@ add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_
 add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD))
 add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
+add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
@@ -4816,6 +4824,7 @@ add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
 add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
 add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
 add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
+add_key_binding(win_comp, '<Control>a', lambda *_x: act_addressbook())
 
 box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()

@@ -105,9 +105,9 @@ Email viewer and composer for local emails in GTK
 - CLI options
 	- viewer mode (```gemlv raw_email.eml```)
 	- compose mode (```gemlv --compose```)
-	- addresses
+	- addresses (repeat for more recipients)
 		- ```--from '"Anna Ann" <me@example.net>'```
-		- ```--to bud@example.net,Carl\ \<carl@example.net\>```
+		- ```--to bud@example.net --to Carl\ \<carl@example.net\>```
 		- ```--cc ...```
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
@@ -127,6 +127,7 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-U``` Filter/Unfilter
 	- ```Ctrl-H``` Show/Hide headers
 	- ```F4``` edit draft message with external program
+	- ```Ctrl-A``` Addressbook
 
 
 ## Autocrypt implementation status
