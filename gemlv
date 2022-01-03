@@ -760,7 +760,15 @@ def win_main_show(widget, event):
 		load_file(cliArgs.FILE)
 
 def get_email_addresses_in_main_headers(h):
-	return map(lambda x: x[1], getaddresses(Email.get_all(h) or []))
+	return get_email_addresses_from_headers(h, Email)
+
+def get_email_addresses_from_headers(h, email_obj):
+	return map(lambda x: x[1], getaddresses(email_obj.get_all(h) or []))
+
+def get_email_address_from_headers(h, email_obj):
+	l = get_email_addresses_from_headers(h, email_obj)
+	if len(l) == 0: return None
+	else: return l[0]
 
 def email_from_file(filename):
 	try:
@@ -3110,6 +3118,16 @@ def act_send():
 def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widget, email_to_send):
 	global StopSending
 	StopSending = False
+	
+	recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
+	recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
+	recipients_addr = getaddresses(recipients_flat)
+	
+	sendmail_envs = {
+		'FROM': get_email_address_from_headers('From', email_to_send),
+		'RCPT': ';'.join(map(lambda x: x[1], recipients_addr)),
+	}
+	
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
 	pid = os.fork()
 	if pid == 0:
@@ -3120,6 +3138,9 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		os.dup2(child_write.fileno(), sys.stderr.fileno())
 		os.closerange(3, 255)
 		try:
+			# set helper env vars to aid custom sendmail script
+			for env_name, env_val in sendmail_envs.iteritems():
+				os.environ['SENDMAIL_%s' % env_name] = env_val
 			os.execvp('sendmail', ['sendmail', '-ti'])
 		except OSError as e:
 			stderr(str(e))
@@ -3208,9 +3229,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		# Show button to save sent email in 'Sent/' folder
 		btn_save_sent.show_all()
 		# Save recipient to the auto addressbook.
-		recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
-		recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
-		for recipient_name, recipient_address in getaddresses(recipients_flat):
+		for recipient_name, recipient_address in recipients_addr:
 			auto_addressbook_add(email.utils.formataddr((decode_header(recipient_name, eml=email_to_send), recipient_address)), recipient_address)
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
@@ -4588,6 +4607,7 @@ cliArgs = argparser.parse_args(args=sysargv)
 del sysargv
 for attr in ['to', 'cc', 'bcc']:
 	if getattr(cliArgs, attr) is not None:
+		# TODO: fix email address-line parsing here
 		setattr(cliArgs, attr, re.split('\s*,\s*', getattr(cliArgs, attr)))
 if not cliArgs.compose and not cliArgs.FILE:
 	stderr(_("Either compose mode or FILE is needed."))
