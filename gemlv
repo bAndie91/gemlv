@@ -66,6 +66,7 @@ try:
 except ImportError:
 	sys.stderr.write("No module named pyexiv2. Degrading image auto rotation.\n")
 	pyexiv2 = None
+import gemlv.utils
 
 
 ### helper classes, functions ###
@@ -727,24 +728,9 @@ def human_size(x, suffix='B', decimals=1):
 			return '%.*f %s%s' % (decimals, x, prefixum, suffix)
 		x /= 1024.0
 
-def fix_unquoted_comma(s):
-	"""Many MUA do not enclose real names which contain comma, in quotation.
-	This causes issues in splitting address lines into individual addesses.
-	Try to work around this."""
-	def repl(m):
-		probably_realname = m.group(2)
-		probably_realname_norm = probably_realname.strip()
-		if probably_realname_norm == '' or probably_realname_norm.startswith('"') or probably_realname.find(',')==-1:
-			return m.group(0)
-		else:
-			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
-	return re.sub('(^|,)(.+)(<)', repl, s)
-
-def getaddresses(array):
-	return email.utils.getaddresses(map(fix_unquoted_comma, array))
 
 def getaddress(s):
-	addrs = getaddresses([s or ''])
+	addrs = gemlv.utils.getaddresses([s or ''])
 	if len(addrs) == 0:
 		return None
 	return addrs[0]
@@ -763,7 +749,7 @@ def get_email_addresses_in_main_headers(h):
 	return get_email_addresses_from_headers(h, Email)
 
 def get_email_addresses_from_headers(h, email_obj):
-	return map(lambda x: x[1], getaddresses(email_obj.get_all(h) or []))
+	return map(lambda x: x[1], gemlv.utils.getaddresses(email_obj.get_all(h) or []))
 
 def get_email_address_from_headers(h, email_obj):
 	l = get_email_addresses_from_headers(h, email_obj)
@@ -1394,7 +1380,7 @@ def get_headers_markup(eml):
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for realname_mimetext, addr in getaddresses([hval]):
+				for realname_mimetext, addr in gemlv.utils.getaddresses([hval]):
 					addr_mu = glib.markup_escape_text(addr)
 					realname = decode_header(realname_mimetext, eml=eml)
 					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr)).encode('utf-8')) if realname else addr_mu  # @notranslate
@@ -2258,7 +2244,7 @@ def get_user_signature():
 
 def filter_out_addresses(noaddrs, hvals):
 	filtered = []
-	for realname, addr in getaddresses(hvals):
+	for realname, addr in gemlv.utils.getaddresses(hvals):
 		if addr not in noaddrs:
 			filtered.append(email.utils.formataddr((realname, addr)))
 	return filtered
@@ -3121,7 +3107,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	
 	recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
 	recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
-	recipients_addr = getaddresses(recipients_flat)
+	recipients_addr = gemlv.utils.getaddresses(recipients_flat)
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
@@ -3420,7 +3406,7 @@ def gpg_encrypt_email(eml):
 	hidden_recipients = []
 	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
 		for hname in hnames:
-			array.extend(['<%s>'%a[1] for a in getaddresses(eml.get_all(hname) or [])])
+			array.extend(['<%s>'%a[1] for a in gemlv.utils.getaddresses(eml.get_all(hname) or [])])
 	extra_args = []
 	for r in hidden_recipients:
 		extra_args.extend(['--hidden-recipient', r])
@@ -3456,7 +3442,7 @@ def find_signature_author_address(email_root):
 	"""
 	Find out with which GPG uid (email address) the email should be signed with.
 	"""
-	addr = getaddresses(email_root.get_all('From') or [])
+	addr = gemlv.utils.getaddresses(email_root.get_all('From') or [])
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0][1]
@@ -3586,9 +3572,9 @@ def update_addressbook_highlights(abook_model=None):
 	if abook_model is None:
 		abook_model = win_comp.get_data('addressbook-model')
 		if abook_model is None: return
-	added_recipients = [addr[1] for addr in getaddresses(get_composer_headers(RecipientHeaders))]
+	added_recipients = [addr[1] for addr in gemlv.utils.getaddresses(get_composer_headers(RecipientHeaders))]
 	for item in abook_model:
-		item_emailaddresses = getaddresses([item[0]])
+		item_emailaddresses = gemlv.utils.getaddresses([item[0]])
 		try:
 			item_emailaddr = item_emailaddresses[0][1]
 			item[1] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddr in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[0]),)
@@ -3677,7 +3663,7 @@ def act_addressbook():
 def auto_addressbook_add(abook_line, email_key):
 	addresses = []
 	load_addressbook(callback = lambda addr, addresses: addresses.append(addr), show_errors=False, userdata=addresses)
-	if all(addr[1] != email_key for addr in getaddresses(addresses)):
+	if all(addr[1] != email_key for addr in gemlv.utils.getaddresses(addresses)):
 		path = os.path.join(get_addressbook_directory_path(), 'gemlv.auto')
 		with open(path, 'a') as fh:
 			fh.write(abook_line+'\n')
@@ -4205,7 +4191,7 @@ def act_dispos_notif():
 		dnt_addresses = Email.get_all(HDR_DNT)
 		my_address = guess_my_address()
 		if dnt_addresses:
-			for realname, addr in getaddresses(dnt_addresses):
+			for realname, addr in gemlv.utils.getaddresses(dnt_addresses):
 				add_composer_header('To', email.utils.formataddr((decode_header(realname, eml=Email), addr)))
 		else:
 			add_composer_header('To', guess_reply_address())

@@ -1,0 +1,77 @@
+#!/usr/bin/env python2.7
+
+import os
+import sys
+import email
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email.mime.message import MIMEMessage
+import argparse
+import gemlv.utils
+import fcntl
+
+
+def warn(msg):
+	sys.stderr.write("%s: %s\n" % (sys.argv[0], msg))
+
+def err(errno, msg):
+	warn(msg)
+	sys.exit(errno)
+
+argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+argparser.add_argument('--our', metavar='HEADER_NAME', action='append', required=True, help="in which headers are our email addresses")
+argparser.add_argument('--their', metavar='HEADER_NAME', action='append', required=True, help="in which headers are others email addresses")
+argparser.add_argument('--print-only', action='store_true', help="only print the list of participants; no update database")
+argparser.add_argument('--db-file', metavar='FILE', default=os.path.expanduser('~/Mail/.participants'), help="file to store data")
+cliArgs = argparser.parse_args()
+
+
+Email = email.message_from_file(sys.stdin)
+addresses = {}
+
+for kind in 'our', 'their':
+	addresses[kind] = []
+	headers = []
+	for hdr in getattr(cliArgs, kind):
+		headers.extend(Email.get_all(hdr, []))
+	addresses[kind] = gemlv.utils.getaddresses(headers)
+	addresses[kind] = map(lambda x: x[1], addresses[kind])
+
+msgid = Email.get('Message-ID')
+
+if msgid is None:
+	err(1, "No Message-ID.")
+
+record = "%s\t%s\t%s\n" % (msgid, ','.join(addresses['our']), ','.join(addresses['their']))
+if cliArgs.print_only:
+	print record,
+	sys.exit(0)
+
+with open(cliArgs.db_file, 'a') as lockfile:
+	warn("Locking db file.")
+	try:
+		fcntl.flock(lockfile, fcntl.LOCK_EX)
+	except:
+		err(2, "Can not lock db file.")
+		raise
+	
+	msg_found = False
+	with open(cliArgs.db_file, 'r') as dbfile:
+		while True:
+			line = dbfile.readline()
+			if line == '':
+				break
+			this_msgid, _ = line.split('\t', 1)
+			if this_msgid == msgid:
+				msg_found = True
+				break
+	
+	if msg_found:
+		warn("Record exists.")
+	else:
+		warn("Saving record.")
+		with open(cliArgs.db_file, 'a') as dbfile:
+			dbfile.write(record)
+	
+	warn("Unlocking db file.")
