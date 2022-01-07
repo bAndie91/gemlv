@@ -1948,7 +1948,7 @@ class compose_header_box(gtk.HBox):
 		self.showhide_pick_buttons()
 	
 	def duplicate(self, evtwdg=None):
-		newbox = self.__class__(self['name'], self['value'], hntype=self.hntype)
+		newbox = self.__class__(self['name'], '', hntype=self.hntype)
 		self.parent.pack_start(newbox, False, True)
 		newbox.show_all()
 		newbox.focus()
