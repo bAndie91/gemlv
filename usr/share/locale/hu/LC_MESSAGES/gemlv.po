@@ -451,3 +451,6 @@ msgstr "Tértivevényt kért de nincs megadva cím hozzá."
 
 msgid "Save to Sent"
 msgstr "Mentés a Küldöttek közé"
+
+msgid "Pick date and time"
+msgstr "Dátum és idő kiválasztása"

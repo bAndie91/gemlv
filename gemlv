@@ -1174,7 +1174,9 @@ def on_window_configure(widget, event):
 	elif widget == win_comp:
 		winname = 'composer'
 	else:
-		raise Exception("should not happen")
+		winname = widget.get_data('ui-unit-name')
+		if winname is None:
+			raise Exception("widget type unknown: %s" % repr(widget))
 	for k, v in ('position/x', event.x), ('position/y', event.y), ('width', event.width), ('height', event.height):
 		Props['ui/%s/%s' % (winname, k)] = v
 
@@ -1706,6 +1708,12 @@ class compose_header_box(gtk.HBox):
 		self.btn_datetime.connect('clicked', self.pick_datetime)
 		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
+		self.btn_suggestions = StockButton('', gtk.STOCK_INFO, icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_suggestions.set_relief(gtk.RELIEF_NONE)
+		self.pack_start(self.btn_suggestions, False, False)
+		self.btn_suggestions.connect('clicked', self.open_suggestions_panel)
+		self.btn_suggestions.connect('button-press-event', self.propagate_button_press_event)
+		
 		if plus:
 			self.btn_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
 			self.pack_start(self.btn_add, False, False)
@@ -1775,6 +1783,12 @@ class compose_header_box(gtk.HBox):
 		else:
 			return ac_model.get_value(treeiter, column['order']) != -1
 	
+	def open_suggestions_panel(self, wdg, evt):
+		if self['name'] in SenderHeaders:
+			#TODO
+			pass
+		return True
+	
 	def on_keypress(self, wdg, evt):
 		if evt.keyval == gtk.gdk.keyval_from_name('Down'):
 			try:
@@ -1797,6 +1811,10 @@ class compose_header_box(gtk.HBox):
 			self.btn_datetime.show()
 		else:
 			self.btn_datetime.hide()
+		if self['name'] in SenderHeaders:
+			self.btn_suggestions.show()
+		else:
+			self.btn_suggestions.hide()
 	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
@@ -2076,6 +2094,7 @@ def prompt_datetime(entry):
 		calendar.select_day(d)
 		clock.select_time(ts)
 	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
+	dlg.set_title(_("Pick date an time"))
 	calendar = gtk.Calendar()
 	clock = Clock()
 	dt = email.utils.parsedate_tz(entry.get_text())
@@ -3581,82 +3600,133 @@ def update_addressbook_highlights(abook_model=None):
 		except IndexError:
 			pass
 
-def act_addressbook():
-	def dblclick(_x, evt):
-		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
-			if not win_comp.get_visible(): return
-			flt_pathinfo = treeview.get_path_at_pos(int(evt.x), int(evt.y))
-			if flt_pathinfo is not None:
-				iterator_path = listfilter.convert_path_to_child_path(flt_pathinfo[0])
-				iterator = mod.get_iter(iterator_path)
-				clear_composer_headers('To', '')
-				add_composer_header('To', mod[iterator][0])
-	def click_add(_x):
-		clear_composer_headers('To', '')
-		add_composer_headers('To', map(lambda x: mod[mod.get_iter(x)][0], selection.get_selected_rows()[1]))
-	def click_edit(_x):
-		click_close()
-		run_async(cliArgs.opener, [get_singlefile_addressbook_path()], None)
-		run_async(cliArgs.opener, [get_addressbook_directory_path()], None)
-	def click_close(*_x):
-		win.destroy()
-		win_comp.remove_data('addressbook-window')
-		win_comp.remove_data('addressbook-mod')
+class AddressBrowser(gtk.Window):
+	__gsignals__ = {
+		'items-add': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_BOOLEAN, (gobject.TYPE_PYOBJECT,)),
+		'items-edit': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_BOOLEAN, (gobject.TYPE_PYOBJECT,)),
+		'close': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_BOOLEAN, ()),
+	}
 	
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		box = gtk.VBox(False, 3)
+		entry = gtk.Entry()
+		scroll = gtk.ScrolledWindow()
+		self.mod = gtk.ListStore(str, str)
+		self.listfilter = self.mod.filter_new()
+		self.treeview = gtk.TreeView(self.listfilter)
+		self.selection = self.treeview.get_selection()
+		box_buttons = gtk.HBox(True, 2)
+		self.b_add = StockButton(stock=gtk.STOCK_ADD)
+		b_edit = StockButton(stock=gtk.STOCK_EDIT)
+		b_close = StockButton(stock=gtk.STOCK_CLOSE)
+		
+		self.set_modal(False)
+		winname = 'addressbook'
+		self.set_default_size(int(Props['ui/%(winname)s/width'%{'winname':winname}] or 280), int(Props['ui/%(winname)s/height'%{'winname':winname}] or 400))
+		self.set_data('ui-unit-name', winname)
+		self.connect('configure-event', on_window_configure)
+		self.set_border_width(4)
+		
+		self.selection.set_mode(gtk.SELECTION_MULTIPLE)
+		# disable Add button if none selected
+		self.selection.connect('changed', lambda selection, b_add: b_add.set_sensitive(bool(len(selection.get_selected_rows()[1])>0)), self.b_add)
+		scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		self.treeview.set_headers_visible(False)
+		self.treeview.set_rules_hint(True)
+		self.treeview.insert_column_with_attributes(0, '', gtk.CellRendererText(), markup=1)
+		# show only rows which match to the text typed by the user (substring match)
+		self.listfilter.set_visible_func(lambda mo, it, entry: mo[it][0] is not None and mo[it][0].find(entry.get_text())>-1, entry)
+		self.b_add.set_sensitive(False)
+		
+		entry.set_icon_from_stock(1, gtk.STOCK_FIND)
+		entry.connect('changed', lambda _x: self.listfilter.refilter())
+		self.treeview.connect('button-press-event', self.handle_dblclick)
+		self.connect('delete-event', self.click_close)
+		add_key_binding(self, 'Escape', self.click_close)
+		b_close.connect('clicked', self.click_close)
+		self.b_add.connect('clicked', self.click_add)
+		b_edit.connect('clicked', self.click_edit)
+		
+		self.add(box)
+		box.pack_start(entry, False, True)
+		box.pack_start(scroll, True, True)
+		scroll.add_with_viewport(self.treeview)
+		box.pack_start(box_buttons, False, True)
+		box_buttons.pack_start(self.b_add, True, False)
+		box_buttons.pack_start(b_edit, True, False)
+		box_buttons.pack_start(b_close, True, False)
+		self.show_all()
+	
+	def click_close(self, *_x):
+		self.emit('close')
+		self.destroy()
+	
+	def close(self):
+		self.click_close()
+	
+	def click_add(self, *_x):
+		self.emit('items-add', self.get_selection())
+	
+	def click_edit(self, *_x):
+		self.emit('items-edit', self.get_selection())
+	
+	def get_selection(self):
+		return map(lambda x: self.mod[self.mod.get_iter(x)][0], self.selection.get_selected_rows()[1])
+	
+	def handle_dblclick(self, _x, evt):
+		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
+			flt_pathinfo = self.treeview.get_path_at_pos(int(evt.x), int(evt.y))
+			if flt_pathinfo is not None:
+				iterator_path = self.listfilter.convert_path_to_child_path(flt_pathinfo[0])
+				iterator = self.mod.get_iter(iterator_path)
+				self.emit('items-add', [self.mod[iterator][0]])
+			return True
+	
+	@property
+	def addresslist_model(self):
+		return self.mod
+	
+	@property
+	def button_add(self):
+		return self.b_add
+
+def act_addressbook():
 	if win_comp.get_data('addressbook-window'):
 		win_comp.get_data('addressbook-window').present()
 		return True
 	
-	win = gtk.Window()
-	box = gtk.VBox(False, 3)
-	entry = gtk.Entry()
-	scroll = gtk.ScrolledWindow()
-	mod = gtk.ListStore(str, str)
-	listfilter = mod.filter_new()
-	treeview = gtk.TreeView(listfilter)
-	selection = treeview.get_selection()
-	box_buttons = gtk.HBox(True, 2)
-	b_add = StockButton(stock=gtk.STOCK_ADD)
-	b_edit = StockButton(stock=gtk.STOCK_EDIT)
-	b_close = StockButton(stock=gtk.STOCK_CLOSE)
+	def on_items_add(addressbrowser, items):
+		clear_composer_headers('To', '')
+		add_composer_headers('To', items)
 	
-	load_addressbook(callback = lambda addr, userdata: mod.append([addr, '']), show_errors = True)
-	update_addressbook_highlights(mod)
+	def on_edit(addressbrowser, _items):
+		addressbrowser.close()
+		run_async(cliArgs.opener, [get_singlefile_addressbook_path()], None)
+		run_async(cliArgs.opener, [get_addressbook_directory_path()], None)
 	
+	def on_close(addressbrowser):
+		win_comp.remove_data('addressbook-window')
+		win_comp.remove_data('addressbook-mod')
+	
+	win = AddressBrowser()
+	addresslist = win.addresslist_model
+	win_comp.set_data('addressbook-window', win)
+	win_comp.set_data('addressbook-model', addresslist)
+
 	win.set_title(_("Addressbook"))
 	win.set_transient_for(win_comp)
-	win.set_modal(False)
-	win.set_default_size(280, 400)
-	win.set_border_width(4)
-	selection.set_mode(gtk.SELECTION_MULTIPLE)
-	selection.connect('changed', lambda selection, b_add: b_add.set_sensitive(bool(len(selection.get_selected_rows()[1])>0)), b_add)
-	scroll.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-	treeview.set_headers_visible(False)
-	treeview.set_rules_hint(True)
-	treeview.insert_column_with_attributes(0, '', gtk.CellRendererText(), markup=1)
-	listfilter.set_visible_func(lambda mo, it, entry: mo[it][0].find(entry.get_text())>-1, entry)
-	b_add.set_sensitive(False)
-	entry.set_icon_from_stock(1, gtk.STOCK_FIND)
-	entry.connect('changed', lambda w: listfilter.refilter())
-	treeview.connect('button-press-event', dblclick)
-	win.connect('delete-event', click_close)
-	add_key_binding(win, 'Escape', click_close)
-	b_close.connect('clicked', click_close)
-	b_add.connect('clicked', click_add)
-	b_edit.connect('clicked', click_edit)
 	
-	win.add(box)
-	box.pack_start(entry, False, True)
-	box.pack_start(scroll, True, True)
-	scroll.add_with_viewport(treeview)
-	box.pack_start(box_buttons, False, True)
-	box_buttons.pack_start(b_add, True, False)
-	box_buttons.pack_start(b_edit, True, False)
-	box_buttons.pack_start(b_close, True, False)
-	win.show_all()
-	if not win_comp.get_visible(): b_add.hide()
-	win_comp.set_data('addressbook-window', win)
-	win_comp.set_data('addressbook-model', mod)
+	if not win_comp.get_visible():
+		win.button_add.hide()
+	
+	if win_comp.get_visible():
+		win.connect('items-add', on_items_add)
+	win.connect('items-edit', on_edit)
+	win.connect('close', on_close)
+	
+	load_addressbook(callback = lambda addr, userdata: addresslist.append([addr, '']), show_errors = True)
+	update_addressbook_highlights(addresslist)
 	
 	return True
 
