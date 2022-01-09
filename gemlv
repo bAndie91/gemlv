@@ -67,6 +67,7 @@ except ImportError:
 	sys.stderr.write("No module named pyexiv2. Degrading image auto rotation.\n")
 	pyexiv2 = None
 import gemlv.utils
+import sqlite3
 
 
 ### helper classes, functions ###
@@ -1792,6 +1793,7 @@ class compose_header_box(gtk.HBox):
 			
 			# load those (self-) addresses from the participants database which are in correspondence with the current recipients
 			
+			participants = query_participants(recipients)
 			#FIXME load_addressbook(callback = lambda addr, userdata: win.addresslist_model.append([addr, '']), show_errors = False)
 		return True
 	
@@ -2057,6 +2059,26 @@ class compose_header_box(gtk.HBox):
 		else:
 			raise KeyError()
 
+def query_participants(recipients):
+	participants = []
+	with sqlite3.connect(os.path.expanduser('~/Mail/.participants.db')) as db:
+		questionmarks = ','.join(['?'] * len(recipients))
+		separator = ' '
+		cursor = db.execute("""SELECT our.address AS our_address,
+			sum(times) AS total_correspondences,
+			GROUP_CONCAT(their.address, ?) AS their_addresses
+			FROM contact c LEFT JOIN address our ON c.aid_our=our.aid LEFT JOIN address their ON c.aid_their=their.aid
+			WHERE their.address IN (%s)
+			GROUP BY our_address""" % (questionmarks,), [separator] + recipients)
+		for row in cursor:
+			our_address, total_correspondences, their_addresses = row[:]
+			their_addresses = their_addresses.split(separator)
+			participants.append({
+				'our_address': our_address, 
+				'total_correspondences': total_correspondences, 
+				'their_addresses': their_addresses,
+			})
+	return participants
 
 class Clock(gtk.HBox):
 	def __init__(self):
