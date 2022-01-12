@@ -4,13 +4,13 @@ Section: mail
 Installed-Size: 
 Maintainer: Andras Hrubak <andreas@uucp.hu>
 Architecture: all
-Version: 0.1
+Version:
 Depends: python-gtk2, python-magic
-Recommends: mimeopen-gui, python-xattr, python-fuzzywuzzy, python-gnupg (>= 0.4.1)
+Recommends: mimeopen-gui, python-xattr, python-fuzzywuzzy, python-gnupg (>= 0.4.1), python-pysqlite2
 Suggests:
 Provides: 
 Replaces: 
 Conflicts: 
 Homepage: 
-Vcs-Browser: https://github.com/bAndie91/gemlv
+Vcs-Browser: http://git.uucp.hu/sysop/gemlv
 Description: Email viewer and composer for local email files.
