@@ -1808,21 +1808,22 @@ class compose_header_box(gtk.HBox):
 		recipients = get_composer_all_recipients_emails()
 		participants = query_participants(recipients)
 		correspondence = dict(map(lambda x: (x['our_address'], x), participants))
-		suggestions = []
-		def add_suggestion(addr, addr_list):
+		def load_one(addr, correspondence):
 			email = getemailaddress(addr)
 			if email in correspondence.keys():
-				correspondence[email]['our_address_line'] = addr
-				addr_list.append(correspondence[email])
-		gemlv.addressbook.load(callback = add_suggestion, userdata = suggestions, gettext = _)
-		suggestions.sort(key = lambda x: (x['total_correspondences'], x['our_address']))
+				if 'our_address_lines' not in correspondence[email]: correspondence[email]['our_address_lines'] = {}
+				correspondence[email]['our_address_lines'][addr] = 1
+		gemlv.addressbook.load(callback = load_one, userdata = correspondence, gettext = _)
+		suggestions = correspondence.values()
+		suggestions.sort(key = lambda x: (x['total_correspondences'], x['our_address']), reverse = True)
 		for suggestion in suggestions:
-			label = '%s <small>(%s %s)</small>' % (
-				glib.markup_escape_text(suggestion['our_address_line']),
-				_("%d exchange(s) with:") % suggestion['total_correspondences'],
-				glib.markup_escape_text(', '.join(suggestion['their_addresses']))
-			)
-			win.addresslist_model.append([suggestion['our_address_line'], label])
+			for our_address_line in suggestion.get('our_address_lines', {suggestion['our_address']: 1}).keys():
+				label = '%s <small>(%s %s)</small>' % (
+					glib.markup_escape_text(our_address_line),
+					_("%d exchange(s) with:") % suggestion['total_correspondences'],
+					glib.markup_escape_text(', '.join(suggestion['their_addresses']))
+				)
+				win.addresslist_model.append([our_address_line, label])
 		
 		return True
 	
@@ -2096,7 +2097,7 @@ def query_participants(recipients):
 				sum(times) AS total_correspondences,
 				GROUP_CONCAT(their.address, ?) AS their_addresses
 				FROM contact c LEFT JOIN address our ON c.aid_our=our.aid LEFT JOIN address their ON c.aid_their=their.aid
-				WHERE their.address IN (%s)
+				WHERE their.address IN (%s) AND their.address != ''
 				GROUP BY our_address""" % (questionmarks,), [separator] + recipients)
 			for row in cursor:
 				our_address, total_correspondences, their_addresses = row[:]
