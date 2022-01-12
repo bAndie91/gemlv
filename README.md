@@ -56,7 +56,7 @@ Email viewer and composer for local emails in GTK
 		- files in precedence: `~/.config/gemlv/prop/avatar/url_template`, `/etc/gemlv/prop/avatar/url_template`
 		- content: `https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G`
 		- template vars: `email`, `email_md5`
-- Remember UI elements size and position
+- remember UI elements size and position
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
 	- supported networks and filters
@@ -68,6 +68,7 @@ Email viewer and composer for local emails in GTK
 - writing Email
 	- send by standard ```sendmail -ti``` command
 		- can interrupt sending process
+		- pass SENDMAIL_FROM and SENDMAIL_RCPT environment variables to help `sendmail` decide where to route (if your `sendmail` needs this)
 	- you can add usual headers (From, Reply-To, To, Cc, Bcc) and arbitrary ones as well
 		- email address syntax is validated
 		- pick date and time from calendar when adding date-time headers
@@ -76,9 +77,12 @@ Email viewer and composer for local emails in GTK
 		- set Importance and Priority by tool buttons
 		- ask Disposition Notification by tool button
 	- addressbook
-		- read plain email addresses from file line by line (`~/Mail/.addressbook`)
+		- read plain email addresses from files line by line (`~/Mail/.addressbook` and `~/Mail/.addressbook.d/*`)
+		- automatically save addresses to which you send emails (`~/Mail/.addressbook.d/gemlv.auto`)
 		- auto completion on address fields
+		- suggest "From" addresses based on past correspondences with the given recipients (need to run `scan-participants` regurarly to populate database)
 	- auto save drafts to `~/.cache/gemlv/drafts/`
+		- you can find and open draft emails there in case of something crashed
 - reply options
 	- interpret Reply-To field
 	- set References, In-Reply-To headers
@@ -106,13 +110,13 @@ Email viewer and composer for local emails in GTK
 	- viewer mode (```gemlv raw_email.eml```)
 	- compose mode (```gemlv --compose```)
 	- addresses (repeat for more recipients)
-		- ```--from '"Anna Ann" <me@example.net>'```
-		- ```--to bud@example.net --to Carl\ \<carl@example.net\>```
+		- ```--from 'Anna Lastname <anna@example.net>'```
+		- ```--to bud@example.net --to Carl\ \<carl@example.net\> --to '"Lastname, David" <dave@example.net>'```
 		- ```--cc ...```
 		- ```--bcc ...```
 	- subject (```--subject "..."```)
 	- message body (```--message "..."```)
-	- attachments (```--attach file1 --attach file2 --attach dir1/```)
+	- attachments (```--attach file1 --attachment file2 --attach dir1/```)
 	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368
 - hotkeys
 	- ```Ctrl-Q``` quit
@@ -136,7 +140,7 @@ Email viewer and composer for local emails in GTK
 - [ ] keygen: secret key generation follows Autocrypt UI guidance
 	- call sensible GPG UI program to generate key
 - [ ] peerstate: state is kept according to spec
-- [X] header inject 	 '
+- [X] header inject
 	- gemlv sends Autocrypt header when crypto-sign is turned on
 - [ ] recommend: implements Autocrypt recommendation
 - [ ] encrypt: encrypts outgoing messages properly
@@ -154,29 +158,32 @@ Email viewer and composer for local emails in GTK
 ## CLI options
 
 ```
-usage: gemlv [-h] [--compose] [--from FROM] [--to ADDRESSES] [--cc ADDRESSES]
-             [--bcc ADDRESSES] [--subject STRING] [--message STRING]
+usage: gemlv [-h] [--compose] [--from ADDRESS] [--to ADDRESS] [--cc ADDRESS]
+             [--bcc ADDRESS] [--subject STRING] [--message STRING]
              [--mailto URL] [--attach FILE] [--localedir DIR]
              [--opener COMMAND] [--header STRING]
              [FILE]
 
 positional arguments:
-  FILE              Raw Email file for read or continue editing (default: None)
+  FILE                  Raw Email file for read or continue editing (default:
+                        None)
 
 optional arguments:
-  -h, --help          show this help message and exit
-  --compose           Write a new Email (default: False)
-  --from FROM         New Email's writer's name and address (default: None)
-  --to ADDRESSES      New Email's Recipients, comma-separated list (default: None)
-  --cc ADDRESSES      Carbon Copy Recipients, comma-separated list (default: None)
-  --bcc ADDRESSES     Blind Carbon Copy Recipients, comma-separated list (default: None)
-  --subject STRING    Subject (default: None)
-  --message STRING    Message body (default: None)
-  --mailto URL        Full 'mailto:' link (default: None)
-  --attach FILES, --attachment FILES     Attachment(s) (default: None)
-  --localedir DIR     L10n base directory (default: None)
-  --opener COMMAND    File opener command (default: mimeopen-gui)
-  --header STRING     Add custom header(s) to the new Email (default: None)
+  -h, --help            show this help message and exit
+  --compose             Write a new Email (default: False)
+  --from ADDRESS        New Email's writer's name and address (default: None)
+  --to ADDRESS          New Email's Recipients, repeatable (default: None)
+  --cc ADDRESS          Carbon Copy Recipients, repeatable (default: None)
+  --bcc ADDRESS         Blind Carbon Copy Recipients, repeatable (default:
+                        None)
+  --subject STRING      Subject (default: None)
+  --message STRING      Message body (default: None)
+  --mailto URL          Full 'mailto:' link (default: None)
+  --attach FILE, --attachment FILE
+                        Attachment file's path, repeatable (default: None)
+  --localedir DIR       L10n base directory (default: None)
+  --opener COMMAND      File opener command (default: mimeopen-gui)
+  --header STRING       Add custom header(s) to the new Email (default: None)
 ```
 
 ## FAQ
