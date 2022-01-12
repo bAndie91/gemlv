@@ -1716,12 +1716,14 @@ class compose_header_box(gtk.HBox):
 		self.completer.set_popup_single_match(True)
 		
 		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_datetime.set_tooltip_text(_("Pick date and time"))
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_datetime, False, False)
 		self.btn_datetime.connect('clicked', self.pick_datetime)
 		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
 		self.btn_suggestions = StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_suggestions.set_tooltip_text(_("Suggestions…"))
 		self.btn_suggestions.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_suggestions, False, False)
 		self.btn_suggestions.connect('clicked', self.open_suggestions_panel)

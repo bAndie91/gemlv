@@ -457,3 +457,6 @@ msgstr "Dátum és idő kiválasztása"
 
 msgid "%d exchange(s) with:"
 msgstr "%d üzenetváltás velük:"
+
+msgid "Suggestions…"
+msgstr "Javaslatok…"
