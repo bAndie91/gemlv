@@ -2,6 +2,8 @@
 
 import re
 import email
+import pwd
+import os
 
 def fix_unquoted_comma(s):
 	"""Many MUA do not enclose real names which contain comma, in quotation.
@@ -21,3 +23,6 @@ def getaddresses(array):
 
 def headercase(s):
 	return re.sub(r'\b(.)', lambda x: x.group(1).upper(), s.lower())
+
+def get_gecos_name():
+	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)

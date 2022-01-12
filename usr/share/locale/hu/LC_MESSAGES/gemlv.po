@@ -460,3 +460,6 @@ msgstr "%d üzenetváltás velük:"
 
 msgid "Suggestions…"
 msgstr "Javaslatok…"
+
+msgid "Default"
+msgstr "Alapértelmezett"

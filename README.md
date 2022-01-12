@@ -83,6 +83,7 @@ Email viewer and composer for local emails in GTK
 		- suggest "From" addresses based on past correspondences with the given recipients (need to run `scan-participants` regurarly to populate database)
 	- auto save drafts to `~/.cache/gemlv/drafts/`
 		- you can find and open draft emails there in case of something crashed
+	- support `~/.signature` and multiple user signature files in ~/Mail/.signatures/*`
 - reply options
 	- interpret Reply-To field
 	- set References, In-Reply-To headers

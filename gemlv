@@ -81,6 +81,7 @@ from gemlv.sysutils import mkdir
 from gemlv.sysutils import make_relative_symlink
 from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
+import gemlv.user_signature
 
 
 ### helper classes, functions ###
@@ -2181,9 +2182,9 @@ def set_composer_text(s):
 	composer_text_buffer.set_text(s)
 	composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 
-def append_composer_text_user_signature():
+def append_composer_text_default_user_signature():
 	composer_text_buffer.append('\n\n')
-	composer_text_buffer.append_namedrange('user_signature', get_user_signature())
+	composer_text_buffer.append_namedrange('user_signature', gemlv.user_signature.default())
 
 def get_reply_quotation():
 	return _("Quote:") + '\n\n' + quote_message()
@@ -2259,17 +2260,6 @@ def quote_message():
 		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
 	return ''
 
-def get_gecos_name():
-	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
-
-def get_user_signature():
-	try:
-		sign = ''.join(open(os.path.join(os.environ['HOME'], '.signature'), 'r').readlines())
-		sign = re.sub('\n?$', '\n', sign)
-	except:
-		sign = '--\n' + get_gecos_name() + '\n'
-	return sign
-
 def filter_out_addresses(noaddrs, hvals):
 	filtered = []
 	for realname, addr in gemlv.utils.getaddresses(hvals):
@@ -2313,7 +2303,7 @@ def guess_reply_address():
 def add_composer_From_hidden():
 	addr = guess_my_address()
 	if addr is not None:
-		name = get_gecos_name()
+		name = gemlv.utils.get_gecos_name()
 		box = add_composer_header('From', email.utils.formataddr((name, addr)))
 		box.cancel()
 		return True
@@ -2325,7 +2315,7 @@ def act_compose():
 		add_composer_header('To', '')
 		set_composer_subject('')
 		composer_text_buffer.clear()
-		append_composer_text_user_signature()
+		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -2335,7 +2325,7 @@ def act_reply(compose_type):
 		add_composer_agent_headers()
 		subj = get_one_header_main('Subject') or ''
 		composer_text_buffer.clear()
-		append_composer_text_user_signature()
+		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_address = guess_my_address()
 		add_composer_header('From', my_address)
@@ -2927,13 +2917,19 @@ class TextBuffer(gtk.TextBuffer):
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
-	if composer_text_buffer.get_namedrange_text('user_signature'):
-		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
-		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
-	else:
-		mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
-		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('user_signature', get_user_signature()))
+	mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
+	menu_addsign = gtk.Menu()
+	for user_signature_name in gemlv.user_signature.iter_all():
+		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
+		submi.connect('activate', lambda _x, user_signature_name: composer_text_buffer.update_namedrange('user_signature', gemlv.user_signature.byname(user_signature_name)), user_signature_name)
+		menu_addsign.append(submi)
+	menu_addsign.append(gtk.SeparatorMenuItem())
+	submi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
+	submi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
+	menu_addsign.append(submi)
+	mi.set_submenu(menu_addsign)
 	menu.insert(mi, pos)
+	
 	pos += 1
 	if composer_text_buffer.get_namedrange_text('quoted_message'):
 		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
@@ -5020,7 +5016,7 @@ if cliArgs.compose:
 		add_composer_agent_headers()
 		if not cliArgs.message:
 			composer_text_buffer.clear()
-			append_composer_text_user_signature()
+			append_composer_text_default_user_signature()
 			composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 	
 	if cliArgs.mailto:
