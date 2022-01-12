@@ -1,3 +1,4 @@
+#!/usr/bin/env python2
 
 import re
 import email
@@ -17,3 +18,6 @@ def fix_unquoted_comma(s):
 
 def getaddresses(array):
 	return email.utils.getaddresses(map(fix_unquoted_comma, array))
+
+def headercase(s):
+	return re.sub(r'\b(.)', lambda x: x.group(1).upper(), s.lower())

@@ -1,11 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
 import os
 import sys
 import signal
 import select
-import fcntl
 import gtk
 import gobject
 import glib
@@ -37,8 +36,6 @@ import time
 import hashlib
 import urllib2
 import gnupg
-import ctypes
-from ctypes.util import find_library
 try:
 	import textwrap
 except ImportError:
@@ -68,6 +65,7 @@ except ImportError:
 	warnx("No module named pyexiv2. Degrading image auto rotation.")
 	pyexiv2 = None
 import gemlv.utils
+from gemlv.utils import headercase
 import gemlv.addressbook
 import gemlv.sysutils
 try:
@@ -75,6 +73,14 @@ try:
 except ImportError:
 	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
 	sqlite3 = None
+from gemlv.sysutils import futimes
+from gemlv.sysutils import recursive_rm
+from gemlv.sysutils import set_blocking
+from gemlv.sysutils import which
+from gemlv.sysutils import mkdir
+from gemlv.sysutils import make_relative_symlink
+from gemlv.sysutils import read_symlink_target_abs
+from gemlv.sysutils import is_safe_symlink
 
 
 ### helper classes, functions ###
@@ -386,32 +392,6 @@ class cyclelist(list):
 		return str(self[self.idx])
 
 
-class TIMEVAL(ctypes.Structure):
-	_fields_ = [('tv_sec', ctypes.c_long), ('tv_usec', ctypes.c_long)]
-
-def futimes(fd, times):
-	if len(times) < 2:
-		raise OSError
-	stdlib = find_library('c')
-	libc = ctypes.CDLL(stdlib)
-	TIMEVALS = TIMEVAL * 2
-	if libc.futimes(fd, TIMEVALS((times[0], 0), (times[1], 0))) == -1:
-		raise OSError
-
-def recursive_rm(path):
-	try:
-		try:
-			os.unlink(path)
-		except OSError as e:
-			if e.errno == os.errno.EISDIR:
-				for x in os.listdir(path):
-					recursive_rm(os.path.join(path, x))
-				os.rmdir(path)
-			else:
-				raise
-	except OSError as e:
-		warnx(str(e))
-
 def timer_once(iden, sec, func, func_args=()):
 	if Timers.has_key(iden):
 		glib.source_remove(Timers[iden])
@@ -593,37 +573,6 @@ def get_pipe_handlers(npairs):
 		pipes.append(os.fdopen(w, 'w'))
 	return pipes
 
-def set_blocking(fd, doblock):
-	if type(fd) != int:
-		fd = fd.fileno()
-	fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-	if doblock:
-		fl = fl & ~os.O_NONBLOCK
-	else:
-		fl = fl | os.O_NONBLOCK
-	return fcntl.fcntl(fd, fcntl.F_SETFL, fl)
-
-def which(cmd):
-	def is_executable(p):
-		return (os.path.isfile(p) and os.access(p, os.X_OK))
-	
-	ap, bn = os.path.split(cmd)
-	if ap:
-		if is_executable(cmd):
-			return cmd
-	else:
-		for d in os.environ['PATH'].split(os.path.pathsep):
-			p = os.path.join(d, cmd)
-			if is_executable(p):
-				return p
-	return None
-
-def mkdir(path):
-	if os.path.exists(path) or path == '':
-		return
-	else:
-		mkdir(os.path.dirname(path))
-		os.mkdir(path)
 
 def run_async(cmd, args, postrun):
 	args = args[:]
@@ -706,9 +655,6 @@ def set_header_parameter(eml, hname, param, pvalue):
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
-
-def headercase(s):
-	return re.sub(r'\b(.)', lambda x: x.group(1).upper(), s.lower())
 
 def file_uri_to_path(uri):
 	if uri.startswith('file:///'):
@@ -2353,6 +2299,7 @@ def add_composer_mailto(mailto):
 	# TODO: carefully safely support 'attach' parameter
 
 def guess_my_address():
+	"guess what is the user's email address to which the currently opened email is sent"
 	if Email is None: return None
 	return get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
 
@@ -3827,28 +3774,6 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 	attach__internal(parent_iter=parent_iter, basename=basename, part=part, mime=mime)
 	return True
 
-def is_safe_symlink(target, root):
-	"""
-	Return True if target is within root or target itself is root.
-	target and root are absolute paths.
-	"""
-	assert os.path.isabs(target)
-	assert os.path.isabs(root)
-	sep = re.escape(os.path.sep)
-	par = re.escape(os.path.pardir)
-	return not bool(re.search('(^|'+sep+')'+par+'('+sep+'|$)', os.path.relpath(target, root)))
-
-def read_symlink_target_abs(symlink):
-	assert os.path.isabs(symlink)
-	target = os.readlink(symlink)
-	if os.path.isabs(target):
-		return target
-	else:
-		return os.path.normpath(os.path.join(symlink, os.path.pardir, target))
-
-def make_relative_symlink(point_to, symlink_path):
-	assert os.path.isabs(point_to)
-	return os.path.relpath(point_to, os.path.join(symlink_path, os.path.pardir))
 
 def attach_path(original_path, root_attachment_path, parent_iter=None, check_unique_file=True):
 	root_attachment_path = os.path.abspath(root_attachment_path)
