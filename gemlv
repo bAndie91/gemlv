@@ -12,6 +12,7 @@ import glib
 import pango
 import locale
 import gettext
+from gemlv.sysutils import warnx
 import email
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -27,7 +28,7 @@ import argparse
 try:
 	import xattr
 except ImportError:
-	sys.stderr.write("No module named xattr. Degrading extended attribute management.\n")
+	warnx("No module named xattr. Degrading extended attribute management.")
 	xattr = None
 import urlparse
 import pwd
@@ -41,7 +42,7 @@ from ctypes.util import find_library
 try:
 	import textwrap
 except ImportError:
-	sys.stderr.write("No module named textwrap. Degrading.\n")
+	warnx("No module named textwrap. Degrading.")
 	class textwrap(object):
 		@classmethod
 		def wrap(self, text, width):
@@ -49,7 +50,7 @@ except ImportError:
 try:
 	import setproctitle
 except ImportError:
-	sys.stderr.write("No module named setproctitle. Degrading.\n")
+	warnx("No module named setproctitle. Degrading.")
 	class setproctitle(object):
 		@classmethod
 		def setproctitle(self, *x, **kv):
@@ -57,17 +58,23 @@ except ImportError:
 try:
 	import fuzzywuzzy.process
 except ImportError:
-	sys.stderr.write("No module named fuzzywuzzy. Degrading address auto completer.\n")
+	warnx("No module named fuzzywuzzy. Degrading address auto completer.")
 	fuzzywuzzy = None
 import uuid
 import xdg.BaseDirectory
 try:
 	import pyexiv2
 except ImportError:
-	sys.stderr.write("No module named pyexiv2. Degrading image auto rotation.\n")
+	warnx("No module named pyexiv2. Degrading image auto rotation.")
 	pyexiv2 = None
 import gemlv.utils
-import sqlite3
+import gemlv.addressbook
+import gemlv.sysutils
+try:
+	import sqlite3
+except ImportError:
+	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
+	sqlite3 = None
 
 
 ### helper classes, functions ###
@@ -321,7 +328,7 @@ class pipereader(object):
 			try:
 				os.execvp(cmd, args)
 			except OSError as e:
-				stderr(str(e))
+				warnx(str(e))
 			os._exit(127)
 		else:
 			child_read.close()
@@ -403,7 +410,7 @@ def recursive_rm(path):
 			else:
 				raise
 	except OSError as e:
-		stderr(str(e))
+		warnx(str(e))
 
 def timer_once(iden, sec, func, func_args=()):
 	if Timers.has_key(iden):
@@ -596,9 +603,6 @@ def set_blocking(fd, doblock):
 		fl = fl | os.O_NONBLOCK
 	return fcntl.fcntl(fd, fcntl.F_SETFL, fl)
 
-def stderr(string):
-	sys.stderr.write(string + ('' if string[-1] == '\n' else '\n'))
-
 def which(cmd):
 	def is_executable(p):
 		return (os.path.isfile(p) and os.access(p, os.X_OK))
@@ -671,7 +675,7 @@ class ExecThreadRunner(threading.Thread):
 			try:
 				os.execvp(cmd, [cmd] + args)
 			except OSError as e:
-				stderr(str(e))
+				warnx(str(e))
 			os._exit(127)
 		else:
 			return WaitExecStatus(pid)
@@ -731,10 +735,18 @@ def human_size(x, suffix='B', decimals=1):
 
 
 def getaddress(s):
+	"Returns real name + email address tuple of the given address line"
 	addrs = gemlv.utils.getaddresses([s or ''])
 	if len(addrs) == 0:
 		return None
 	return addrs[0]
+
+def getemailaddress(s):
+	"Returns the email address part of the given address line"
+	addrs = gemlv.utils.getaddresses([s or ''])
+	if len(addrs) == 0:
+		return None
+	return addrs[0][1]
 
 ### private functions ###
 
@@ -1313,7 +1325,7 @@ def get_header_links(s, schemata=['mailto']):
 def get_mailto(s):
 	l = get_header_links('<%s>' % (s))
 	if len(l) > 0: return l[0][0]
-	stderr(_("Can not parse mailto link: '%s'") % (s))
+	warnx(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
 def load_gravatar(addr, container):
@@ -1785,16 +1797,33 @@ class compose_header_box(gtk.HBox):
 			return ac_model.get_value(treeiter, column['order']) != -1
 	
 	def open_suggestions_panel(self, wdg):
-		if self['name'] in SenderHeaders:
-			win = AddressBrowser(modal_window=True, single_select=True)
-			win.set_transient_for(win_comp)
-			win.button_edit.hide()
-			win.connect('items-add', lambda addressbrowser, items: self.__setitem__('value', items[0]))
-			
-			# load those (self-) addresses from the participants database which are in correspondence with the current recipients
-			
-			participants = query_participants(recipients)
-			#FIXME load_addressbook(callback = lambda addr, userdata: win.addresslist_model.append([addr, '']), show_errors = False)
+		assert self['name'] in SenderHeaders
+		
+		win = AddressBrowser(modal_window=True, single_select=True)
+		win.set_transient_for(win_comp)
+		win.button_edit.hide()
+		win.connect('items-add', lambda addressbrowser, items: self.__setitem__('value', items[0]))
+		
+		# load those (self-) addresses from the participants database which are in correspondence with the current recipients
+		recipients = get_composer_all_recipients_emails()
+		participants = query_participants(recipients)
+		correspondence = dict(map(lambda x: (x['our_address'], x), participants))
+		suggestions = []
+		def add_suggestion(addr, addr_list):
+			email = getemailaddress(addr)
+			if email in correspondence.keys():
+				correspondence[email]['our_address_line'] = addr
+				addr_list.append(correspondence[email])
+		gemlv.addressbook.load(callback = add_suggestion, userdata = suggestions, gettext = _)
+		suggestions.sort(key = lambda x: (x['total_correspondences'], x['our_address']))
+		for suggestion in suggestions:
+			label = '%s <small>(%s %s)</small>' % (
+				glib.markup_escape_text(suggestion['our_address_line']),
+				_("%d exchange(s) with:") % suggestion['total_correspondences'],
+				glib.markup_escape_text(', '.join(suggestion['their_addresses']))
+			)
+			win.addresslist_model.append([suggestion['our_address_line'], label])
+		
 		return True
 	
 	def on_keypress(self, wdg, evt):
@@ -1840,9 +1869,7 @@ class compose_header_box(gtk.HBox):
 			self['validate'] = None
 		
 		if name in AddressbookHeaders:
-			abook = []
-			load_addressbook(callback = lambda addr, userdata: abook.append(addr), show_errors = False)
-			self.set_autocomplete_list(abook)
+			self.set_autocomplete_list(gemlv.addressbook.get_full())
 		elif name in AutocompletionHeaders.keys():
 			self.set_autocomplete_list(AutocompletionHeaders[name])
 		self.on_changed()
@@ -2061,23 +2088,24 @@ class compose_header_box(gtk.HBox):
 
 def query_participants(recipients):
 	participants = []
-	with sqlite3.connect(os.path.expanduser('~/Mail/.participants.db')) as db:
-		questionmarks = ','.join(['?'] * len(recipients))
-		separator = ' '
-		cursor = db.execute("""SELECT our.address AS our_address,
-			sum(times) AS total_correspondences,
-			GROUP_CONCAT(their.address, ?) AS their_addresses
-			FROM contact c LEFT JOIN address our ON c.aid_our=our.aid LEFT JOIN address their ON c.aid_their=their.aid
-			WHERE their.address IN (%s)
-			GROUP BY our_address""" % (questionmarks,), [separator] + recipients)
-		for row in cursor:
-			our_address, total_correspondences, their_addresses = row[:]
-			their_addresses = their_addresses.split(separator)
-			participants.append({
-				'our_address': our_address, 
-				'total_correspondences': total_correspondences, 
-				'their_addresses': their_addresses,
-			})
+	if sqlite3 is not None:
+		with sqlite3.connect(os.path.expanduser('~/Mail/.participants.db')) as db:
+			questionmarks = ','.join(['?'] * len(recipients))
+			separator = ' '
+			cursor = db.execute("""SELECT our.address AS our_address,
+				sum(times) AS total_correspondences,
+				GROUP_CONCAT(their.address, ?) AS their_addresses
+				FROM contact c LEFT JOIN address our ON c.aid_our=our.aid LEFT JOIN address their ON c.aid_their=their.aid
+				WHERE their.address IN (%s)
+				GROUP BY our_address""" % (questionmarks,), [separator] + recipients)
+			for row in cursor:
+				our_address, total_correspondences, their_addresses = row[:]
+				their_addresses = their_addresses.split(separator)
+				participants.append({
+					'our_address': our_address, 
+					'total_correspondences': total_correspondences, 
+					'their_addresses': their_addresses,
+				})
 	return participants
 
 class Clock(gtk.HBox):
@@ -2180,6 +2208,10 @@ def get_composer_headerbox_last(hname):
 	if hdrs:
 		return hdrs[-1]
 	return None
+
+def get_composer_all_recipients_emails():
+	return [addr[1] for addr in gemlv.utils.getaddresses(get_composer_headers(RecipientHeaders))]
+
 
 def set_composer_subject(s):
 	entry_subject.set_text(s)
@@ -2471,7 +2503,7 @@ def runcmd_thread(args, input_fd, out_buffer, vb):
 		try:
 			os.execvp(args[0], args)
 		except OSError as e:
-			stderr(str(e))
+			warnx(str(e))
 		os._exit(127)
 	
 	writer.close()
@@ -2678,7 +2710,7 @@ def set_xattrs(fh, attrs, filename='-'):
 					# Ignore that a nonexistent attribute could not be removed
 					pass
 				else:
-					stderr(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
+					warnx(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
 					allok = False
 					if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
 						raise e
@@ -3158,7 +3190,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
-		'RCPT': ';'.join(map(lambda x: x[1], recipients_addr)),
+		'RCPT': ','.join(map(lambda x: x[1], recipients_addr)),
 	}
 	
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -3176,7 +3208,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 				os.environ['SENDMAIL_%s' % env_name] = env_val
 			os.execvp('sendmail', ['sendmail', '-ti'])
 		except OSError as e:
-			stderr(str(e))
+			warnx(str(e))
 		os._exit(127)
 	
 	gtk.threads_enter()
@@ -3263,7 +3295,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		btn_save_sent.show_all()
 		# Save recipient to the auto addressbook.
 		for recipient_name, recipient_address in recipients_addr:
-			auto_addressbook_add(email.utils.formataddr((decode_header(recipient_name, eml=email_to_send), recipient_address)), recipient_address)
+			gemlv.addressbook.add(email=recipient_address, section='gemlv.auto', address_line=email.utils.formataddr((decode_header(recipient_name, eml=email_to_send), recipient_address)))
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
@@ -3576,50 +3608,11 @@ def update_composer_toolbar_toggle_buttons():
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
-def get_singlefile_addressbook_path():
-	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
-def get_addressbook_directory_path():
-	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook.d')
-
-def get_addressbook_files_paths():
-	files = []
-	default_abook_file_path = get_singlefile_addressbook_path()
-	if os.path.exists(default_abook_file_path):
-		files.append(default_abook_file_path)
-	def file_found(files, dirname, entries):
-		for entryname in entries:
-			entrypath = os.path.join(dirname, entryname)
-			if os.path.isfile(entrypath):
-				files.append(entrypath)
-	os.path.walk(get_addressbook_directory_path(), file_found, files)
-	return files
-
-def load_addressbook(callback, show_errors = True, userdata = None):
-	abook_files = get_addressbook_files_paths()
-	if abook_files:
-		for abook_path in abook_files:
-			try:
-				for ln in open(abook_path, 'r'):
-					callback(ln.strip(), userdata)
-			except IOError as e:
-				if show_errors:
-					display_error(e)
-				else:
-					stderr(str(e))
-	else:
-		e = _("There is no addressbook file. Create one in ~/Mail/.addressbook.d/ directory.")
-		if show_errors:
-			display_error(e)
-		else:
-			stderr(e)
-		return False
-	return True
-
 def update_addressbook_highlights(abook_model=None):
 	if abook_model is None:
 		abook_model = win_comp.get_data('addressbook-model')
 		if abook_model is None: return
-	added_recipients = [addr[1] for addr in gemlv.utils.getaddresses(get_composer_headers(RecipientHeaders))]
+	added_recipients = get_composer_all_recipients_emails()
 	for item in abook_model:
 		item_emailaddresses = gemlv.utils.getaddresses([item[0]])
 		try:
@@ -3734,8 +3727,7 @@ def act_addressbook():
 	
 	def on_edit(addressbrowser, _items):
 		addressbrowser.close()
-		run_async(cliArgs.opener, [get_singlefile_addressbook_path()], None)
-		run_async(cliArgs.opener, [get_addressbook_directory_path()], None)
+		run_async(cliArgs.opener, [gemlv.addressbook.get_paths()], None)
 	
 	def on_close(addressbrowser):
 		win_comp.remove_data('addressbook-window')
@@ -3757,18 +3749,13 @@ def act_addressbook():
 	win.connect('items-edit', on_edit)
 	win.connect('close', on_close)
 	
-	load_addressbook(callback = lambda addr, userdata: addresslist.append([addr, glib.markup_escape_text(addr)]), show_errors = True)
+	gemlv.addressbook.load(
+		callback = lambda addr, addresslist: addresslist.append([addr, glib.markup_escape_text(addr)]), 
+		error_handler = lambda e: display_error(e), 
+		userdata = addresslist, gettext = _)
 	update_addressbook_highlights(addresslist)
 	
 	return True
-
-def auto_addressbook_add(abook_line, email_key):
-	addresses = []
-	load_addressbook(callback = lambda addr, addresses: addresses.append(addr), show_errors=False, userdata=addresses)
-	if all(addr[1] != email_key for addr in gemlv.utils.getaddresses(addresses)):
-		path = os.path.join(get_addressbook_directory_path(), 'gemlv.auto')
-		with open(path, 'a') as fh:
-			fh.write(abook_line+'\n')
 
 def walk_multipart(eml, leaf_only=False, depth=0):
 	if not leaf_only:
@@ -3783,7 +3770,7 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 
 def debug_multipart(eml):
 	for depth, part in walk_multipart(eml):
-		stderr('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
+		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
 
 def act_attach():
 	filenames = choose_open_files(custom_accept_button_stock='mail-attachment')
@@ -4048,7 +4035,7 @@ def drop_attachment_acceptable(targets):
 	return False
 
 def drop_attachment_motion(wdg, context, x, y, time):
-	#stderr('Dropping %s' % (context.targets,))
+	#warnx('Dropping %s' % (context.targets,))
 	if drop_attachment_acceptable(context.targets):
 		wdg.drag_highlight()
 		context.drag_status(gtk.gdk.ACTION_COPY, time)
@@ -4229,7 +4216,7 @@ def drag_part_begin(wdg, context):
 
 def drag_part_data(wdg, context, dnd_data, intid, time):
 	targettype = dnd_data.get_target()
-	stderr("Dropping %d %s" % (intid, targettype,))
+	warnx("Dropping %d %s" % (intid, targettype,))
 	dragged_parts = context.get_data('dragged-parts')
 	
 	if targettype == MIMETYPE_URILIST:
@@ -4242,7 +4229,7 @@ def drag_part_data(wdg, context, dnd_data, intid, time):
 			savefile = os.path.join(tmp_dir_path, filename)
 			save_to_file(dragged_part, savefile, ask_overwrite=False, consider_preamble=False)
 			uris_text += 'file://%s\r\n' % (urllib2.quote(savefile.encode('utf-8')),)
-		stderr('drag-and-drop uri-list:\n'+uris_text+'---')
+		warnx('drag-and-drop uri-list:\n'+uris_text+'---')
 		atom = gtk.gdk.atom_intern(MIMETYPE_URILIST)
 		dnd_data.set(atom, 8, uris_text)
 	else:
@@ -4268,7 +4255,7 @@ def drag_part_data(wdg, context, dnd_data, intid, time):
 				# Fail XDirectSave, remote app should ask us for other target type.
 				dnd_data.set(dnd_data.target, 8, xds_return_code)
 		else:
-			stderr("Unknown drop target: "+targettype)
+			warnx("Unknown drop target: "+targettype)
 
 def drag_part_end(wdg, context):
 	atom = context.get_data('atom-xds')
@@ -4426,7 +4413,7 @@ def cb_edit_external(status, filepath):
 		try:
 			os.unlink(filepath)
 		except OSError as e:
-			stderr(str(e))
+			warnx(str(e))
 
 def on_edit_external_done(data):
 	if data is not None:
@@ -4701,14 +4688,14 @@ if os.path.basename(sys.argv[0]).find('mailto') > -1:
 cliArgs = argparser.parse_args(args=sysargv)
 del sysargv
 if not cliArgs.compose and not cliArgs.FILE:
-	stderr(_("Either compose mode or FILE is needed."))
+	warnx(_("Either compose mode or FILE is needed."))
 	os._exit(1)
 if cliArgs.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
 openerargs = cliArgs.opener.split()
 cliArgs.opener, cliArgs.opener_args = openerargs[0], openerargs[1:]
 if xattr is None:
-	stderr(_("Notice: no module xattr loaded"))
+	warnx(_("Notice: no module xattr loaded"))
 if hasattr(magic, 'open'):
 	Magic = magic.open(magic.MAGIC_MIME_TYPE)
 	Magic.load()
@@ -5075,7 +5062,7 @@ if cliArgs.compose:
 				set_composer_subject(hval)
 			if any(fnmatch(hname, headercase(hdr)) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
-				stderr("Skip header '%s' in email editing." % (hname,))
+				warnx("Skip header '%s' in email editing." % (hname,))
 				pass
 			else:
 				add_composer_header(hname, hval)
@@ -5159,10 +5146,10 @@ else:
 
 gtk.main()
 if Timers2.keys():
-	stderr(_("Executing outstanding timers."))
+	warnx(_("Executing outstanding timers."))
 timer2_flush()
 if len(threading.enumerate()) > 1:
-	stderr(_("Waiting background threads to complete."))
+	warnx(_("Waiting background threads to complete."))
 
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
 

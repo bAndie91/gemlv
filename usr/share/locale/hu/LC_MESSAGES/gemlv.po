@@ -454,3 +454,6 @@ msgstr "Mentés a Küldöttek közé"
 
 msgid "Pick date and time"
 msgstr "Dátum és idő kiválasztása"
+
+msgid "%d exchange(s) with:"
+msgstr "%d üzenetváltás velük:"
