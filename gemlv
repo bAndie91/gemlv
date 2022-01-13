@@ -550,7 +550,8 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 			dlg.set_current_folder(os.getcwd())
 		else:
 			break
-	FileChooserLastFolder = dlg.get_current_folder()
+	if dlg.get_current_folder() is not None:
+		FileChooserLastFolder = dlg.get_current_folder()
 	dlg.destroy()
 	return selected
 
