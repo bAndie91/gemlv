@@ -214,5 +214,12 @@ folder structure.
 
 **A.** Yes. It is not banned. Is it?
 
+**Q.** How to edit the addressbook? The "Edit" button does not work…
+
+**A.** The addressbook is just plain text files at `~/Mail/.addressbook`
+and `~/Mail/.addressbook.d/*`, one address line (real name + email address) per line.
+Edit it with any text editor. The "Edit" button runs the default file opener program to open
+the addressbook file(s) for editing.
+
 # issues
 Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
