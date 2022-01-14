@@ -463,3 +463,9 @@ msgstr "Javaslatok…"
 
 msgid "Default"
 msgstr "Alapértelmezett"
+
+msgid "Add to addressbook"
+msgstr "Felvétel a címtárba"
+
+msgid "Added to addressbook"
+msgstr "Felvéve a címtárba"

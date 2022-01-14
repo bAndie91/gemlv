@@ -134,10 +134,14 @@ class StockToggleToolButton(gtk.ToggleToolButton):
 			self.set_icon_name(stock)
 
 class StockMenuItem(gtk.ImageMenuItem):
-	def __init__(self, stock_id=None, accel_group=None, label=None):
+	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None):
 		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
 		if label is not None:
 			self.set_label(label)
+		if icon_name is not None:
+			i = gtk.Image()
+			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
+			self.set_image(i)
 
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
@@ -211,6 +215,7 @@ def add_gtk_icon_to_stock(icon_name, label_str):
 	icon_factory = gtk.IconFactory()
 	icon_factory.add(icon_name, iconset)
 	icon_factory.add_default()
+
 
 class Marquee(gtk.ScrolledWindow):
 	def __init__(self, child):
@@ -1618,6 +1623,7 @@ def composer_substract_from_list_header(hname, hvals, delimiter=' '):
 
 class compose_header_box(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
+	ICON_POS_VALIDATION = 1
 	
 	def __init__(self, chname, val, hntype=None):
 		assert isinstance(chname, str)
@@ -1652,6 +1658,7 @@ class compose_header_box(gtk.HBox):
 		self.pack_start(self.wdg_value, True, True)
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.wdg_value.connect('key-press-event', self.on_keypress)
+		self.wdg_value.connect('populate-popup', self.on_populate_text_context_menu)
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
 		self.completer.set_model(gtk.ListStore(str, str, bool, int))
@@ -1804,6 +1811,25 @@ class compose_header_box(gtk.HBox):
 		else:
 			self.btn_suggestions.hide()
 	
+	def on_populate_text_context_menu(self, entry, menu):
+		if self['name'] in AddressbookHeaders:
+			pos = 0
+			mi = StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+			mi.connect('activate', self.add_value_to_addressbook)
+			menu.insert(mi, pos)
+			menu.show_all()
+	
+	def add_value_to_addressbook(self, *_x):
+		address_line = self['value']
+		_x, addr = getaddress(address_line)
+		try:
+			gemlv.addressbook.add(email=addr, section='gemlv.manual', address_line=address_line)
+		except Exception as e:
+			display_error(e)
+			raise
+		else:
+			display_info_box_async(_("Added to addressbook"))
+	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
 		ac_model.clear()
@@ -1837,16 +1863,16 @@ class compose_header_box(gtk.HBox):
 		valid = self.validate()
 		if valid == VALID_PASS:
 			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-			entry.set_icon_from_stock(1, None)
+			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
 		else:
 			if valid == VALID_INVALID:
 				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
-				entry.set_icon_from_stock(1, gtk.STOCK_STOP)
-				entry.set_icon_tooltip_text(1, _("Invalid input"))
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
 			else:
 				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-				entry.set_icon_from_stock(1, gtk.STOCK_DIALOG_QUESTION)
-				entry.set_icon_tooltip_text(1, _("Strange input; maybe double check"))
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_DIALOG_QUESTION)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Strange input; maybe double check"))
 			self.point_out()
 		
 		self.on_changed()
@@ -3674,7 +3700,8 @@ def act_addressbook():
 	
 	def on_edit(addressbrowser, _items):
 		addressbrowser.close()
-		run_async(cliArgs.opener, [gemlv.addressbook.get_paths()], None)
+		run_async(cliArgs.opener, [gemlv.addressbook.get_singlefile_path()], None)
+		run_async(cliArgs.opener, [gemlv.addressbook.get_directory_path()], None)
 	
 	def on_close(addressbrowser):
 		win_comp.remove_data('addressbook-window')

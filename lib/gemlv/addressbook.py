@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 
 import os
+import gemlv.utils
 
 def get_singlefile_path():
 	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
@@ -46,8 +47,8 @@ def get_full():
 
 def add(email, section, address_line=None):
 	if address_line is None: address_line = email
-	addresses = get_addressbook_full()
-	# TODO: update matching line! (the contact changed her real name)
+	addresses = get_full()
+	# TODO (?) update matching line (the contact changed her real name)
 	if all(addr[1] != email for addr in gemlv.utils.getaddresses(addresses)):
 		path = os.path.join(get_directory_path(), section)
 		with open(path, 'a') as fh:
