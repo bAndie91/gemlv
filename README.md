@@ -118,7 +118,7 @@ Email viewer and composer for local emails in GTK
 	- subject (```--subject "..."```)
 	- message body (```--message "..."```)
 	- attachments (```--attach file1 --attachment file2 --attach dir1/```)
-	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368
+	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368, RFC6068
 - hotkeys
 	- ```Ctrl-Q``` quit
 	- ```Ctrl-W``` close compose window

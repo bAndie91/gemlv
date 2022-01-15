@@ -82,129 +82,12 @@ from gemlv.sysutils import make_relative_symlink
 from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
 import gemlv.user_signature
+from gemlv.pythonutils import BasicReuseable
+import gemlv.gtk as gemlvtk
 
 
 ### helper classes, functions ###
 
-class gtkWindow(gtk.Window):
-	def set_icon_name(self, name):
-		self.set_icon(gtk.icon_theme_get_default().load_icon(name, gtk.ICON_SIZE_SMALL_TOOLBAR, 0))
-
-class gtkScrolledLabelView(gtk.ScrolledWindow):
-	def __init__(self, text=None):
-		super(self.__class__, self).__init__()
-		self.label = gtk.Label()
-		self.label.set_alignment(0, 0)
-		self.label.set_selectable(True)
-		self.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
-		self.add_with_viewport(self.label)
-		if text is not None:
-			self.set_text(text)
-	def set_text(self, text):
-		self.label.set_markup('<tt>' + glib.markup_escape_text(text) + '</tt>')
-
-class LabelsToolItem(gtk.ToolItem):
-	def __init__(self):
-		super(self.__class__, self).__init__()
-		self.box = gtk.HBox()
-		self.add(self.box)
-	def set_labels(self, labels):
-		for label in self.box.get_children():
-			label.destroy()
-		first = True
-		for piece in labels:
-			if not first:
-				self.box.pack_start(gtk.SeparatorToolItem(), True, False)
-			label = gtk.Label()
-			if type(piece) == str:
-				label.set_text(piece)
-			elif type(piece) == dict:
-				if piece.has_key('markup'):
-					label.set_markup(piece['markup'])
-				elif piece.has_key('text'):
-					label.set_markup(piece['text'])
-			self.box.pack_start(label, True, False)
-			first = False
-		self.box.show_all()
-
-class StockToggleToolButton(gtk.ToggleToolButton):
-	def __init__(self, stock=None):
-		super(self.__class__, self).__init__(stock)
-		if stock not in gtk.stock_list_ids():
-			self.set_icon_name(stock)
-
-class StockMenuItem(gtk.ImageMenuItem):
-	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None):
-		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
-		if label is not None:
-			self.set_label(label)
-		if icon_name is not None:
-			i = gtk.Image()
-			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
-			self.set_image(i)
-
-class StockToolButton(gtk.ToolButton):
-	def __init__(self, label=None, stock=None, tooltip=None):
-		super(self.__class__, self).__init__()
-		if stock is not None:
-			if stock in gtk.stock_list_ids():
-				if stock is not None: self.set_stock_id(stock)
-			else:
-				self.set_icon_name(stock)
-		if label is not None:
-			self.set_label(label)
-		if tooltip is not None:
-			self.set_tooltip_text(tooltip)
-	def set_pixbuf(self, pxb):
-		btn = self.get_children()[0]
-		x = btn.get_children()[0]
-		img, x = x.get_children()
-		img.set_from_pixbuf(pxb)
-		img.props.visible = True
-	def __get_children(self):
-		align = self.get_children()[0]
-		hbox = align.get_children()[0]
-		return hbox.get_children()
-	def set_markup(self, markup):
-		lbl = self.__get_children()[1]
-		lbl.set_markup(markup)
-
-class StockButton(gtk.Button):
-	def __init__(self, label=None, stock=None, use_underline=True, icon_size=None):
-		if stock is not None and stock in gtk.stock_list_ids():
-			stock_tmp = stock
-		else:
-			stock_tmp = gtk.STOCK_ABOUT
-		super(self.__class__, self).__init__(stock=stock_tmp, use_underline=use_underline)
-		if label is not None:
-			self.set_markup(label)
-		if stock is None:
-			self.set_icon('')
-		elif stock not in gtk.stock_list_ids():
-			self.set_icon(stock)
-		if icon_size is not None:
-			self.set_icon(stock, icon_size)
-	def __get_children(self):
-		align = self.get_children()[0]
-		hbox = align.get_children()[0]
-		return hbox.get_children()
-	def set_label(self, label):
-		x, lbl = self.__get_children()
-		lbl.set_label(label)
-	def set_markup(self, label):
-		x, lbl = self.__get_children()
-		lbl.set_markup(label)
-	def set_icon(self, icon, size=gtk.ICON_SIZE_BUTTON):
-		img, x = self.__get_children()
-		if type(icon) == str:
-			if icon == '':
-				img.props.visible = False
-			else:
-				img.set_from_icon_name(icon, size)
-				img.props.visible = True
-		else:
-			img.set_from_pixbuf(icon)
-			img.props.visible = True
 
 def add_gtk_icon_to_stock(icon_name, label_str):
 	gtk.stock_add([(icon_name, _(label_str), 0, 0, None)])
@@ -480,7 +363,7 @@ def display_error(e, suppl_text=None):
 	if suppl_text is not None:
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
-		carea.pack_start(gtkScrolledLabelView(suppl_text), True, True)
+		carea.pack_start(gemlvtk.ScrolledLabelView(suppl_text), True, True)
 	dlg.show_all()
 	dlg.run()
 	dlg.destroy()
@@ -492,7 +375,7 @@ def display_info_box_async(text, suppl_text=None):
 	if suppl_text is not None:
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
-		carea.pack_start(gtkScrolledLabelView(suppl_text), True, True)
+		carea.pack_start(gemlvtk.ScrolledLabelView(suppl_text), True, True)
 	dlg.get_widget_for_response(gtk.RESPONSE_OK).connect('clicked', lambda btn, dlg: dlg.destroy(), dlg)
 	dlg.show_all()
 
@@ -502,12 +385,12 @@ def question(msg, stock_yes=None, stock_no=None, parent=None):
 	dlg.set_title(_("Question"))
 	if stock_no is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_NO).hide()
-		btn_no = StockButton(label=stock_no[0], stock=stock_no[1])
+		btn_no = gemlvtk.StockButton(label=stock_no[0], stock=stock_no[1])
 		dlg.add_action_widget(btn_no, gtk.RESPONSE_NO)
 		btn_no.show()
 	if stock_yes is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
-		btn_yes = StockButton(label=stock_yes[0], stock=stock_yes[1])
+		btn_yes = gemlvtk.StockButton(label=stock_yes[0], stock=stock_yes[1])
 		dlg.add_action_widget(btn_yes, gtk.RESPONSE_YES)
 		btn_yes.show()
 	resp = dlg.run()
@@ -536,7 +419,7 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 	if multifile:
 		dlg.set_select_multiple(True)
 		selected = []
-	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
+	btn_cwd = gemlvtk.StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
 	while True:
@@ -993,12 +876,12 @@ def show_signature_info(*_x):
 	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
 	dlg.set_markup(glib.markup_escape_text(_("Digital signature is validated. See details below.") if valid else _("The digital signature on this email/attachment could not be validated. The email might be forged.")))
 	if not valid:
-		dlg.add_action_widget(StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
+		dlg.add_action_widget(gemlvtk.StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
 	dlg.add_buttons(gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE)
 	dlg.set_default_response(gtk.RESPONSE_CLOSE)
 	
 	carea = dlg.get_content_area()
-	carea.pack_start(gtkScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
+	carea.pack_start(gemlvtk.ScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
 	
 	dlg.show_all()
 	resp = dlg.run()
@@ -1276,15 +1159,15 @@ def get_header_links(s, schemata=['mailto']):
 	return l
 
 def get_mailto(s):
-	l = get_header_links('<%s>' % (s))
+	l = get_header_links('<%s>' % s)
 	if len(l) > 0: return l[0][0]
 	warnx(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
 def load_gravatar(addr, container):
 	if not isinstance(addr, str): return
-	url = (Props['avatar/url_template'] or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G')\
-		.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
+	url_templ = Props['avatar/url_template'] or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G'
+	url = url_templ.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
 	try:
 		web = urllib2.urlopen(url)
 	except urllib2.HTTPError:
@@ -1670,14 +1553,14 @@ class compose_header_box(gtk.HBox):
 		self.completer.get_model().set_sort_column_id(col_order, gtk.SORT_ASCENDING)
 		self.completer.set_popup_single_match(True)
 		
-		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_datetime = gemlvtk.StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_datetime.set_tooltip_text(_("Pick date and time"))
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_datetime, False, False)
 		self.btn_datetime.connect('clicked', self.pick_datetime)
 		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
-		self.btn_suggestions = StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_suggestions = gemlvtk.StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_suggestions.set_tooltip_text(_("Suggestions…"))
 		self.btn_suggestions.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_suggestions, False, False)
@@ -1685,13 +1568,13 @@ class compose_header_box(gtk.HBox):
 		self.btn_suggestions.connect('button-press-event', self.propagate_button_press_event)
 		
 		if plus:
-			self.btn_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_add = gemlvtk.StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
 			self.pack_start(self.btn_add, False, False)
 			self.btn_add.set_relief(gtk.RELIEF_NONE)
 			self.btn_add.connect('clicked', self.duplicate)
 			self.btn_add.connect('button-press-event', self.propagate_button_press_event)
 		if minus:
-			self.btn_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_del = gemlvtk.StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
 			self.btn_del.set_relief(gtk.RELIEF_NONE)
 			self.pack_start(self.btn_del, False, False)
 			self.btn_del.connect('clicked', self.cancel)
@@ -1814,7 +1697,7 @@ class compose_header_box(gtk.HBox):
 	def on_populate_text_context_menu(self, entry, menu):
 		if self['name'] in AddressbookHeaders:
 			pos = 0
-			mi = StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+			mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
 			mi.connect('activate', self.add_value_to_addressbook)
 			menu.insert(mi, pos)
 			menu.show_all()
@@ -2136,7 +2019,7 @@ def prompt_datetime(entry):
 	cbox = dlg.get_content_area()
 	cbox.pack_start(calendar, True, True)
 	cbox.pack_start(clock, True, True)
-	btn_now = StockButton(_("Now"), gtk.STOCK_JUMP_TO)
+	btn_now = gemlvtk.StockButton(_("Now"), gtk.STOCK_JUMP_TO)
 	btn_now.connect('clicked', lambda x: select_datetime())
 	abox = dlg.get_action_area()
 	abox.pack_start(btn_now, False, False)
@@ -2313,7 +2196,6 @@ def add_composer_mailto(mailto):
 		set_composer_subject(mailto['subject'])
 	if mailto.has_key('body'):
 		set_composer_text(mailto['body'])
-	# TODO: carefully safely support 'attach' parameter
 
 def guess_my_address():
 	"guess what is the user's email address to which the currently opened email is sent"
@@ -2944,14 +2826,14 @@ class TextBuffer(gtk.TextBuffer):
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
-	mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
+	mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
 	menu_addsign = gtk.Menu()
 	for user_signature_name in gemlv.user_signature.iter_all():
 		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
 		submi.connect('activate', lambda _x, user_signature_name: composer_text_buffer.update_namedrange('user_signature', gemlv.user_signature.byname(user_signature_name)), user_signature_name)
 		menu_addsign.append(submi)
 	menu_addsign.append(gtk.SeparatorMenuItem())
-	submi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
+	submi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
 	submi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
 	menu_addsign.append(submi)
 	mi.set_submenu(menu_addsign)
@@ -2959,10 +2841,10 @@ def populate_composer_textview_menu(textview, menu):
 	
 	pos += 1
 	if composer_text_buffer.get_namedrange_text('quoted_message'):
-		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
+		mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('quoted_message'))
 	else:
-		mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
+		mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('quoted_message', get_reply_quotation()))
 	menu.insert(mi, pos)
 	pos += 1
@@ -3046,7 +2928,7 @@ def load_toolitems(toolbar, toolitems):
 				tbi.add(gtk.image_new_from_icon_name(stock, toolbar.get_icon_size()))
 				tbi.set_tooltip_text(Ltip)
 			else:
-				tbi = StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
+				tbi = gemlvtk.StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
 				tbi.set_data('stock', stock)
 				tbi.set_data('label', label)
 				hid = tbi.connect('clicked', on_click_button, fnc_left)
@@ -3136,13 +3018,13 @@ def act_send():
 	
 	carea = dlg.get_content_area()
 	progressbar = gtk.ProgressBar()
-	details = gtkScrolledLabelView()
+	details = gemlvtk.ScrolledLabelView()
 	carea.pack_start(progressbar, False, True)
 	carea.pack_start(details, True, True)
 	
 	aarea = dlg.get_action_area()
 	btn_cancel = aarea.children()[0]
-	btn_show_details = StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
+	btn_show_details = gemlvtk.StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
 	btn_show_details.connect('clicked', act_show_details_on_send_panel, dlg, details)
 	
 	aarea.pack_start(btn_show_details, False, True)
@@ -3236,7 +3118,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
 	
-	btn_save_sent = StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
+	btn_save_sent = gemlvtk.StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
 	btn_save_sent.connect('clicked', on_save_sent)
 	dlg.get_action_area().pack_start(btn_save_sent, False, False)
 	
@@ -3611,9 +3493,9 @@ class AddressBrowser(gtk.Window):
 		self.treeview = gtk.TreeView(self.listfilter)
 		self.selection = self.treeview.get_selection()
 		box_buttons = gtk.HBox(True, 2)
-		self.b_add = StockButton(stock=gtk.STOCK_ADD)
-		self.b_edit = StockButton(stock=gtk.STOCK_EDIT)
-		b_close = StockButton(stock=gtk.STOCK_CLOSE)
+		self.b_add = gemlvtk.StockButton(stock=gtk.STOCK_ADD)
+		self.b_edit = gemlvtk.StockButton(stock=gtk.STOCK_EDIT)
+		b_close = gemlvtk.StockButton(stock=gtk.STOCK_CLOSE)
 		
 		self.set_modal(modal_window)
 		winname = 'addressbook'
@@ -4590,13 +4472,6 @@ class PropertyStoreClass(object): pass
 UserConfig = PropertyStoreClass()
 UserConfig.show_importance_headers = False
 
-class BasicReuseable():
-	def __init__(self, value):
-		self.value = value
-	def __enter__(self):
-		return self.value
-	def __exit__(self, exc_type, exc_value, exc_traceback):
-		pass
 
 Timers = {}
 Timers2 = {}  # TODO: move timer* to timer2*
@@ -4642,10 +4517,13 @@ del sysargv
 if not cliArgs.compose and not cliArgs.FILE:
 	warnx(_("Either compose mode or FILE is needed."))
 	os._exit(1)
+
 if cliArgs.localedir:
 	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
+
 openerargs = cliArgs.opener.split()
 cliArgs.opener, cliArgs.opener_args = openerargs[0], openerargs[1:]
+
 if xattr is None:
 	warnx(_("Notice: no module xattr loaded"))
 if hasattr(magic, 'open'):
@@ -4656,6 +4534,7 @@ else:
 		def file(self, path):
 			return magic.from_file(path, mime=True)
 	Magic = magic0()
+
 signal.signal(signal.SIGTERM, sighandler)
 gtk.gdk.threads_init()
 
@@ -4664,7 +4543,7 @@ gtk.gdk.threads_init()
 
 add_gtk_icon_to_stock('mail-attachment', "Attach")
 
-win_main = gtkWindow()
+win_main = gemlvtk.Window()
 win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view/height'] or 450))
 win_main.connect('configure-event', on_window_configure)
 start_evt = win_main.connect('map-event', win_main_show)
@@ -4702,9 +4581,9 @@ panel_btnbox2 = gtk.VBox()
 panel_btnbox3 = gtk.HBox()
 lbl_right = gtk.Label()
 btnbox_right = gtk.VBox(True, 10)
-btn_open = StockButton(stock=gtk.STOCK_OPEN)
-btn_save = StockButton(stock=gtk.STOCK_SAVE)
-btn_save_struct = StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
+btn_open = gemlvtk.StockButton(stock=gtk.STOCK_OPEN)
+btn_save = gemlvtk.StockButton(stock=gtk.STOCK_SAVE)
+btn_save_struct = gemlvtk.StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
@@ -4842,7 +4721,7 @@ btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
 ### Build Composer GUI ###
 
-win_comp = gtkWindow()
+win_comp = gemlvtk.Window()
 win_comp.set_default_size(int(Props['ui/composer/width'] or win_main.get_default_size()[0]), int(Props['ui/composer/height'] or win_main.get_default_size()[1]))
 win_comp.connect('configure-event', on_window_configure)
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
@@ -4932,11 +4811,11 @@ for name in SenderHeaders:
 	mi.set_data('chname', name)
 	mi.connect('toggled', act_comp_hdr_menuitem)
 	menu_add_header.append(mi)
-mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
 mi.connect('activate', act_comp_hdr_menuitem, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
-mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
 mi.connect('activate', act_comp_hdr_menuitem, '')
 menu_add_header.append(mi)
 menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
@@ -4969,14 +4848,14 @@ for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
 
 toolbuttons = [
-	(None, LabelsToolItem(), None, None, None),
+	(None, gemlvtk.LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, StockToggleToolButton('dialog-password'), "Encrypt", None, None),
-	(None, StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
-	(None, StockToggleToolButton('mail-mark-read'), "Ask Disposition Notification", act_req_dispos_notif, None),
+	(None, gemlvtk.StockToggleToolButton('dialog-password'), "Encrypt", None, None),
+	(None, gemlvtk.StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
+	(None, gemlvtk.StockToggleToolButton('mail-mark-read'), "Ask Disposition Notification", act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
-	("Unimportant", StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
-	("Important", StockToggleToolButton('emblem-important'), "Important", act_importance, None),
+	("Unimportant", gemlvtk.StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
+	("Important", gemlvtk.StockToggleToolButton('emblem-important'), "Important", act_importance, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
