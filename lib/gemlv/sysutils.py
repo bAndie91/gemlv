@@ -91,3 +91,9 @@ def read_symlink_target_abs(symlink):
 def make_relative_symlink(point_to, symlink_path):
 	assert os.path.isabs(point_to)
 	return os.path.relpath(point_to, os.path.join(symlink_path, os.path.pardir))
+
+def basenameify(s):
+	"""
+	Replace ASCII slash (/) to a similar-looking multibyte char (U+2215 DIVISION SLASH)
+	"""
+	return s.replace('/', u'\u2215')

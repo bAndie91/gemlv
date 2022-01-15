@@ -81,42 +81,16 @@ from gemlv.sysutils import mkdir
 from gemlv.sysutils import make_relative_symlink
 from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
+from gemlv.sysutils import basenameify
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
-import gemlv.gtk as gemlvtk
+from gemlv.pythonutils import Cyclelist
+import gemlv.gemlvtk as gemlvtk
 
 
 ### helper classes, functions ###
 
 
-def add_gtk_icon_to_stock(icon_name, label_str):
-	gtk.stock_add([(icon_name, _(label_str), 0, 0, None)])
-	iconsource = gtk.IconSource()
-	iconsource.set_icon_name(icon_name)
-	iconset = gtk.IconSet()
-	iconset.add_source(iconsource)
-	icon_factory = gtk.IconFactory()
-	icon_factory.add(icon_name, iconset)
-	icon_factory.add_default()
-
-
-class Marquee(gtk.ScrolledWindow):
-	def __init__(self, child):
-		assert isinstance(child, gtk.Widget)
-		super(self.__class__, self).__init__()
-		self.set_policy(gtk.POLICY_NEVER, gtk.POLICY_NEVER)
-		self.add_with_viewport(child)
-		viewport = self.get_child()
-		viewport.set_shadow_type(gtk.SHADOW_NONE)
-		viewport.connect('scroll-event', self.scroll_viewport)
-	def scroll_viewport(self, viewport, event):
-		hadj = self.get_hadjustment()
-		delta = +10 if event.direction in [gtk.gdk.SCROLL_DOWN, gtk.gdk.SCROLL_LEFT] else -10
-		newvalue = hadj.value + delta
-		width = self.get_allocation().width
-		if newvalue + width > hadj.upper:
-			newvalue = hadj.upper - width
-		hadj.set_value(newvalue)
 
 class cfgparser(object):
 	def __init__(self, name, **kvargs):
@@ -249,37 +223,6 @@ class pipereader(object):
 		if self.exitdict is not None:
 			self.exitdict.update(status.__dict__)
 
-class cyclelist(list):
-	def __init__(self, lst, **kvargs):
-		if type(lst) != type([]):
-			raise TypeError('need list, %s found' % (str(type(lst))))
-		if len(lst) < 1:
-			raise ValueError('need non-empty list')
-		super(self.__class__, self).__init__(lst)
-		self.idx = 0
-		if kvargs.has_key('at'):
-			self.whirl(kvargs['at'])
-	
-	def whirl(self, val):
-		for i in range(0, len(self)):
-			if self[i] == val:
-				self.idx = i
-				return val
-		return None
-	
-	def turn(self, n=1):
-		self.idx = (self.idx + n) % len(self)
-		return self[self.idx]
-	
-	def __getitem__(self, i):
-		return super(self.__class__, self).__getitem__(i % len(self))
-
-	def __setitem__(self, i, v):
-		return super(self.__class__, self).__setitem__(i % len(self), v)
-	
-	def __str__(self):
-		return str(self[self.idx])
-
 
 def timer_once(iden, sec, func, func_args=()):
 	if Timers.has_key(iden):
@@ -326,22 +269,6 @@ def timer2_flush():
 		glib.source_remove(Timers2[iden]['handle'])
 		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
-def add_key_binding(widget, keyname, callback):
-	accelgroup = gtk.AccelGroup()
-	key, modifier = gtk.accelerator_parse(keyname)
-	accelgroup.connect_group(key, modifier, gtk.ACCEL_VISIBLE, callback)
-	widget.add_accel_group(accelgroup)
-
-def get_current_window():
-	for w in gtk.window_list_toplevels():
-		if w.is_active():
-			while True:
-				par = w.get_transient_for()
-				if par is None:
-					return w
-				else:
-					w = par
-	return None
 
 def display_error(e, suppl_text=None):
 	text = None
@@ -357,8 +284,8 @@ def display_error(e, suppl_text=None):
 		text = ''.join(e)
 	if text is None:
 		text = str(e)
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
-	dlg.set_transient_for(get_current_window())
+	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(gemlvtk.get_current_window())
 	dlg.set_title(_("Error"))
 	if suppl_text is not None:
 		dlg.set_resizable(True)
@@ -369,8 +296,8 @@ def display_error(e, suppl_text=None):
 	dlg.destroy()
 
 def display_info_box_async(text, suppl_text=None):
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
-	dlg.set_transient_for(get_current_window())
+	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(gemlvtk.get_current_window())
 	dlg.set_title(_("Info"))
 	if suppl_text is not None:
 		dlg.set_resizable(True)
@@ -380,7 +307,7 @@ def display_info_box_async(text, suppl_text=None):
 	dlg.show_all()
 
 def question(msg, stock_yes=None, stock_no=None, parent=None):
-	dlg = gtk.MessageDialog(parent or get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
+	dlg = gtk.MessageDialog(parent or gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
 	dlg.set_markup(msg)
 	dlg.set_title(_("Question"))
 	if stock_no is not None:
@@ -413,7 +340,7 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 		btn_accept_stock = gtk.STOCK_OPEN
 	if custom_accept_button_stock is not None:
 		btn_accept_stock = custom_accept_button_stock
-	dlg = gtk.FileChooserDialog(parent=get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
+	dlg = gtk.FileChooserDialog(parent=gemlvtk.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
 	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
@@ -584,7 +511,6 @@ def getemailaddress(s):
 		return None
 	return addrs[0][1]
 
-### private functions ###
 
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
@@ -1968,51 +1894,16 @@ def query_participants(recipients):
 				})
 	return participants
 
-class Clock(gtk.HBox):
-	def __init__(self):
-		super(self.__class__, self).__init__()
-		self.spin_hour = gtk.SpinButton()
-		self.spin_minute = gtk.SpinButton()
-		self.spin_second = gtk.SpinButton()
-		self.spin_hour.set_range(0, 23)
-		self.spin_minute.set_range(0, 59)
-		self.spin_second.set_range(0, 59)
-		self.spin_hour.set_increments(1, 6)
-		self.spin_minute.set_increments(1, 15)
-		self.spin_second.set_increments(1, 15)
-		self.spin_hour.set_wrap(True)
-		self.spin_minute.set_wrap(True)
-		self.spin_second.set_wrap(True)
-		self.spin_hour.set_numeric(True)
-		self.spin_minute.set_numeric(True)
-		self.spin_second.set_numeric(True)
-		self.select_time()
-		self.pack_start(self.spin_hour, False, False)
-		self.pack_start(gtk.Label(':'), False, False)
-		self.pack_start(self.spin_minute, False, False)
-		self.pack_start(gtk.Label(':'), False, False)
-		self.pack_start(self.spin_second, False, False)
-		self.show_all()
-	
-	def select_time(self, ts=None):
-		t = time.localtime(ts)
-		self.spin_hour.set_value(t.tm_hour)
-		self.spin_minute.set_value(t.tm_min)
-		self.spin_second.set_value(t.tm_sec)
-	
-	def get_time(self):
-		return (self.spin_hour.get_value_as_int(), self.spin_minute.get_value_as_int(), self.spin_second.get_value_as_int())
-
 def prompt_datetime(entry):
 	def select_datetime(ts=None):
 		y, m, d, x, x, x, x, x, x = time.localtime(ts)
 		calendar.select_month(m-1, y)
 		calendar.select_day(d)
 		clock.select_time(ts)
-	dlg = gtk.MessageDialog(get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
+	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
 	dlg.set_title(_("Pick date an time"))
 	calendar = gtk.Calendar()
-	clock = Clock()
+	clock = gemlvtk.Clock()
 	dt = email.utils.parsedate_tz(entry.get_text())
 	if dt is not None:
 		select_datetime(email.utils.mktime_tz(dt))
@@ -2410,11 +2301,6 @@ def act_open():
 		return
 	run_async(cliArgs.opener, cliArgs.opener_args + [tmppath], [os.unlink, tmppath])
 
-def basenameify(s):
-	"""
-	Replace ASCII slash (/) to a similar-looking multibyte char (U+2215 DIVISION SLASH)
-	"""
-	return s.replace('/', u'\u2215')
 
 def calc_attachment_name(part, n=None):
 	"""
@@ -2623,7 +2509,7 @@ def act_view_source():
 	load_part(get_part_by_itpath(), filt)
 
 def act_wrap(tv, i=1):
-	modes = cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
+	modes = Cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
 	tv.set_wrap_mode(modes.turn(i))
 
 def get_current_font(txtv):
@@ -2649,7 +2535,7 @@ def act_font_switch(tv):
 
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
-	dlg.set_transient_for(get_current_window())
+	dlg.set_transient_for(gemlvtk.get_current_window())
 	dlg.set_modal(True)
 	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	if dlg.run() == gtk.RESPONSE_OK:
@@ -3519,7 +3405,7 @@ class AddressBrowser(gtk.Window):
 		entry.connect('changed', lambda _x: self.listfilter.refilter())
 		self.treeview.connect('button-press-event', self.handle_dblclick)
 		self.connect('delete-event', self.click_close)
-		add_key_binding(self, 'Escape', self.click_close)
+		gemlvtk.add_key_binding(self, 'Escape', self.click_close)
 		b_close.connect('clicked', self.click_close)
 		self.b_add.connect('clicked', self.click_add)
 		self.b_edit.connect('clicked', self.click_edit)
@@ -4548,16 +4434,16 @@ win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view
 win_main.connect('configure-event', on_window_configure)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
-add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
-add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
-add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
-add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
-add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
-add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
-add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD))
-add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
-add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
-add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
+gemlvtk.add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
+gemlvtk.add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
+gemlvtk.add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
+gemlvtk.add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
+gemlvtk.add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
+gemlvtk.add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
+gemlvtk.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD))
+gemlvtk.add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
+gemlvtk.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
+gemlvtk.add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
@@ -4568,7 +4454,7 @@ panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
-spanel_view_subject = Marquee(panel_view_subject)
+spanel_view_subject = gemlvtk.Scrollable(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
 Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)
@@ -4725,12 +4611,12 @@ win_comp = gemlvtk.Window()
 win_comp.set_default_size(int(Props['ui/composer/width'] or win_main.get_default_size()[0]), int(Props['ui/composer/height'] or win_main.get_default_size()[1]))
 win_comp.connect('configure-event', on_window_configure)
 win_comp.connect('delete-event', lambda a,b: act_close_edit())
-add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda a,b,c,d: act_close_edit())
-add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
-add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
-add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
-add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
-add_key_binding(win_comp, '<Control>a', lambda *_x: act_addressbook())
+gemlvtk.add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda a,b,c,d: act_close_edit())
+gemlvtk.add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
+gemlvtk.add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
+gemlvtk.add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
+gemlvtk.add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
+gemlvtk.add_key_binding(win_comp, '<Control>a', lambda *_x: act_addressbook())
 
 box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()

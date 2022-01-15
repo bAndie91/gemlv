@@ -122,3 +122,84 @@ class StockButton(gtk.Button):
 		else:
 			img.set_from_pixbuf(icon)
 			img.props.visible = True
+
+class Scrollable(gtk.ScrolledWindow):
+	def __init__(self, child):
+		assert isinstance(child, gtk.Widget)
+		super(self.__class__, self).__init__()
+		self.set_policy(gtk.POLICY_NEVER, gtk.POLICY_NEVER)
+		self.add_with_viewport(child)
+		viewport = self.get_child()
+		viewport.set_shadow_type(gtk.SHADOW_NONE)
+		viewport.connect('scroll-event', self.scroll_viewport)
+	def scroll_viewport(self, viewport, event):
+		hadj = self.get_hadjustment()
+		delta = +10 if event.direction in [gtk.gdk.SCROLL_DOWN, gtk.gdk.SCROLL_LEFT] else -10
+		newvalue = hadj.value + delta
+		width = self.get_allocation().width
+		if newvalue + width > hadj.upper:
+			newvalue = hadj.upper - width
+		hadj.set_value(newvalue)
+
+class Clock(gtk.HBox):
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		self.spin_hour = gtk.SpinButton()
+		self.spin_minute = gtk.SpinButton()
+		self.spin_second = gtk.SpinButton()
+		self.spin_hour.set_range(0, 23)
+		self.spin_minute.set_range(0, 59)
+		self.spin_second.set_range(0, 59)
+		self.spin_hour.set_increments(1, 6)
+		self.spin_minute.set_increments(1, 15)
+		self.spin_second.set_increments(1, 15)
+		self.spin_hour.set_wrap(True)
+		self.spin_minute.set_wrap(True)
+		self.spin_second.set_wrap(True)
+		self.spin_hour.set_numeric(True)
+		self.spin_minute.set_numeric(True)
+		self.spin_second.set_numeric(True)
+		self.select_time()
+		self.pack_start(self.spin_hour, False, False)
+		self.pack_start(gtk.Label(':'), False, False)
+		self.pack_start(self.spin_minute, False, False)
+		self.pack_start(gtk.Label(':'), False, False)
+		self.pack_start(self.spin_second, False, False)
+		self.show_all()
+	
+	def select_time(self, ts=None):
+		t = time.localtime(ts)
+		self.spin_hour.set_value(t.tm_hour)
+		self.spin_minute.set_value(t.tm_min)
+		self.spin_second.set_value(t.tm_sec)
+	
+	def get_time(self):
+		return (self.spin_hour.get_value_as_int(), self.spin_minute.get_value_as_int(), self.spin_second.get_value_as_int())
+
+
+def add_key_binding(widget, keyname, callback):
+	accelgroup = gtk.AccelGroup()
+	key, modifier = gtk.accelerator_parse(keyname)
+	accelgroup.connect_group(key, modifier, gtk.ACCEL_VISIBLE, callback)
+	widget.add_accel_group(accelgroup)
+
+def get_current_window():
+	for w in gtk.window_list_toplevels():
+		if w.is_active():
+			while True:
+				par = w.get_transient_for()
+				if par is None:
+					return w
+				else:
+					w = par
+	return None
+
+def add_gtk_icon_to_stock(icon_name, label_str):
+	gtk.stock_add([(icon_name, _(label_str), 0, 0, None)])
+	iconsource = gtk.IconSource()
+	iconsource.set_icon_name(icon_name)
+	iconset = gtk.IconSet()
+	iconset.add_source(iconsource)
+	icon_factory = gtk.IconFactory()
+	icon_factory.add(icon_name, iconset)
+	icon_factory.add_default()
