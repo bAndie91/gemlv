@@ -65,15 +65,18 @@ except ImportError:
 	warnx("No module named pyexiv2. Degrading image auto rotation.")
 	pyexiv2 = None
 import gemlv.utils
-from gemlv.utils import headercase
-from gemlv.utils import AddressLine
-import gemlv.addressbook
-import gemlv.sysutils
 try:
 	import sqlite3
 except ImportError:
 	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
 	sqlite3 = None
+from gemlv.utils import headercase
+from gemlv.utils import AddressLine
+from gemlv.utils import decode_mimetext
+from gemlv.utils import decode_mime_header
+from gemlv.utils import walk_multipart
+import gemlv.addressbook
+import gemlv.sysutils
 from gemlv.sysutils import futimes
 from gemlv.sysutils import recursive_rm
 from gemlv.sysutils import set_blocking
@@ -87,6 +90,7 @@ import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
 import gemlv.gemlvtk as gemlvtk
+from gemlv.constants import *
 
 
 ### helper classes, functions ###
@@ -895,7 +899,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
 				content_description = eml['Content-Description']
-				if content_description is not None: label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
+				if content_description is not None:
+					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
 				label += '\n' + _("Size: %s") % (human_size(get_email_part_size_net(eml)),)
 				lbl_right.set_markup(label)
 				
@@ -1008,49 +1013,16 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
-def decode_mimetext(s):
-	"""
-	Takes one or more '=?...?=' tokens or non-encoded substrings and returns the complete decoded string.
-	"""
-	if s is not None:
-		plain_str = ' '.join([s.decode(encoding or 'ascii', 'replace') for s, encoding in email.Header.decode_header(s)])
-		return plain_str
-	return s
-
-def decode_header(s, unfold=False, eml=None):
-	chunks = []
-	if unfold:
-		s = re.sub('\r?\n\s*', ' ', s)
-	for chars, encoding in email.Header.decode_header(s):
-		if encoding is None:
-			# encoding is not specified in this header
-			# first try to decode in UTF-8
-			# then guess by other available encodings in the email
-			# lastly fall back to UTF-8 but mask unrecognizable chars
-			encodings = ['utf-8']
-			if eml:
-				for _x, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
-					if m:
-						encodings.append(m.group(1))
-			for encoding in encodings:
-				try:
-					chars.decode(encoding, 'strict')
-					break
-				except UnicodeDecodeError:
-					encoding = None
-			if encoding is None:
-				encoding = 'utf-8'
-		chunks.append(chars.decode(encoding, 'replace'))
-	return ' '.join(chunks)
-
 def get_one_header_main(hname, unfold=True):
 	hval = Email[hname]
 	if hval is None: return None
-	return decode_header(hval, unfold=unfold, eml=Email)
+	return decode_mime_header(hval, unfold=unfold, eml=Email)
 
 def get_all_headers_main(hname):
-	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
+	return map(lambda hdr: decode_mime_header(hdr, eml=Email), Email.get_all(hname) or [])
+
+def get_all_headers_main_mimeencoded(hname):
+	return (Email.get_all(hname) or [])
 
 def get_header_links(s, schemata):
 	"""
@@ -1133,7 +1105,7 @@ def load_gravatar(addr, container):
 def get_listaddressline_main():
 	try:
 		# Assuming there is only one list address.
-		listaddressline = get_header_links(','.join(get_all_headers_main('List-Post') or []), schemata=['mailto'])[0]['to'][0]
+		listaddressline = get_header_links(','.join(get_all_headers_main_mimeencoded('List-Post') or []), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
 		listaddressline = None
 	return listaddressline
@@ -1167,20 +1139,26 @@ def get_headers_markup(eml):
 	
 	for hname in hdrs:
 		hvals_mu = []
-		for hval in eml.get_all(hname) or []:
-			hval = decode_header(hval, eml=eml)
+		for hval_mimeencoded in eml.get_all(hname) or []:
+			hval = decode_mime_header(hval_mimeencoded, eml=eml)
 			if hname != 'From' and hname in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
-				addr = email.utils.parseaddr(hval)[1]
+				addr = AddressLine(hval).email
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for realname_mimetext, addr in gemlv.utils.getaddresses([hval]):
-					addr_mu = glib.markup_escape_text(addr)
-					realname = decode_header(realname_mimetext, eml=eml)
-					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr)).encode('utf-8') if realname else addr)
-					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link_mu, addr_mu)
-					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
+				for al in gemlv.utils.getaddresslines([hval], eml=eml):
+					if al.realname:
+						mu = '%s <a href=\'mailto:%s\'>%s</a>' % (
+							glib.markup_escape_text(al.realname),
+							urllib2.quote(al.addressline.encode('utf-8')),
+							glib.markup_escape_text(al.email),
+						)
+					else:
+						mu = '<a href=\'mailto:%s\'>%s</a>' % (
+							urllib2.quote(al.email.encode('utf-8')),
+							glib.markup_escape_text(al.email),
+						)
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
 			elif hname in DateTimeHeaders:
@@ -2080,11 +2058,11 @@ def quote_message():
 		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
 	return ''
 
-def filter_out_addresses(noaddrs, hvals):
+def filter_out_addresses(noaddrs, hvals_mimeencoded):
 	filtered = []
-	for al in gemlv.utils.getaddresslines(hvals):
+	for al in gemlv.utils.getaddresslines(hvals_mimeencoded):
 		if al.email not in noaddrs:
-			filtered.append(str(al))
+			filtered.append(al)
 	return filtered
 
 def add_composer_agent_headers():
@@ -2182,7 +2160,7 @@ def act_reply(compose_type):
 			listaddress = get_listaddressline_main()
 			
 			if compose_type == COMPOSE_REPLY:
-				add_composer_header('To', reply_fulladdress or '')
+				add_composer_header('To', str(reply_addressline))
 			elif compose_type == COMPOSE_REPLY_ALL:
 				skip_addresses = [my_address, reply_addressline.email, '']
 				rcpt_addresses = []
@@ -2191,8 +2169,7 @@ def act_reply(compose_type):
 					add_composer_header('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for h in RecipientHeaders:
-					for addressline in filter_out_addresses(skip_addresses, get_all_headers_main(h)):
-						# get_all_headers_main() gives back realnames decoded
+					for addressline in filter_out_addresses(skip_addresses, get_all_headers_main_mimeencoded(h)):
 						add_composer_header(h, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
@@ -2621,8 +2598,8 @@ def show_view_headers(show=True):
 		panel_view_header.set_size_request(-1, -1)
 		panel_view_header.set_line_wrap(False)
 		s = ''
-		for hname, hval in Email._headers:
-			hval = decode_header(hval, eml=Email)
+		for hname, hval_mimeencoded in Email._headers:
+			hval = decode_mime_header(hval_mimeencoded, eml=Email)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
 		panel_view_header.set_markup(s)
 	else:
@@ -2949,11 +2926,11 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	
 	recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
 	recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
-	recipients_addr = gemlv.utils.getaddresses(recipients_flat)
+	recipients_addr = gemlv.utils.getaddresslines(recipients_flat, eml=email_to_send)
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
-		'RCPT': ','.join(map(lambda x: x[1], recipients_addr)),
+		'RCPT': ','.join(map(lambda al: al.email, recipients_addr)),
 	}
 	
 	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
@@ -3057,8 +3034,8 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		# Show button to save sent email in 'Sent/' folder
 		btn_save_sent.show_all()
 		# Save recipient to the auto addressbook.
-		for recipient_name, recipient_address in recipients_addr:
-			gemlv.addressbook.add(section='gemlv.auto', address_line=AddressLine((decode_header(recipient_name, eml=email_to_send), recipient_address)))
+		for recipient_addressline in recipients_addr:
+			gemlv.addressbook.add(section='gemlv.auto', address_line=recipient_addressline)
 	else:
 		set_dialog_icon_name(dlg, gtk.STOCK_DIALOG_ERROR)
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
@@ -3163,11 +3140,11 @@ def make_protected_headers_part(eml):
 	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
 	protected_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
 	protected_headers_part.replace_header(HDR_CTE, 'quoted-printable')
-	for hname, hvalue in eml._headers:
+	for hname, hvalue_mimeencoded in eml._headers:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
 		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part._payload += '%s: %s\n' % (hname, decode_header(hvalue, unfold=True, eml=eml).encode('quoted-printable'))
+			protected_headers_part._payload += '%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, unfold=True, eml=eml).encode('quoted-printable'))
 	return protected_headers_part
 
 def build_newemail_to_send():
@@ -3519,17 +3496,6 @@ def act_addressbook():
 	update_addressbook_highlights(addresslist)
 	
 	return True
-
-def walk_multipart(eml, leaf_only=False, depth=0):
-	if not leaf_only:
-		yield (depth, eml)
-	if type(eml._payload) == list:
-		for part in eml._payload:
-			for x in walk_multipart(part, leaf_only, depth+1):
-				yield x
-	else:
-		if leaf_only:
-			yield (depth, eml)
 
 def debug_multipart(eml):
 	for depth, part in walk_multipart(eml):
@@ -4021,8 +3987,8 @@ def act_dispos_notif():
 		dnt_addresses = Email.get_all(HDR_DNT)
 		my_address = guess_my_address()
 		if dnt_addresses:
-			for realname, addr in gemlv.utils.getaddresses(dnt_addresses):
-				add_composer_header('To', email.utils.formataddr((decode_header(realname, eml=Email), addr)))
+			for al in gemlv.utils.getaddresslines(dnt_addresses, eml=Email):
+				add_composer_header('To', al.addressline)
 		else:
 			add_composer_header('To', guess_reply_address())
 		lang = get_one_header_main('Accept-Language')
@@ -4193,37 +4159,6 @@ locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 setproctitle.setproctitle(PROGNAME)
-PMU_MIME = '<i><span color=\'gray30\'>'
-PMU_MIME_CLOSE = '</span></i>'
-PMU_NAME = '<b>'
-PMU_NAME_CLOSE = '</b>'
-PMU_HEAD = '<b>'
-PMU_HEAD_CLOSE = '</b>'
-PMU_WARN = '<span foreground=\'darkred\' weight=\'bold\'>'
-PMU_WARN_CLOSE = '</span>'
-PMU_SUBJ = '<big>'
-PMU_SUBJ_CLOSE = '</big>'
-PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
-PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color=\'gray30\'>%s</span></i>'
-PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
-HDR_CT = 'Content-Type'
-HDR_CD = 'Content-Disposition'
-HDR_CTE = 'Content-Transfer-Encoding'
-HDR_DNT = 'Disposition-Notification-To'
-HDR_GDR = 'Generate-Delivery-Report'
-HDR_PNDR = 'Prevent-NonDelivery-Report'
-HDR_OR = 'Original-Recipient'
-HDR_MID = 'Message-ID'
-HDR_REF = 'References'
-HDR_XSD = 'X-Sent-Date'
-HDR_XQID = 'X-Queue-ID'
-MIMETYPE_OCTETSTREAM = 'application/octet-stream'
-MIMETYPE_EMAIL = 'message/rfc822'
-MIMETYPE_URILIST = 'text/uri-list'
-MIMETYPE_TEXT = 'text/plain'
-MIMETYPE_HTML = 'text/html'
-MIMETYPE_SYMLINK = 'inode/symlink'
-MIMETYPE_HEADERS = 'text/rfc822-headers'
 MSG_NO_ADDRESS_FOR_DNT = "Set a From or Reply-To address to have Disposition Notification."
 Importances = ['low','normal','high']
 Priorities = ['non-urgent','normal','urgent']
@@ -4369,13 +4304,6 @@ DontLeakHeaders = [
 MultiRecipientsMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
 AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
 
-XATTR_CHARSET = 'user.mime_encoding'
-XATTR_TYPE = 'user.mime_type'
-XATTR_ORIGIN = 'user.xdg.origin.email.message-id'
-XATTR_MDNSENT = 'user.gemlv.mdn-sent-in'
-XATTR_REPLIED = 'user.gemlv.replied-in'
-XATTR_FORWARDED = 'user.gemlv.forwarded-in'
-XATTR_QUEUEID = 'user.gemlv.sent.queue-id'
 NewEmail = None
 PREAMBLE = _("This is a MIME multipart Email.")
 
@@ -4795,9 +4723,9 @@ if cliArgs.compose:
 		
 		# Import headers.
 		supersedes = []
-		for hname, hval in edit_eml._headers:
+		for hname, hval_mimeencoded in edit_eml._headers:
 			hname = headercase(hname)
-			hval = decode_header(hval, eml=edit_eml)
+			hval = decode_mime_header(hval_mimeencoded, eml=edit_eml)
 			if hname == HDR_MID:
 				supersedes.append(hval)
 			elif hname == 'Subject':
