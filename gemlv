@@ -561,7 +561,7 @@ def load_file(filename):
 	if truish(get_xattr(filename, XATTR_FORWARDED)):
 		stck_fwd.show()
 	
-	if get_listaddressline_main() is not None:
+	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
 	if (Email['List-Unsubscribe'] or '').strip():
 		menubutton_unsubscribe.show()
@@ -1107,9 +1107,10 @@ def load_gravatar(addr, container):
 def get_listaddressline_main():
 	try:
 		# Assuming there is only one list address.
+		# Take the first 'To' parameter from the first mailto link.
 		listaddressline = get_header_links(','.join(get_all_headers_main_mimeencoded('List-Post') or []), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
-		listaddressline = None
+		listaddressline = AddressLine('')
 	return listaddressline
 
 def get_headers_markup(eml):
@@ -1433,8 +1434,9 @@ class compose_header_box(gtk.HBox):
 	ICON_POS_VALIDATION = 1
 	
 	def __init__(self, chname, val, hntype=None):
-		assert isinstance(chname, str)
-		assert isinstance(val, str) or isinstance(val, unicode)
+		if isinstance(val, AddressLine): val = str(val)
+		assert isinstance(chname, str), "chname is %s not str."%(repr(type(chname)),)
+		assert isinstance(val, str) or isinstance(val, unicode), "val is %s not str nor unicode."%(repr(type(val)),)
 		plus = True
 		minus = True
 		
@@ -2108,13 +2110,13 @@ def guess_my_address():
 def guess_my_addressline():
 	"like guess_my_address() but with added realname"
 	addr = guess_my_address()
-	if addr is None: return AddressLine(None)
+	if addr is None: return AddressLine('')
 	realname = gemlv.utils.get_gecos_name()
 	# TODO consult addressbook for a known realname part
 	return AddressLine((realname, addr))
 
 def guess_reply_addressline():
-	if Email is None: return AddressLine(None)
+	if Email is None: return AddressLine('')
 	for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
 		if Email[hname] is not None:
 			break
