@@ -194,8 +194,8 @@ def get_current_window():
 					w = par
 	return None
 
-def add_gtk_icon_to_stock(icon_name, label_str):
-	gtk.stock_add([(icon_name, _(label_str), 0, 0, None)])
+def add_gtk_icon_to_stock(icon_name, label_str_localized):
+	gtk.stock_add([(icon_name, label_str_localized, 0, 0, None)])
 	iconsource = gtk.IconSource()
 	iconsource.set_icon_name(icon_name)
 	iconset = gtk.IconSet()

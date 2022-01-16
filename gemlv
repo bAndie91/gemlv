@@ -1661,14 +1661,7 @@ class compose_header_box(gtk.HBox):
 	
 	def add_value_to_addressbook(self, *_x):
 		address_line = self['value']
-		_x, addr = getaddress(address_line)
-		try:
-			gemlv.addressbook.add(email=addr, section='gemlv.manual', address_line=address_line)
-		except Exception as e:
-			display_error(e)
-			raise
-		else:
-			display_info_box_async(_("Added to addressbook"))
+		act_add_to_addressbook_manual(address_line)
 	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
@@ -1902,6 +1895,16 @@ class compose_header_box(gtk.HBox):
 			self.on_value_changed()
 		else:
 			raise KeyError()
+
+def act_add_to_addressbook_manual(address_line):
+	_x, addr = getaddress(address_line)
+	try:
+		gemlv.addressbook.add(email=addr, section='gemlv.manual', address_line=address_line)
+	except Exception as e:
+		display_error(e)
+		raise
+	else:
+		display_info_box_async(_("Added to addressbook"))
 
 def query_participants(recipients):
 	participants = []
@@ -2646,6 +2649,13 @@ def show_view_headers(show=True):
 	panel_view_header.set_data('all-headers', show)
 
 def populate_header_menu(label, menu):
+	selected_link = label.get_current_uri()
+	if selected_link is not None:
+		mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+		mailto = parse_mailto(selected_link)['to'][0]
+		mi.connect('activate', lambda *_x: act_add_to_addressbook_manual(mailto))
+		menu.append(mi)
+	
 	menu.append(gtk.SeparatorMenuItem())
 	mi = gtk.CheckMenuItem(_("Show All Headers"))
 	mi.set_active(panel_view_header.get_data('all-headers') == True)
@@ -4459,7 +4469,7 @@ gtk.gdk.threads_init()
 
 ### Build GUI ###
 
-add_gtk_icon_to_stock('mail-attachment', "Attach")
+gemlvtk.add_gtk_icon_to_stock('mail-attachment', _("Attach"))
 
 win_main = gemlvtk.Window()
 win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view/height'] or 450))
