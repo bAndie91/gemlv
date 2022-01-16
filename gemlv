@@ -1065,9 +1065,24 @@ def get_one_header_main(hname, unfold=True):
 def get_all_headers_main(hname):
 	return map(lambda hdr: decode_header(hdr, eml=Email), Email.get_all(hname) or [])
 
-def get_header_links(s, schemata=['mailto']):
+def get_header_links(s, schemata):
+	"""
+	parse "Link:"-type headers and return parsed links' URI (and comments) that schema is in 
+	schemata parameter or '*' is in schemata.
+	returns list of dicts. keys in each dict:
+	 - uri
+	 - scheme
+	 - comment (if any)
+	 in case of "mailto:..." link:
+	 - to: "To" recipients list
+	 - cc: "Cc" recipients list
+	 - bcc: "Bcc" recipients list
+	 - subject (if any)
+	 - body (if any)
+	 - other accepted mailto fields (if any)
+	"""
 	# RFC2369
-	l = []
+	links = []
 	linkdefs = re.findall('(?:\(([^)]+)\))?\s*<([^>]+)>\s*(?:\(([^)]+)\))?', s)
 	if len(linkdefs) == 0:
 		# workaround for poorly behaved mail lists
@@ -1075,18 +1090,34 @@ def get_header_links(s, schemata=['mailto']):
 	for linkdef in linkdefs:
 		comment = linkdef[0] or linkdef[2]
 		uri = linkdef[1]
-		rslt = urlparse.urlsplit(uri)
-		if '*' in schemata or rslt.scheme.lower() in schemata:
-			q = dict((k.lower(), v if len(v)>1 else v[0]) for k, v in urlparse.parse_qs(rslt.query).iteritems())
-			q['to'] = urlparse.unquote(rslt.path)
-			q['uri'] = uri
-			q['split'] = rslt
-			l.append((q, comment))
-	return l
+		uriparts = urlparse.urlsplit(uri)
+		if '*' in schemata or uriparts.scheme.lower() in schemata:
+			link = {}
+			link['uri'] = uri
+			link['scheme'] = uriparts.scheme.lower()
+			link['comment'] = comment
+			if link['scheme'] == 'mailto':
+				for hname in MultiValueMailtoFields:
+					link[hname] = []
+				link['to'] = re.split('\s*,\s*', urlparse.unquote(uriparts.path))
+				for hname, hvalues in urlparse.parse_qs(uriparts.query).iteritems():
+					hname = hname.lower()
+					if hname in AcceptableMailtoFields and len(hvalues) > 0:
+						if hname in MultiValueMailtoFields:
+							# RFC2368
+							# there may be multiple fields of the same kind (eg. "?cc=addr1&cc=addr2")
+							# and each of them may hold multiple addresses delimited by comma (eg. "addr1%2C%20addr2")
+							hvalues = re.split('\s*,\s*', ','.join(hvalues))
+						if hname in MultiValueMailtoFields:
+							link[hname].extend(hvalues)
+						else:
+							link[hname] = hvalues[0]
+			links.append(link)
+	return links
 
-def get_mailto(s):
-	l = get_header_links('<%s>' % s)
-	if len(l) > 0: return l[0][0]
+def parse_mailto(s):
+	l = get_header_links('<'+s+'>', schemata=['mailto'])
+	if len(l) > 0: return l[0]
 	warnx(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
@@ -1115,7 +1146,7 @@ def load_gravatar(addr, container):
 def get_listaddress_main():
 	try:
 		# Assuming there is only one list address.
-		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []))[0][0]['to']
+		listaddress = get_header_links(','.join(get_all_headers_main('List-Post') or []), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
 		listaddress = None
 	return listaddress
@@ -1160,7 +1191,7 @@ def get_headers_markup(eml):
 				for realname_mimetext, addr in gemlv.utils.getaddresses([hval]):
 					addr_mu = glib.markup_escape_text(addr)
 					realname = decode_header(realname_mimetext, eml=eml)
-					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr)).encode('utf-8')) if realname else addr_mu  # @notranslate
+					mailto_link_mu = urllib2.quote(email.utils.formataddr((realname, addr)).encode('utf-8') if realname else addr)
 					mu = '<a href=\'mailto:%s\'>%s</a>' % (mailto_link_mu, addr_mu)
 					if realname: mu = glib.markup_escape_text(realname) + ' ' + mu
 					list_mu.append(mu)
@@ -2073,20 +2104,17 @@ def add_composer_agent_headers():
 	add_composer_header('X-Mailer', USERAGENT)
 
 def add_composer_mailto(mailto):
-	for h in 'To', 'Cc', 'Bcc':
-		k = h.lower()
-		if mailto.has_key(k):
-			# urlparse.parse_qs() in get_header_links() may turn GET parameters 
-			# (eg. "?cc[]=foo&cc[]=bar") into arrays, so handle them like comma-
-			# delimited addresses
-			v = ','.join(mailto[k]) if hasattr(mailto[k], '__iter__') else mailto[k]
-			recipient_list = []
-			for x in v.split(','): recipient_list.append(x)
-			add_composer_headers(h, recipient_list)
-	if mailto.has_key('subject'):
-		set_composer_subject(mailto['subject'])
-	if mailto.has_key('body'):
-		set_composer_text(mailto['body'])
+	for field in AcceptableMailtoFields:
+		if field in mailto:
+			header = headercase(field)
+			if header in RecipientHeaders:
+				add_composer_headers(header, mailto[field] if field in MultiValueMailtoFields else [mailto[field]])
+			elif field == 'subject':
+				set_composer_subject(mailto[field])
+			elif field == 'body':
+				set_composer_text(mailto[field])
+			else:
+				add_composer_header(header, mailto[field])
 
 def guess_my_address():
 	"guess what is the user's email address to which the currently opened email is sent"
@@ -2197,25 +2225,25 @@ def shorturl(url, maxlength=72):
 
 def act_unsubscribe():
 	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
-	if len(links) == 1 and links[0][0]['split'].scheme == 'mailto':
+	if len(links) == 1 and links[0]['scheme'] == 'mailto':
 		if open_composer(reason=COMPOSE_UNSUB):
-			add_composer_mailto(links[0][0])
+			add_composer_mailto(links[0])
 			on_after_save_draft()
 	else:
 		text = ''
 		for link in links:
-			link, comment = link[:]
-			uri = urlparse.unquote(link['uri'])
-			escuri = glib.markup_escape_text(uri)
-			if link['split'].scheme == 'mailto':
-				linktext = link['to']
+			uri = link['uri']
+			if link['scheme'] == 'mailto' and link.get('to') and len(link['to'])>0:
+				linktext = link['to'][0]
 			else:
-				short = shorturl(uri, 80)
-				if short is None:
-					linktext = escuri
-				else:
-					linktext = glib.markup_escape_text(short)
-			text += '\n\n<a href=\'%s\'>%s</a> <i>%s</i>' % (escuri, linktext, glib.markup_escape_text(comment))
+				linktext = uri
+			short = shorturl(linktext, 80)
+			if short is not None: linktext = short
+			text += '\n\n<a href=\'%s\'>%s</a> <i>%s</i>' % (
+				glib.markup_escape_text(uri), 
+				glib.markup_escape_text(linktext), 
+				glib.markup_escape_text(link['comment']),
+			)
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe"))
 		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + text)
@@ -4337,6 +4365,7 @@ AutocompletionHeaders = {
 	'Priority': Priorities,
 	'Precedence': Precedences,
 }
+# obfuscate these headers on encrypted messages:
 HeadersObfuscate = [
 	'Subject',
 	'Thread-Topic',
@@ -4344,6 +4373,9 @@ HeadersObfuscate = [
 DontLeakHeaders = [
 	'Bcc',
 ]
+MultiValueMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
+AcceptableMailtoFields = MultiValueMailtoFields + ['subject', 'keywords', 'body']
+
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
 XATTR_ORIGIN = 'user.xdg.origin.email.message-id'
@@ -4813,7 +4845,7 @@ if cliArgs.compose:
 			composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 	
 	if cliArgs.mailto:
-		mailto = get_mailto(cliArgs.mailto)
+		mailto = parse_mailto(cliArgs.mailto)
 		add_composer_mailto(mailto)
 	if getattr(cliArgs, 'from'):
 		reset_composer_headers('From', [getattr(cliArgs, 'from')])
