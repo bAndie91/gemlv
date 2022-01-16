@@ -1829,6 +1829,8 @@ class compose_header_box(gtk.HBox):
 			if ret is not None:
 				ret = headercase(ret)
 			return ret
+		elif key == 'name_lc':
+			return self['name'].lower()
 		elif key == 'value':
 			return self.wdg_value.get_text()
 		elif key == 'readonly':
@@ -1892,6 +1894,11 @@ def query_participants(recipients):
 	return participants
 
 def prompt_datetime(entry):
+	"""
+	prompt_datetime(entry)
+	
+		displays a message dialog with a date-time picker and writes picked date-time in entry
+	"""
 	def select_datetime(ts=None):
 		y, m, d, x, x, x, x, x, x = time.localtime(ts)
 		calendar.select_month(m-1, y)
@@ -1920,6 +1927,16 @@ def prompt_datetime(entry):
 	dlg.destroy()
 
 def get_composer_headerboxes(search_hname):
+	"""
+	get_composer_headerboxes(search_hname)
+	
+		finds those compose_header_box objects of which name 
+		- is in search_hname (if search_hname is list)
+		- is search_hname (if search_hname is str)
+		- is anything (if search_hname is None)
+		
+		do not count hidden compose_header_box objects which represent sender (From, Organization, Reply-To, …)
+	"""
 	search_hnames = None
 	if search_hname is not None:
 		if type(search_hname) == list:
@@ -1928,11 +1945,10 @@ def get_composer_headerboxes(search_hname):
 			search_hnames = [search_hname.lower()]
 	hlist = []
 	for hbox in panel_comp_header.children():
-		hname_cmp = hbox['name'].lower()
-		if hbox.get_visible() or hname_cmp not in [x.lower() for x in SenderHeaders]:
+		if hbox.get_visible() or hbox['name_lc'] not in [x.lower() for x in SenderHeaders]:
 			if search_hname is None:
 				hlist.append(hbox)
-			elif hname_cmp in search_hnames:
+			elif hbox['name_lc'] in search_hnames:
 				hlist.append(hbox)
 	return hlist
 
@@ -2087,6 +2103,14 @@ def guess_my_address():
 	if Email is None: return None
 	return get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
 
+def guess_my_addressline():
+	"like guess_my_address() but with added realname"
+	addr = guess_my_address()
+	if addr is None: return None
+	realname = gemlv.utils.get_gecos_name()
+	# TODO consult addressbook for a known realname part
+	return AddressLine((realname, addr))
+
 def guess_reply_address():
 	if Email is None: return None
 	for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
@@ -2095,10 +2119,9 @@ def guess_reply_address():
 	return None
 
 def add_composer_From_hidden():
-	addr = guess_my_address()
-	if addr is not None:
-		name = gemlv.utils.get_gecos_name()
-		box = add_composer_header('From', email.utils.formataddr((name, addr)))
+	addressline = guess_my_addressline()
+	if addressline is not None:
+		box = add_composer_header('From', str(addressline))
 		box.cancel()
 		return True
 	return False
@@ -2114,6 +2137,26 @@ def act_compose():
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
+SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
+
+class InvalidSubjectLinePrefix(Exception):
+	pass
+
+def make_subject_line(original, pre_kind):
+	if pre_kind == SUBJECT_PREFIX_FWD:
+		pre = _("Fwd: ")
+		alternatives = ["to:", "tov:"]  # @notranslate
+	elif pre_kind == SUBJECT_PREFIX_RE:
+		pre = _("Re: ")
+		alternatives = ["vá:"]  # @notranslate
+	else:
+		raise InvalidSubjectLinePrefix()
+	
+	if all([not original.lower().startswith(altpre) for altpre in alternatives]):
+		return pre + original
+	
+	return original
+
 def act_reply(compose_type):
 	if open_composer(reason=compose_type):
 		add_composer_agent_headers()
@@ -2121,14 +2164,13 @@ def act_reply(compose_type):
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
-		my_address = guess_my_address()
-		add_composer_header('From', my_address)
+		my_addressline = guess_my_addressline
+		add_composer_header('From', str(my_addressline))
 		
 		if compose_type == COMPOSE_FORWARD:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (subj or _("Email")) + '.eml'
-			pre = _("Fwd: ")
-			if not subj.lower().startswith(pre.lower()): subj = pre + subj
+			subj = make_subject_line(subj, SUBJECT_PREFIX_FWD)
 			set_composer_subject(subj)
 			# TODO: maintain Thread-Topic header here in forwards too?
 			add_composer_header('To', '')
@@ -2146,8 +2188,7 @@ def act_reply(compose_type):
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or subj)
-			pre = _("Re: ")
-			if not subj.lower().startswith(pre.lower()): subj = pre + subj
+			subj = make_subject_line(subj, SUBJECT_PREFIX_RE)
 			set_composer_subject(subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
@@ -2162,10 +2203,12 @@ def act_reply(compose_type):
 			if compose_type == COMPOSE_REPLY:
 				add_composer_header('To', str(reply_addressline))
 			elif compose_type == COMPOSE_REPLY_ALL:
-				skip_addresses = [my_address, reply_addressline.email, '']
+				# gather all email addresses in the message
+				# but do not duplicate any
+				skip_addresses = [my_addressline.email, reply_addressline.email, '']
 				rcpt_addresses = []
 				
-				if reply_addressline.email and reply_addressline.email != my_address:
+				if reply_addressline.email and reply_addressline.email != my_addressline.email:
 					add_composer_header('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for h in RecipientHeaders:

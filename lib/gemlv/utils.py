@@ -111,4 +111,3 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 	else:
 		if leaf_only:
 			yield (depth, eml)
-
