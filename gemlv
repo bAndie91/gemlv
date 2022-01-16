@@ -2111,12 +2111,12 @@ def guess_my_addressline():
 	# TODO consult addressbook for a known realname part
 	return AddressLine((realname, addr))
 
-def guess_reply_address():
-	if Email is None: return None
-	for h in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-		if Email[h] is not None:
-			return get_one_header_main(h)
-	return None
+def guess_reply_addressline():
+	if Email is None: return AddressLine(None)
+	for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
+		if Email[hname] is not None:
+			break
+	return AddressLine(Email[hname], eml=Email)
 
 def add_composer_From_hidden():
 	addressline = guess_my_addressline()
@@ -2197,7 +2197,7 @@ def act_reply(compose_type):
 			add_composer_header('In-Reply-To', messageid)
 			composer_maintain_references_headers()
 			
-			reply_addressline = AddressLine(guess_reply_address())
+			reply_addressline = guess_reply_addressline()
 			listaddress = get_listaddressline_main()
 			
 			if compose_type == COMPOSE_REPLY:
@@ -4033,7 +4033,7 @@ def act_dispos_notif():
 			for al in gemlv.utils.getaddresslines(dnt_addresses, eml=Email):
 				add_composer_header('To', al.addressline)
 		else:
-			add_composer_header('To', guess_reply_address())
+			add_composer_header('To', str(guess_reply_addressline()))
 		lang = get_one_header_main('Accept-Language')
 		if lang:
 			savelang = os.environ['LANGUAGE']
