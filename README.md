@@ -221,5 +221,9 @@ and `~/Mail/.addressbook.d/*`, one address line (real name + email address) per 
 Edit it with any text editor. The "Edit" button runs the default file opener program to open
 the addressbook file(s) for editing.
 
+**Q.** When the composer window opens up the header field is frozen and I can not click on it.
+
+**A.** It seems to be some sort of gtk bug. Just scroll over it and it thaws.
+
 # issues
 Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
