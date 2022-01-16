@@ -45,11 +45,12 @@ def get_full():
 	load(callback = lambda addr, abook: abook.append(addr), userdata=abook)
 	return abook
 
-def add(email, section, address_line=None):
-	if address_line is None: address_line = email
+def add(section, address_line=None):
+	"add the given address line to the addressbook unless an entry with the same realname and email address is already there (in any addressbook section)"
 	addresses = get_full()
-	# TODO (?) update matching line (the contact changed her real name)
-	if all(addr[1] != email for addr in gemlv.utils.getaddresses(addresses)):
+	if any(al.email == address_line.email and (al.realname == address_line.realname or address_line.realname == '') for al in gemlv.utils.getaddresslines(addresses)):
+		pass
+	else:
 		path = os.path.join(get_directory_path(), section)
 		with open(path, 'a') as fh:
-			fh.write(address_line+'\n')
+			fh.write(address_line.addressline+'\n')
