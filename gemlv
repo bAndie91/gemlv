@@ -75,6 +75,8 @@ from gemlv.utils import AddressLine
 from gemlv.utils import decode_mimetext
 from gemlv.utils import decode_mime_header
 from gemlv.utils import walk_multipart
+from gemlv.utils import MimeDecoded
+from gemlv.utils import MimeEncoded
 import gemlv.addressbook
 import gemlv.sysutils
 from gemlv.sysutils import futimes
@@ -1143,7 +1145,7 @@ def get_headers_markup(eml):
 			hval = decode_mime_header(hval_mimeencoded, eml=eml)
 			if hname != 'From' and hname in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
-				addr = AddressLine(hval).email
+				addr = AddressLine(hval_mimeencoded, eml=eml).email
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
@@ -1570,11 +1572,11 @@ class compose_header_box(gtk.HBox):
 		recipients = get_composer_all_recipients_emails()
 		participants = query_participants(recipients)
 		correspondence = dict(map(lambda x: (x['our_address'], x), participants))
-		def load_one(addr, correspondence):
-			email = AddressLine(addr).email
-			if email in correspondence.keys():
-				if 'our_address_lines' not in correspondence[email]: correspondence[email]['our_address_lines'] = {}
-				correspondence[email]['our_address_lines'][addr] = 1
+		def load_one(al, correspondence):
+			emailaddr = AddressLine(MimeDecoded(al)).email
+			if emailaddr in correspondence.keys():
+				if 'our_address_lines' not in correspondence[emailaddr]: correspondence[emailaddr]['our_address_lines'] = {}
+				correspondence[emailaddr]['our_address_lines'][al] = 1
 		gemlv.addressbook.load(callback = load_one, userdata = correspondence, gettext = _)
 		suggestions = correspondence.values()
 		suggestions.sort(key = lambda x: (x['total_correspondences'], x['our_address']), reverse = True)
@@ -1625,7 +1627,7 @@ class compose_header_box(gtk.HBox):
 			menu.show_all()
 	
 	def add_value_to_addressbook(self, *_x):
-		act_add_to_addressbook_manual(AddressLine(self['value']))
+		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self['value'])))
 	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
@@ -2106,7 +2108,7 @@ def guess_my_address():
 def guess_my_addressline():
 	"like guess_my_address() but with added realname"
 	addr = guess_my_address()
-	if addr is None: return None
+	if addr is None: return AddressLine(None)
 	realname = gemlv.utils.get_gecos_name()
 	# TODO consult addressbook for a known realname part
 	return AddressLine((realname, addr))
@@ -2120,7 +2122,7 @@ def guess_reply_addressline():
 
 def add_composer_From_hidden():
 	addressline = guess_my_addressline()
-	if addressline is not None:
+	if addressline.email:
 		box = add_composer_header('From', str(addressline))
 		box.cancel()
 		return True
@@ -2164,7 +2166,7 @@ def act_reply(compose_type):
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
-		my_addressline = guess_my_addressline
+		my_addressline = guess_my_addressline()
 		add_composer_header('From', str(my_addressline))
 		
 		if compose_type == COMPOSE_FORWARD:

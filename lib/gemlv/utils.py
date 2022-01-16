@@ -34,24 +34,33 @@ def headercase(s):
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
 
+class MimeEncoded(str):
+	"indicates that this string is a MIME-encoded string"
+	pass
+
+class MimeDecoded(str):
+	"indicates that this string is NOT a MIME-encoded string"
+	pass
+
 class AddressLine(object):
 	"""
 	EXAMPLES
 
 	al = AddressLine((realname, email))
 
-	al = AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))
-		(not recommended)
+	al = AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))  # not recommended
 
-	al = AddressLine("John Doe <john@example.net>")
-		(recommended)
+	al = AddressLine("John Doe <john@example.net>")  # recommended
 	"""
 	def __init__(self, p, eml=None):
 		if isinstance(p, tuple):
 			self.realname, self.email = p[:]
 		else:
-			self.realname_raw, self.email = email.utils.parseaddr(fix_unquoted_comma(p))
-			self.realname = decode_mime_header(self.realname_raw, eml=eml)
+			realname_raw, self.email = email.utils.parseaddr(fix_unquoted_comma(p))
+			if isinstance(p, MimeDecoded):
+				self.realname = realname_raw
+			else:
+				self.realname = decode_mime_header(realname_raw, eml=eml)
 		self.addressline = email.utils.formataddr((self.realname, self.email))
 	def __str__(self):
 		return self.addressline
