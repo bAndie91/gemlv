@@ -59,7 +59,7 @@ Email viewer and composer for local emails in GTK
 - remember UI elements size and position
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
-	- supported networks and filters
+	- supported spam-db networks and filters:
 		- razor
 		- pyzor
 		- bogofilter
@@ -85,28 +85,25 @@ Email viewer and composer for local emails in GTK
 		- you can find and open draft emails there in case of something crashed
 	- support `~/.signature` and multiple user signature files in ~/Mail/.signatures/*`
 - reply options
-	- interpret Reply-To field
+	- consider Reply-To field
 	- set References, In-Reply-To headers
 	- quote plain text message in the new email
 	- Reply To All: reply to sender, to all recipients, to the mailing list, except ourself
 	- Reply To List
 	- Forward: attach original email, not quote
-	- send Disposition Notification on demand
-		- even for messages have not requested it
-		- it generates the response message conforming to the Accept-Language header (if it is translated)
-	- store replied/forwarded/MDN-sent state in Extended Attribute
+	- send Disposition Notification voluntarily
+		- even for messages have not explicitely requested it
+		- it generates the response message conforming to the Accept-Language header (if gemlv translation is available)
+	- store replied/forwarded/MDN-sent states in file Extended Attribute
 - attachments in compose mode
-	- attach files, symlinks and even whole directories
+	- attach files, symlinks and even whole directories recursively
 		- by browsing them
 		- by drag-and-drop
 	- attach data blobs by drag-and-drop
 	- rename attachments in place
-	- remove attachments
-	- reorder attachments
-	- use that Transport Encoding which provides smaller encoded data for a given clear data
-		- quoted-printable
-		- base64
-	- store file's modification time, permissions in Content-Disposition header
+	- remove, reorder attachments
+	- use that Transport Encoding (quoted-printable, base64) which provides smaller encoded data for a given clear data
+	- store file's modification time, POSIX permission bits in Content-Disposition header
 - CLI options
 	- viewer mode (```gemlv raw_email.eml```)
 	- compose mode (```gemlv --compose```)
@@ -120,19 +117,20 @@ Email viewer and composer for local emails in GTK
 	- attachments (```--attach file1 --attachment file2 --attach dir1/```)
 	- full ```mailto``` link (```--mailto "mailto:%22Buddy%22%20%3Cbud@example.net%3E?subject=awesome%20email%20client"```), RFC2368, RFC6068
 - hotkeys
-	- ```Ctrl-Q``` quit
-	- ```Ctrl-W``` close compose window
-	- ```Ctrl-S``` save attachment(s), save draft
-	- ```Ctrl-Shift-S``` save draft as...
-	- ```Ctrl-O``` open attachment with external program
-	- ```Ctrl-N``` compose new Email
+	- ```Ctrl-Q``` Quit
+	- ```Ctrl-W``` Close compose window
+	- ```Ctrl-S``` Save attachment(s) in viewer mode; save draft in composer mode
+	- ```Ctrl-Shift-S``` Save draft as...
+	- ```Ctrl-O``` Open attachment with external program
+	- ```Ctrl-N``` Compose new Email
 	- ```Ctrl-Shift-R``` Reply
 	- ```Ctrl-R``` Reply to All
-	- ```Ctrl-F``` Forward
-	- ```Ctrl-U``` Filter/Unfilter
-	- ```Ctrl-H``` Show/Hide headers
-	- ```F4``` edit draft message with external program
-	- ```Ctrl-A``` Addressbook
+	- ```Ctrl-F``` Forward message with envelope (headers and attachments)
+	- ```Ctrl-Shift-F``` Forward message (body only)
+	- ```Ctrl-U``` Filter/Unfilter rich text (non-plain text, eg: html, pdf, ...)
+	- ```Ctrl-H``` Show/Hide uncommon headers
+	- ```F4``` Edit draft message with external program
+	- ```Ctrl-A``` Open built-in addressbook browser
 
 
 ## Autocrypt implementation status

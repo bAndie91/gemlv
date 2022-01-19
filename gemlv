@@ -2171,7 +2171,7 @@ def act_reply(compose_type):
 		my_addressline = guess_my_addressline()
 		add_composer_header('From', str(my_addressline))
 		
-		if compose_type == COMPOSE_FORWARD:
+		if compose_type == COMPOSE_FORWARD_MSG:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (subj or _("Email")) + '.eml'
 			subj = make_subject_line(subj, SUBJECT_PREFIX_FWD)
@@ -4256,7 +4256,7 @@ VAL_PRIORITY = [{
 VAL_PRECEDENCE = [{
 	'require': '^(?i)(%s)$' % '|'.join(Precedences),
 	}]
-COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD, COMPOSE_MDN, COMPOSE_UNSUB = range(7)
+COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY, COMPOSE_MDN, COMPOSE_UNSUB = range(8)
 Email = None
 PartPrimary = None
 PartSecondary = None
@@ -4440,7 +4440,8 @@ gemlvtk.add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
 gemlvtk.add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
 gemlvtk.add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
 gemlvtk.add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
-gemlvtk.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD))
+gemlvtk.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_MSG))
+gemlvtk.add_key_binding(win_main, '<Control><Shift>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_BODY))
 gemlvtk.add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 gemlvtk.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
 gemlvtk.add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
