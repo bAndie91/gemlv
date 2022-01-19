@@ -2164,35 +2164,38 @@ def make_subject_line(original, pre_kind):
 def act_reply(compose_type):
 	if open_composer(reason=compose_type):
 		add_composer_agent_headers()
-		subj = get_one_header_main('Subject') or ''
+		orig_subj = get_one_header_main('Subject') or ''
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_addressline = guess_my_addressline()
 		add_composer_header('From', str(my_addressline))
 		
-		if compose_type == COMPOSE_FORWARD_MSG:
+		if compose_type in [COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY]:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
-			fwdname = (subj or _("Email")) + '.eml'
-			subj = make_subject_line(subj, SUBJECT_PREFIX_FWD)
+			fwdname = (orig_subj or _("Email")) + '.eml'
+			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_FWD)
 			set_composer_subject(subj)
 			# TODO: maintain Thread-Topic header here in forwards too?
 			add_composer_header('To', '')
 			composer_maintain_references_headers()
 			
-			email_to_forward = email.message_from_string(Email.as_string())
-			for fwd_header in email_to_forward.keys():
-				fwd_header = headercase(fwd_header)
-				if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
-					del email_to_forward[fwd_header]
-			part = MIMEMessage(email_to_forward)
-			part.add_header(HDR_CD, 'attachment', filename=fwdname)
-			NewEmail.attach(part)
-			Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
+			if compose_type == COMPOSE_FORWARD_MSG:
+				email_to_forward = email.message_from_string(Email.as_string())
+				for fwd_header in email_to_forward.keys():
+					fwd_header = headercase(fwd_header)
+					if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
+						del email_to_forward[fwd_header]
+				part = MIMEMessage(email_to_forward)
+				part.add_header(HDR_CD, 'attachment', filename=fwdname)
+				NewEmail.attach(part)
+				Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
+			else:
+				# TODO: quote
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
-			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or subj)
-			subj = make_subject_line(subj, SUBJECT_PREFIX_RE)
+			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or orig_subj)
+			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_RE)
 			set_composer_subject(subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
