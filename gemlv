@@ -1015,10 +1015,10 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
-def get_one_header_main(hname, unfold=True):
+def get_one_header_main(hname):
 	hval = Email[hname]
 	if hval is None: return None
-	return decode_mime_header(hval, unfold=unfold, eml=Email)
+	return decode_mime_header(hval, eml=Email)
 
 def get_all_headers_main(hname):
 	return map(lambda hdr: decode_mime_header(hdr, eml=Email), Email.get_all(hname) or [])
@@ -3191,7 +3191,7 @@ def make_protected_headers_part(eml):
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
 		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part._payload += '%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, unfold=True, eml=eml).encode('quoted-printable'))
+			protected_headers_part._payload += '%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable'))
 	return protected_headers_part
 
 def build_newemail_to_send():

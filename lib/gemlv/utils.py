@@ -22,9 +22,6 @@ def fix_unquoted_comma(s):
 def getaddresses(array):
 	return filter(lambda a: a[1] != '', email.utils.getaddresses(map(fix_unquoted_comma, array)))
 
-def getaddresses_mimedecoded(array, eml=None):
-	return map(lambda a: (decode_mime_header(a[0], eml=eml), a[1]) , getaddresses(array))
-
 def getaddresslines(array, eml=None):
 	return map(lambda t: AddressLine(t, eml=eml), getaddresses(array))
 
@@ -46,11 +43,11 @@ class AddressLine(object):
 	"""
 	EXAMPLES
 
-	al = AddressLine((realname, email))
+	al = AddressLine((realname, email))  # realname is not MIME-encoded here
 
 	al = AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))  # not recommended
 
-	al = AddressLine("John Doe <john@example.net>")  # recommended
+	al = AddressLine("John Doe <john@example.net>")  # recommended, the string is MIME-encoded here
 	"""
 	def __init__(self, p, eml=None):
 		if isinstance(p, tuple):
@@ -76,7 +73,7 @@ def decode_mimetext(s):
 		return plain_str
 	return s
 
-def decode_mime_header(s, unfold=False, eml=None):
+def decode_mime_header(s, eml=None):
 	"""
 	Parameters
 	
@@ -85,8 +82,8 @@ def decode_mime_header(s, unfold=False, eml=None):
 		  the correct charset before fall back to UTF-8
 	"""
 	chunks = []
-	if unfold:
-		s = re.sub('\r?\n\s*', ' ', s)
+	# unfold possibly folded header
+	s = re.sub('\r?\n\s*', ' ', s)
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			# encoding is not specified in this header
