@@ -154,6 +154,12 @@ msgstr "Válasz a Listára"
 msgid "Forward"
 msgstr "Továbbítás"
 
+msgid "Forward envelope"
+msgstr "Teljes levél továbbítása"
+
+msgid "Forward letter"
+msgstr "Levél szövegének továbbítása"
+
 msgid "Report Spam"
 msgstr "Spam-jelentés"
 
@@ -163,8 +169,11 @@ msgstr "Ham-jelentés"
 msgid "Wrap"
 msgstr "Tördelés"
 
-msgid "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap"
-msgstr "Tördelés: szó / betű / nincs\njobb klikk: nincs / szó / betű"
+msgid "Soft / Hard / No Wrap"
+msgstr "Tördelés: szó / betű / nincs"
+
+msgid "No / Soft / Hard Wrap"
+msgstr "Tördelés: nincs / szó / betű"
 
 msgid "Unfilter"
 msgstr "ne legyen szűrés"
@@ -187,11 +196,14 @@ msgstr "Minden fejléc mutatása"
 msgid "Send"
 msgstr "Küldés"
 
-msgid "Send\nRight click: Save As in ready-to-send format"
-msgstr "Küldés\njobb klikk: Mentés másként küldésre-kész formában"
+msgid "Save As in ready-to-send format"
+msgstr "Mentés másként küldésre kész formában"
 
-msgid "Save\nRight click: Save As..."
-msgstr "Mentés\njobb klikk: Mentés másként..."
+msgid "Save"
+msgstr "Mentés"
+
+msgid "Save As..."
+msgstr "Mentés másként..."
 
 msgid "Addressbook"
 msgstr "Címtár"
@@ -313,8 +325,8 @@ msgstr "MDN küldése"
 msgid "Send a Message Disposition Notification"
 msgstr "Tértivevény küldése"
 
-msgid "Reply\nRight click: Send a Message Disposition Notification"
-msgstr "Válasz\njobb klikk: Tértivevény küldése"
+msgid "Right click:"
+msgstr "jobb klikk:"
 
 msgid "Select Date and Time in local TimeZone"
 msgstr "Válassz helyi időzóna szerinti dátumot és időt"
@@ -365,11 +377,17 @@ msgstr "Értelmezetlen URI:"
 msgid "Keep Structure"
 msgstr "Struktúrát Megőrizve"
 
-msgid "Change Font\nRight click: monospace\nScroll: zoom +/-"
-msgstr "Betűtípus-váltás\njobb klikk: monospace\ngörgetés: nagyít/kicsinyít"
+msgid "Change Font"
+msgstr "Betűtípus-váltás"
 
-msgid "Save\nRight click: Save and Keep Structure"
-msgstr "Mentés\njobb klikk: Mentés Struktúrát Megőrizve"
+msgid "monospace"
+msgstr "monospace"
+
+msgid "Scroll: zoom +/-"
+msgstr "görgetés: nagyít/kicsinyít"
+
+msgid "Save with keeping structure"
+msgstr "Mentés a struktúrát megőrizve"
 
 msgid "Show Details"
 msgstr "Részletek"

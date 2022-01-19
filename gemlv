@@ -2827,26 +2827,26 @@ def load_toolitems(toolbar, toolitems):
 		elif isinstance(stock, gtk.ToolItem):
 			tbi = stock
 			if tip is not None:
-				tbi.set_tooltip_text(_(tip))
+				tbi.set_tooltip_text(tip)
 			if isinstance(tbi, gtk.ToolButton):
 				if label is None:
-					tbi.set_label(_(tip))
+					tbi.set_label(tip)
 				else:
-					tbi.set_label(_(label))
+					tbi.set_label(label)
 				hid = tbi.connect('clicked', on_click_button, fnc_left)
 		else:
 			Lstocklabel = None
 			st = gtk.stock_lookup(stock)
 			if st:
-				Lstocklabel = re.sub('_', '', st[1])
+				Lstocklabel = re.sub('_', '', st[1])  # remove shortcut key from button
 			if label is not None:
-				Llabel = _(label)
+				Llabel = label
 			elif Lstocklabel is not None:
 				Llabel = Lstocklabel
 			else:
 				Llabel = None
 			if tip is not None:
-				Ltip = _(tip)
+				Ltip = tip
 				if Llabel is None:
 					Llabel = Ltip
 			else:
@@ -4558,16 +4558,16 @@ menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 
 
 toolbuttons = [
-	("Compose", gtk.STOCK_EDIT, None, act_compose, None),
-	("Send MDN", 'mail-reply-sender', "Send a Message Disposition Notification", act_dispos_notif, None),
-	("Reply", 'mail-reply-sender', "Reply\nRight click: Send a Message Disposition Notification", (act_reply, COMPOSE_REPLY), act_dispos_notif),
-	("Reply to All", 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_ALL), None),
-	("Reply to List", 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_LIST), None),
-	("Forward", 'mail-forward', None, (act_reply, COMPOSE_FORWARD), None),
+	(_("Compose"), gtk.STOCK_EDIT, None, act_compose, None),
+	(_("Send MDN"), 'mail-reply-sender', _("Send a Message Disposition Notification"), act_dispos_notif, None),
+	(_("Reply"), 'mail-reply-sender', _("Reply")+'\n'+_("Right click:")+' '+_("Send a Message Disposition Notification"), (act_reply, COMPOSE_REPLY), act_dispos_notif),
+	(_("Reply to All"), 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_ALL), None),
+	(_("Reply to List"), 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_LIST), None),
+	(_("Forward"), 'mail-forward', _("Forward envelope")+'\n'+_("Right click:")+' '+_("Forward letter"), (act_reply, COMPOSE_FORWARD_MSG), (act_reply, COMPOSE_FORWARD_BODY)),
 	(None, None, None, 'separator', None),
-	("Unsubscribe", 'stop', None, act_unsubscribe, None),
-	("Report Spam", 'mail-mark-junk', None, act_report_spam, None),
-	("Report Ham", 'mail-mark-notjunk', None, (act_report_spam, False), None),
+	(_("Unsubscribe"), 'stop', None, act_unsubscribe, None),
+	(_("Report Spam"), 'mail-mark-junk', None, act_report_spam, None),
+	(_("Report Ham"), 'mail-mark-notjunk', None, (act_report_spam, False), None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_CLOSE, None, act_quit, None),
 ]
@@ -4579,24 +4579,24 @@ menubutton_mdn.set_markup(PMU_WARN + l + PMU_WARN_CLOSE)
 setup_treeview__icon_label(panel_parts)
 
 def ToolItemDeclaration_wrap(tv):
-	return ("Wrap", gtk.STOCK_JUSTIFY_LEFT, "Soft / Hard / No Wrap\nRight click: No / Soft / Hard Wrap", (act_wrap, tv), (act_wrap, tv, -1))
+	return (_("Wrap"), gtk.STOCK_JUSTIFY_LEFT, _("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"), (act_wrap, tv), (act_wrap, tv, -1))
 def ToolItemDeclaration_font(tv):
-	return (None, gtk.STOCK_SELECT_FONT, "Change Font\nRight click: monospace\nScroll: zoom +/-", (act_font, tv), (act_font_switch, tv))
+	return (None, gtk.STOCK_SELECT_FONT, _("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"), (act_font, tv), (act_font_switch, tv))
 
 toolbuttons = [
-	(None, 'emblem-generic', "Unimportant", None, None),
-	(None, 'emblem-important', "Important", None, None),
-	(None, 'mail-reply-sender', "Replied", None, None),
-	(None, 'mail-forward', "Forwarded", None, None),
-	(None, 'mail-mark-read', "MDN is sent", None, None),
-	(None, 'mail-mark-junk', "Spam", None, None),
-	(None, 'mail-signed-verified', "Valid signature", show_signature_info, None),
-	(None, 'dialog-warning', "Invalid signature", show_signature_info, None),
+	(None, 'emblem-generic', _("Unimportant"), None, None),
+	(None, 'emblem-important', _("Important"), None, None),
+	(None, 'mail-reply-sender', _("Replied"), None, None),
+	(None, 'mail-forward', _("Forwarded"), None, None),
+	(None, 'mail-mark-read', _("MDN is sent"), None, None),
+	(None, 'mail-mark-junk', _("Spam"), None, None),
+	(None, 'mail-signed-verified', _("Valid signature"), show_signature_info, None),
+	(None, 'dialog-warning', _("Invalid signature"), show_signature_info, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
-	(None, gtk.STOCK_SAVE, "Save\nRight click: Save and Keep Structure", act_save, act_save_struct),
+	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save with keeping structure"), act_save, act_save_struct),
 	(None, None, None, 'separator', None),
-	("Unfilter", menubutton_filters, "Filter / Unfilter", act_view_source, None),
+	(_("Unfilter"), menubutton_filters, _("Filter / Unfilter"), act_view_source, None),
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
@@ -4710,10 +4710,10 @@ menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
 toolbuttons = [
-	("Send", 'mail-send', "Send\nRight click: Save As in ready-to-send format", act_send, act_send_to_file),
-	(None, gtk.STOCK_SAVE, "Save\nRight click: Save As...", act_save_edit, (act_save_edit, True)),
-	("Addressbook", 'x-office-address-book', None, act_addressbook, None),
-	("Attach Files", 'mail-attachment', None, act_attach, None),
+	(_("Send"), 'mail-send', _("Send")+'\n'+_("Right click:")+' '+_("Save As in ready-to-send format"), act_send, act_send_to_file),
+	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save As..."), act_save_edit, (act_save_edit, True)),
+	(_("Addressbook"), 'x-office-address-book', None, act_addressbook, None),
+	(_("Attach Files"), 'mail-attachment', None, act_attach, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_CLOSE, None, act_close_edit, None),
 ]
@@ -4736,14 +4736,14 @@ for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 toolbuttons = [
 	(None, gemlvtk.LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, gemlvtk.StockToggleToolButton('dialog-password'), "Encrypt", None, None),
-	(None, gemlvtk.StockToggleToolButton('mail-signed'), "Crypto-Sign", None, None),
-	(None, gemlvtk.StockToggleToolButton('mail-mark-read'), "Ask Disposition Notification", act_req_dispos_notif, None),
+	(None, gemlvtk.StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
+	(None, gemlvtk.StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
+	(None, gemlvtk.StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
-	("Unimportant", gemlvtk.StockToggleToolButton('emblem-generic'), "Unimportant", act_importance, None),
-	("Important", gemlvtk.StockToggleToolButton('emblem-important'), "Important", act_importance, None),
+	(_("Unimportant"), gemlvtk.StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
+	(_("Important"), gemlvtk.StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
 	(None, None, None, 'separator', None),
-	(None, gtk.STOCK_EDIT, "Edit with External Program", act_edit_external, None),
+	(None, gtk.STOCK_EDIT, _("Edit with External Program"), act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
 	ToolItemDeclaration_font(panel_edit_message),
 ]
