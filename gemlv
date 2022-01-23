@@ -2007,6 +2007,12 @@ def append_composer_text_default_user_signature():
 def get_reply_quotation():
 	return _("Quote:") + '\n\n' + quote_message()
 
+def quote_message():
+	if spanel_content.get_data('last-loaded-text') is not None:
+		# TODO: quote only 1 text message part, or more/all of them?
+		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
+	return ''
+
 def open_composer(reason):
 	if win_comp.get_visible():
 		cur_reason = win_comp.get_data('reason')
@@ -2072,11 +2078,6 @@ def auto_save_draft():
 	# Keep timer running:
 	return True
 
-def quote_message():
-	if spanel_content.get_data('last-loaded-text') is not None:
-		# TODO: quote only 1 text message part, or mode/all of them?
-		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
-	return ''
 
 def filter_out_addresses(noaddrs, hvals_mimeencoded):
 	filtered = []
@@ -2191,7 +2192,8 @@ def act_reply(compose_type):
 				NewEmail.attach(part)
 				Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
 			else:
-				# TODO: quote
+				composer_text_buffer.append('\n')
+				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or orig_subj)
