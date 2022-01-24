@@ -856,6 +856,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			else:
 				# The MIME part we are about to show itself is not signed, but
 				# included in a signed MIME part.
+				# FIXME: it sometimes is not in a signed message: avoid extra as_string() call!
 				gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
 	if gpg_signature_valid is not None:
 		stck_sign_bad.set_data('signature-valid', gpg_signature_valid)
@@ -2029,7 +2030,7 @@ def open_composer(reason):
 				return False
 	
 	global NewEmail
-	NewEmail = MIMEMultipart('mixed')
+	NewEmail = gemlv.email.Email(MIMEMultipart('mixed'))
 	win_comp.set_data('blank-email-default-headers', map(lambda x: x[0].lower(), NewEmail._headers))
 	NewEmail.preamble = PREAMBLE
 	part_body = MIMEText('')
