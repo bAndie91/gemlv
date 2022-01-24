@@ -682,9 +682,11 @@ def set_content_text(s):
 	panel_content.set_sensitive(True)
 	return True
 
-def get_email_part_size_net(eml):
-	# Extracted email part here to tell its size
+def get_email_part_approx_size_net(eml):
+	# Extract email part here to tell its size
 	# TODO: check memory footprint of email parts (attachments)
+	if type(eml.get_payload(decode=False)) != list and eml[HDR_CTE] == 'base64':
+		return int(len(eml._payload) * 0.75)
 	raw_part = eml.get_payload(decode=True)
 	if raw_part is None: raw_part = eml.as_string()
 	return len(raw_part)
@@ -904,7 +906,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				content_description = eml['Content-Description']
 				if content_description is not None:
 					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
-				label += '\n' + _("Size: %s") % (human_size(get_email_part_size_net(eml)),)
+				label += '\n' + _("Size: %s") % (human_size(get_email_part_approx_size_net(eml)),)
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -3584,7 +3586,7 @@ def on_composer_attachments_row_changed(model, itpath, iterator):
 	hid = model.get_data('row-changed-signal-handler-id')
 	model.handler_block(hid)
 	part = model[iterator][0]
-	model[iterator][4] = human_size(get_email_part_size_net(part))
+	model[iterator][4] = human_size(get_email_part_approx_size_net(part))
 	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):

@@ -16,6 +16,7 @@ class Email(object):
 	def _headers(self):
 		return self.email._headers
 	
+	
 	def as_string(self):
 		return self.email.as_string()
 	
@@ -23,8 +24,9 @@ class Email(object):
 	def _payload(self):
 		return self.email._payload
 	
-	def get_payload(self):
-		return self.email.get_payload()
+	def get_payload(self, *args, **kwargs):
+		return self.email.get_payload(*args, **kwargs)
+	
 	
 	def is_multipart(self):
 		return self.email.is_multipart()
@@ -37,6 +39,9 @@ class Email(object):
 	
 	def get_content_subtype(self):
 		return self.email.get_content_subtype()
+	
+	def get_content_charset(self):
+		return self.email.get_content_charset()
 	
 	def get_filename(self):
 		return self.email.get_filename()
