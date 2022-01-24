@@ -17,6 +17,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
+import gemlv.email
 import re
 from tempfile import mkstemp
 from tempfile import mkdtemp
@@ -532,7 +533,7 @@ def email_from_file(filename):
 		act_quit()
 		return None, None
 	eml = email.message_from_file(fh)
-	return eml, fh
+	return gemlv.email.Email(eml), fh
 
 def load_file(filename):
 	global Email
