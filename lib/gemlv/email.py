@@ -18,17 +18,19 @@ def timed(func):
 	return timed_wrap
 
 class Email(object):
-	def __init__(self, email_obj):
+	def __init__(self, email_obj, parent_email_obj = None):
 		self.email = email_obj
+		self.parent = parent_email_obj
+		self._size_approx = None
 	
-	def __getitem__(self, item):
-		return self.email.__getitem__(item)
+	def __getitem__(self, itemname):
+		return self.email.__getitem__(itemname)
 	
-	def __setitem__(self, item, x):
-		return self.email.__setitem__(item, x)
+	def __setitem__(self, itemname, item):
+		return self.email.__setitem__(itemname, item)
 	
-	def __delitem__(self, item):
-		return self.email.__delitem__(item)
+	def __delitem__(self, itemname):
+		return self.email.__delitem__(itemname)
 	
 	def get_all(self, *args, **kwargs):
 		return self.email.get_all(*args, **kwargs)
@@ -44,11 +46,17 @@ class Email(object):
 	
 	@property
 	def _payload(self):
-		return self.email._payload
+		return EmailPayload(self.email._payload, self.email)
 	
 	def get_payload(self, *args, **kwargs):
-		return self.email.get_payload(*args, **kwargs)
+		return EmailPayload(self.email.get_payload(*args, **kwargs), self.email)
 	
+	def set_payload(self, *args, **kwargs):
+		return self.email.set_payload(*args, **kwargs)
+	
+	def get_as_stream(self):
+		from email.generator import Generator
+		# TODO
 	
 	def is_multipart(self):
 		return self.email.is_multipart()
@@ -82,9 +90,74 @@ class Email(object):
 	def preamble(self, s):
 		self.email.preamble = s
 	
-	def attach(self, *args, **kwargs):
-		return self.email.attach(*args, **kwargs)
-
+	@property
+	def epilogue(self):
+		return self.email.epilogue
+	
+	@epilogue.setter
+	def epilogue(self, s):
+		self.email.epilogue = s
+	
+	
+	@property
+	def parts(self):
+		if self.email.is_multipart():
+			return self.email._payload
+		else:
+			return []
+	
+	@property
+	def size_approx(self):
+		if self._size_approx is None:
+			size_approx = 0
+			if self.is_multipart():
+				for part in self.parts:
+					size_approx += part.size_approx
+				# TODO count size of headers
+			else:
+				size_approx = len(self.email.as_string())
+			self._size_approx = size_approx
+		return self._size_approx
+	
+	@size_approx.setter
+	def size_approx(self, size):
+		if size is None and self.parent is not None:
+			# clear the parent email object's size to have it re-calculated when queried
+			self.parent.size_approx = None
+		self._size_approx = size
+	
+	@timed
+	def attach(self, attachment):
+		self.size_approx = None
+		if not isinstance(attachment, self.__class__):
+			attachment = Email(attachment, self)
+			# TODO: what if it is attached to multiple envelopes at once
+		return self.email.attach(attachment)
+	
 	def add_header(self, *args, **kwargs):
 		return self.email.add_header(*args, **kwargs)
+		
+	def replace_header(self, *args, **kwargs):
+		return self.email.replace_header(*args, **kwargs)
 
+
+class EmailPayload(object):
+	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"
+	
+	def __init__(self, payload_obj, email_obj):
+		# payload is either a basestring or a list
+		# let type checking done by the called methods, not us
+		self._payload_obj = payload_obj
+		self._email_obj = email_obj
+	
+	def __setitem__(self, itemname, item):
+		self._email_obj.size_approx = None
+		return self._payload_obj.__setitem__(itemname, item)
+	
+	def __delitem__(self, itemname):
+		self._email_obj.size_approx = None
+		return self._payload_obj.__delitem__(itemname)
+	
+	def __getitem__(self, itemname):
+		self._email_obj.size_approx = None
+		return self._payload_obj.__getitem__(itemname)

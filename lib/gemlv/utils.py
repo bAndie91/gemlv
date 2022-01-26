@@ -6,6 +6,7 @@ import email
 import pwd
 import os
 from gemlv.constants import *
+from gemlv.sysutils import warnx
 
 def fix_unquoted_comma(s):
 	"""Many MUA do not enclose real names which contain comma, in double quotes.
@@ -122,3 +123,7 @@ def walk_multipart(eml, leaf_only=False, depth=0):
 	else:
 		if leaf_only:
 			yield (depth, eml)
+
+def debug_multipart(eml):
+	for depth, part in walk_multipart(eml):
+		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))

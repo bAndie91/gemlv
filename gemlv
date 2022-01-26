@@ -3370,14 +3370,10 @@ def on_after_save_draft():
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
 	update_composer_status_message(do_build=False)
 
-def get_composed_email_size():
-	return len(NewEmail.as_string())
-
 def update_composer_status_message(do_build=True):
 	if do_build:
 		build_newemail()
-	size = get_composed_email_size()
-	status_msgs = [_("Size: %s") % (human_size(size),)]
+	status_msgs = [_("Size: %s") % (human_size(NewEmail.size_approx),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
 	if x_sent_date_last:
 		try:
@@ -3552,10 +3548,6 @@ def act_addressbook():
 	update_addressbook_highlights(addresslist)
 	
 	return True
-
-def debug_multipart(eml):
-	for depth, part in walk_multipart(eml):
-		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
 
 def act_attach():
 	filenames = choose_open_files(custom_accept_button_stock='mail-attachment')
@@ -3739,7 +3731,6 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
-	debug_multipart(NewEmail)
 	subparts = part.get_payload(decode=False)
 	if mime == MIMETYPE_EMAIL or (type(subparts) == list and len(subparts) > 0):
 		attachment_email = subparts[0]
@@ -4879,5 +4870,7 @@ if len(threading.enumerate()) > 1:
 	warnx(_("Waiting background threads to complete."))
 
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
+
+# TODO: replace all str(email) occurances to email.as_string()
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
