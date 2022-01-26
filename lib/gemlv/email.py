@@ -39,17 +39,26 @@ class Email(object):
 	def _headers(self):
 		return self.email._headers
 	
-
+	def items(self):
+		return self.email.items()
+	
 	@timed
 	def as_string(self):
 		return self.email.as_string()
 	
 	@property
 	def _payload(self):
-		return EmailPayload(self.email._payload, self.email)
+		if self.email.is_multipart():
+			return MultipartPayload(self.email._payload, self.email)
+		else:
+			return self.email._payload
 	
 	def get_payload(self, *args, **kwargs):
-		return EmailPayload(self.email.get_payload(*args, **kwargs), self.email)
+		payload = self.email.get_payload(*args, **kwargs)
+		if isinstance(payload, list):
+			return MultipartPayload(payload, self.email)
+		else:
+			return payload
 	
 	def set_payload(self, *args, **kwargs):
 		return self.email.set_payload(*args, **kwargs)
@@ -141,11 +150,10 @@ class Email(object):
 		return self.email.replace_header(*args, **kwargs)
 
 
-class EmailPayload(object):
+class MultipartPayload(list):
 	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"
 	
 	def __init__(self, payload_obj, email_obj):
-		# payload is either a basestring or a list
 		# let type checking done by the called methods, not us
 		self._payload_obj = payload_obj
 		self._email_obj = email_obj

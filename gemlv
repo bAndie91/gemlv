@@ -2071,6 +2071,7 @@ def remove_old_draft():
 				raise
 
 def auto_save_draft():
+	# FIXME: save it with attachment references only, not the whole attachments because it's slow
 	if not win_comp.get_data('is-auto-saved'):
 		draft_name = '%s pid-%d.eml' % (time.strftime('%F %T').replace(':', '.'), os.getpid())
 		draft_dir = get_autosave_dir()
