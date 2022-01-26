@@ -2518,7 +2518,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			else:
 				mimetype = eml.get_content_type()
 			messageid = eml[HDR_MID]
-			if not messageid and hasattr(Email, '__getitem__'):
+			if not messageid and hasattr(Email, '__getitem__'):  # why Email.__getitem__ checked here?
 				messageid = Email[HDR_MID]
 			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
@@ -2528,7 +2528,8 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
 				futimes(fd, (-1, mod_timestamp))
 			if posixmode:
-				os.fchmod(fd, int(posixmode, 8))
+				# set POSIX permission bits, except the suid/sgid octett
+				os.fchmod(fd, int(posixmode, 8) & 0777)
 			fh.close()
 		return True
 	except IOError as e:
@@ -2547,7 +2548,7 @@ def save_to_filedescriptor(eml, fd, consider_preamble=False):
 			s = eml.as_string()
 	written = os.write(fd, s)
 	if written != len(s):
-		raise OSError(5, 'Write Error')
+		raise OSError(5, 'Write Error. %d out of %d bytes written.' % (written, len(s)))
 	os.fdatasync(fd)
 
 def act_view_source():
@@ -4871,7 +4872,5 @@ if len(threading.enumerate()) > 1:
 	warnx(_("Waiting background threads to complete."))
 
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
-
-# TODO: replace all str(email) occurances to email.as_string()
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
