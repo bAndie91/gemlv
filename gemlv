@@ -648,8 +648,8 @@ def load_parts(eml, model, parent):
 			if not decrypt.ok:
 				display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
 			return
-	if type(eml.get_payload()) == type([]):
-		for part in eml.get_payload():
+	if eml.is_multipart():
+		for part in eml.parts:
 			load_parts(part, model, iterator)
 	else:
 		LeafParts += 1
@@ -3725,7 +3725,8 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 			break
 		else:
 			parent_part = Attachments[parent_iter][0]
-			if type(parent_part.get_payload()) == list: break
+			if parent_part.is_multipart():
+				break
 			parent_iter = Attachments.iter_parent(parent_iter)
 	
 	ct_main, ct_sub = mime.split('/')
