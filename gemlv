@@ -2008,6 +2008,14 @@ def quote_message():
 		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
 	return ''
 
+def make_new_blank_email():
+	eml = gemlv.email.Email(MIMEMultipart('mixed'))
+	eml.preamble = PREAMBLE
+	part_body = gemlv.email.Email(MIMEText(''), eml)
+	part_body.set_charset('UTF-8')
+	part_body.replace_header(HDR_CTE, '')
+	eml.attach(part_body)
+
 def open_composer(reason):
 	if win_comp.get_visible():
 		cur_reason = win_comp.get_data('reason')
@@ -2021,13 +2029,7 @@ def open_composer(reason):
 				return False
 	
 	global NewEmail
-	NewEmail = gemlv.email.Email(MIMEMultipart('mixed'))
-	win_comp.set_data('blank-email-default-headers', map(lambda x: x[0].lower(), NewEmail._headers))
-	NewEmail.preamble = PREAMBLE
-	part_body = MIMEText('')
-	part_body.set_charset('UTF-8')
-	part_body.replace_header(HDR_CTE, '')
-	NewEmail.attach(part_body)
+	NewEmail = make_new_blank_email()
 	Attachments.clear()
 	
 	win_comp.show_all()
@@ -2073,7 +2075,6 @@ def auto_save_draft():
 			win_comp.set_data('last-auto-saved-draft-file-name', draft_name)
 	# Keep timer running:
 	return True
-
 
 def filter_out_addresses(noaddrs, hvals_mimeencoded):
 	filtered = []
@@ -3092,7 +3093,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
 	details_widget.set_text(resp)
-	update_composer_status_message(do_build=False)
+	update_composer_status_message()
 	gtk.threads_leave()
 
 def act_show_details_on_send_panel(btn, dlg, details):
@@ -3162,27 +3163,33 @@ def encode_header(header_name, header_value):
 		chunks.append(prev_chunk)
 	return separator.join(chunks)
 
-def build_newemail():
-	keep_headers = win_comp.get_data('blank-email-default-headers')
-	for hname, hval in NewEmail._headers:
-		if hname.lower() not in keep_headers:
-			del NewEmail[hname]
+def build_newemail(with_attachment_data=True):
+	
+	# if there is not Message-ID yet but we want to add it to xattrs on successful sending:
+	msgid = get_composer_header_last(HDR_MID)
+	if msgid is None and win_comp.get_data('add-msgid-xattr-on-send'):
+		add_composer_header(HDR_MID, make_msgid())
+	
+	result_eml = make_new_blank_email()
+	
+	for hname, _hval in iterate_composer_headers():
+		del result_eml[hname]
+	
 	for hname, hval in iterate_composer_headers():
 		mime_encoded_header = encode_header(hname, hval)
-		if hname.lower() in keep_headers:
-			del NewEmail[hname]
-		NewEmail.add_header(hname, mime_encoded_header)
-	
-	# if there is not Message-ID but we want to add it to xattrs on successful sending
-	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
-		NewEmail.add_header(HDR_MID, make_msgid())
+		result_eml.add_header(hname, mime_encoded_header)
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
-	part_body = NewEmail.get_payload()[0]
+	part_body = result_eml.get_payload()[0]
 	part_body.replace_header(HDR_CTE, enc)
 	part_body.set_payload(text)
+	
+	if with_attachment_data:
+		
+	
+	return result_eml
 
 def make_protected_headers_part(eml):
 	protected_headers_part = MIMEText('')
@@ -3199,8 +3206,7 @@ def make_protected_headers_part(eml):
 	return protected_headers_part
 
 def build_newemail_to_send():
-	build_newemail()
-	email_to_send = email.message_from_string(NewEmail.as_string())
+	email_to_send = build_newemail()
 	del email_to_send[HDR_XSD]
 	del email_to_send[HDR_XQID]
 	
@@ -3338,10 +3344,10 @@ def act_save_edit(save_as=False):
 	if filename is None or save_as:
 		filename = propose_and_confirm_a_filename_to_save_edit()
 	if filename is not None:
-		build_newemail()
+		eml_to_save = build_newemail()
 		# NOTE: do not ask overwrite, because either the file chooser dialog asked it previously,
 		# or we're updating an earlier saved file.
-		if save_to_file(NewEmail, filename, ask_overwrite=False) == True:
+		if save_to_file(eml_to_save, filename, ask_overwrite=False) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
 
@@ -3363,11 +3369,9 @@ def on_after_save_draft():
 	set_unsaved(False)
 	composer_text_buffer.set_modified(False)
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
-	update_composer_status_message(do_build=False)
+	update_composer_status_message()
 
-def update_composer_status_message(do_build=True):
-	if do_build:
-		build_newemail()
+def update_composer_status_message():
 	status_msgs = [_("Size: %s") % (human_size(NewEmail.size_approx),)]
 	x_sent_date_last = get_composer_header_last(HDR_XSD)
 	if x_sent_date_last:
