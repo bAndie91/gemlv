@@ -2064,12 +2064,12 @@ def remove_old_draft():
 				raise
 
 def auto_save_draft():
-	# FIXME: save it with attachment references only, not the whole attachments because it's slow
 	if not win_comp.get_data('is-auto-saved'):
 		draft_name = '%s pid-%d.eml' % (time.strftime('%F %T').replace(':', '.'), os.getpid())
 		draft_dir = get_autosave_dir()
 		mkdir(draft_dir)
-		if save_to_file(NewEmail, os.path.join(draft_dir, draft_name), ask_overwrite=False):
+		email_to_save = build_newemail(with_attachment_data=False)
+		if save_to_file(email_to_save, os.path.join(draft_dir, draft_name), ask_overwrite=False):
 			win_comp.set_data('is-auto-saved', True)
 			remove_old_draft()
 			win_comp.set_data('last-auto-saved-draft-file-name', draft_name)
@@ -3182,14 +3182,46 @@ def build_newemail(with_attachment_data=True):
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
-	part_body = result_eml.get_payload()[0]
+	part_body = result_eml.parts[0]
 	part_body.replace_header(HDR_CTE, enc)
 	part_body.set_payload(text)
 	
 	if with_attachment_data:
-		
+		for part in NewEmail.parts[1:]:
+			result_eml.attach(part)
+	else:
+		# clone each MIME parts (except the first one which is part_body) without scalar payload
+		latest_parts = [result_eml]
+		for depth, index, part in walk_multipart(NewEmail):
+			if depth == 0: continue  # this is the main email object
+			if depth == 1 and index == 0: continue  # this is the email body part
+			if eml.get_content_type() == MIMETYPE_DN:
+				# attach disposition notification part directly, it is not come from a file.
+				latest_part[depth-1].attach(eml)
+				continue
+			# TODO: what to do with forwarded envelopes here?
+			thin_part = make_thin_mime_part(part)
+			latest_part[depth-1].attach(thin_part)
+			if len(latest_parts) <= depth: latest_parts.append(thin_part)
+			latest_parts[depth] = thin_part
 	
 	return result_eml
+
+def make_thin_mime_part(eml):
+	"create a MIME message without payload, but set content metadata in headers"
+	thin_eml = MIMEBase(eml.get_content_maintype(), eml.get_content_subtype())
+	# remove default core headers, all core and custom headers will be copied later.
+	for header_name in thin_eml.keys():
+		del thin_eml[header_name]
+	# copy all headers from the original email.
+	for header_name, header_value in eml.get_headers():
+		thin_eml.add_header(header_name, header_value)
+	thin_eml.preamble = eml.preamble
+	thin_eml.epilogue = eml.epilogue
+	if hasattr(eml, 'origin_path'):
+		thin_eml['Content-Location'] = eml.origin_path
+	# intentionally skip payload.
+	return thin_eml
 
 def make_protected_headers_part(eml):
 	protected_headers_part = MIMEText('')
@@ -3917,7 +3949,7 @@ def on_keypress_attachments(tv, evt):
 			except ValueError:
 				# Child was deleted in meantime.
 				continue
-			if Attachments[iterator][0].get_content_type() == 'message/disposition-notification':
+			if Attachments[iterator][0].get_content_type() == MIMETYPE_DN:
 				# Disallow removing MDN part as it would lose to be an MDN anymore
 				win_comp.get_window().beep()
 				continue
@@ -4069,7 +4101,7 @@ def act_dispos_notif():
 		set_composer_subject(subject_text)
 		set_composer_text(message_text)
 		
-		dn_part = MIMEBase('message', 'disposition-notification')
+		dn_part = MIMEBase(*MIMETYPE_DN.split('/'))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
 		finalrecipient = my_address
 		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]

@@ -33,6 +33,7 @@ MIMETYPE_TEXT = 'text/plain'
 MIMETYPE_HTML = 'text/html'
 MIMETYPE_SYMLINK = 'inode/symlink'
 MIMETYPE_HEADERS = 'text/rfc822-headers'
+MIMETYPE_DN = 'message/disposition-notification'
 
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'

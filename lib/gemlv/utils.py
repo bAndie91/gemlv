@@ -98,7 +98,7 @@ def decode_mime_header(s, eml=None):
 			# lastly fall back to UTF-8 but mask unrecognizable chars
 			encodings = ['utf-8']
 			if eml:
-				for _x, part in walk_multipart(eml):
+				for _depth, _index, part in walk_multipart(eml):
 					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
 					if m:
 						encodings.append(m.group(1))
@@ -113,17 +113,14 @@ def decode_mime_header(s, eml=None):
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
 
-def walk_multipart(eml, leaf_only=False, depth=0):
-	if not leaf_only:
-		yield (depth, eml)
-	if eml.is_multipart():
-		for part in eml.parts:
-			for x in walk_multipart(part, leaf_only, depth+1):
-				yield x
-	else:
-		if leaf_only:
-			yield (depth, eml)
+def walk_multipart(eml, leaf_only=False, depth=0, index=0):
+	if leaf_only or eml.is_multipart():
+		yield (depth, index, eml)
+	subindex = 0
+	for part in eml.parts:
+		yield from walk_multipart(part, leaf_only, depth+1, subindex):
+		subindex += 1
 
 def debug_multipart(eml):
-	for depth, part in walk_multipart(eml):
+	for depth, _index, part in walk_multipart(eml):
 		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
