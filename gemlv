@@ -3255,7 +3255,7 @@ def build_newemail_to_send():
 		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
-			email_to_send._payload = [protected_headers_part] + email_to_send._payload
+			email_to_send.prepend_part(protected_headers_part)
 		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
 		email_to_send.set_payload([])
 		email_to_send.set_type('multipart/encrypted')
@@ -3559,7 +3559,9 @@ def byte_is_identical_qp(b):
 	return True
 
 def analyze_for_optimal_encoding(buf):
-	# Guess the optimal transfer encoding.
+	"Choose the transfer encoding from Base64 and Quoted-Printable, which produces smaller encoded data for a given clear data."
+	# TODO: support yEnc
+	
 	approx_encoded_size_b64 = len(buf) * 1.37
 	approx_encoded_size_qp = sum(map(lambda b: 1 if byte_is_identical_qp(b) else 3, buf))
 	# add an extra equal mark and a linefeed for each 76th output byte
@@ -3692,7 +3694,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
 						part.add_header(HDR_CTE, enc)
-					part.set_payload(part._payload + buf.encode(enc))
+					part.append_encoded_payload(buf.encode(enc))
 				fh.close()
 	
 	basename = os.path.basename(original_path)
@@ -3856,9 +3858,9 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 					else:
 						parent_part = Attachments[parent_iter][0]
 					if relation == gtk.TREE_VIEW_DROP_BEFORE:
-						newindex = parent_part._payload.index(relative_part)
+						newindex = parent_part.get_payload().index(relative_part)
 					elif relation == gtk.TREE_VIEW_DROP_AFTER:
-						newindex = parent_part._payload.index(relative_part) + 1
+						newindex = parent_part.get_payload().index(relative_part) + 1
 				elif relation in [gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER]:
 					parent_part = relative_part
 					newindex = 0
@@ -3871,11 +3873,11 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 					else:
 						old_parent_part = Attachments[old_parent_iter][0]
 					if old_parent_part == parent_part:
-						idx = old_parent_part._payload.index(subject_part)
+						idx = old_parent_part.get_payload().index(subject_part)
 						if idx < newindex:
 							newindex -= 1
-					old_parent_part._payload.remove(subject_part)
-					parent_part._payload.insert(newindex, subject_part)
+					old_parent_part.get_payload().remove(subject_part)
+					parent_part.get_payload().insert(newindex, subject_part)
 					success = True
 		context.finish(success, False, time)
 		event_is_handled = not success
@@ -3919,7 +3921,7 @@ def on_keypress_attachments(tv, evt):
 				parent_part = NewEmail
 			else:
 				parent_part = Attachments[parent_iter][0]
-			parent_part._payload.remove(part)
+			parent_part.get_payload().remove(part)
 			del Attachments[iterator]
 		update_composer_status_message()
 		return True

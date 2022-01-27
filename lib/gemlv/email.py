@@ -18,6 +18,9 @@ def timed(func):
 		return r
 	return timed_wrap
 
+class PayloadError(Exception):
+	pass
+
 class Email(object):
 	def __init__(self, email_obj, parent_email_obj = None):
 		self.email = email_obj
@@ -65,6 +68,12 @@ class Email(object):
 	def set_payload(self, *args, **kwargs):
 		self.size_approx = None
 		return self.email.set_payload(*args, **kwargs)
+	
+	def append_encoded_payload(self, encpayload):
+		if self.is_multipart():
+			raise PayloadError('This is a MIME multipart message')
+		self.size_approx = None
+		self.email._payload += encpayload
 	
 	def as_stream(self):
 		from email.generator import Generator
@@ -153,9 +162,15 @@ class Email(object):
 	def attach(self, attachment):
 		self.size_approx = None
 		if not isinstance(attachment, self.__class__):
-			attachment = Email(attachment, self)
-			# TODO: what if it is attached to multiple envelopes at once
-		return self.email.attach(attachment)
+			attachment = self.__class__(attachment, self)
+			# TODO: what if this attachment is attached to multiple envelopes at once
+		self.email.attach(attachment)
+	
+	def prepend_part(self, part):
+		self.size_approx = None
+		if not isinstance(part, self.__class__):
+			part = self.__class__(part, self)
+		self.email._payload = [part] + self.email._payload
 	
 	def add_header(self, *args, **kwargs):
 		return self.email.add_header(*args, **kwargs)
@@ -182,3 +197,11 @@ class MultipartPayload(list):
 	
 	def __getitem__(self, itemname):
 		return self._payload_obj.__getitem__(itemname)
+	
+	def remove(self, item):
+		self._email_obj.size_approx = None
+		return self._payload_obj.remove(item)
+	
+	def insert(self, index, item):
+		self._email_obj.size_approx = None
+		return self._payload_obj.insert(index, item)
