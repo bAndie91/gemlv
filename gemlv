@@ -682,15 +682,6 @@ def set_content_text(s):
 	panel_content.set_sensitive(True)
 	return True
 
-def get_email_part_approx_size_net(eml):
-	# Extract email part here to tell its size
-	# TODO: check memory footprint of email parts (attachments)
-	if type(eml.get_payload(decode=False)) != list and eml[HDR_CTE] == 'base64':
-		return int(len(eml._payload) * 0.75)
-	raw_part = eml.get_payload(decode=True)
-	if raw_part is None: raw_part = eml.as_string()
-	return len(raw_part)
-
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
 	return gpg_msg
@@ -907,7 +898,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				content_description = eml['Content-Description']
 				if content_description is not None:
 					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
-				label += '\n' + _("Size: %s") % (human_size(get_email_part_approx_size_net(eml)),)
+				label += '\n' + _("Size: %s") % (human_size(eml.size_decoded_approx),)
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -2195,6 +2186,8 @@ def act_reply(compose_type):
 				part = MIMEMessage(email_to_forward)
 				part.add_header(HDR_CD, 'attachment', filename=fwdname)
 				NewEmail.attach(part)
+				# TODO: make the attached email's row expandable in the attachments panel,
+				# so its big attachments can be removed by the user
 				Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
 			else:
 				composer_text_buffer.append('\n')
@@ -2528,7 +2521,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
 				futimes(fd, (-1, mod_timestamp))
 			if posixmode:
-				# set POSIX permission bits, except the suid/sgid octett
+				# set POSIX permission bits, except the suid/sgid octet
 				os.fchmod(fd, int(posixmode, 8) & 0777)
 			fh.close()
 		return True
@@ -3581,7 +3574,7 @@ def on_composer_attachments_row_changed(model, itpath, iterator):
 	hid = model.get_data('row-changed-signal-handler-id')
 	model.handler_block(hid)
 	part = model[iterator][0]
-	model[iterator][4] = human_size(get_email_part_approx_size_net(part))
+	model[iterator][4] = human_size(part.size_decoded_approx)
 	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
@@ -3654,6 +3647,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 		with BasicReuseable(os.lstat(attachment_path)) as s:
 			content_disposition_params['modification_date'] = email.utils.formatdate(s.st_mtime, True)
 			if not isalink:
+				# record the POSIX permission bits including the SUID/SGID octet, if the recipient party
+				# deems this octet unsafe to set on a file, may she ignore it.
 				content_disposition_params['posix_mode'] = '%05o' % (s.st_mode & 07777,)
 	except OSError as e:
 		display_error(e)
@@ -3666,7 +3661,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	if os.path.isdir(attachment_path) and not isalink:
 		part = MIMEMultipart('related')
 	else:
-		part = MIMEBase(ct_main, ct_sub)
+		part = gemlv.email.Email(MIMEBase(ct_main, ct_sub))
+		part.origin_path = attachment_path
 		
 		if isalink:
 			part.set_payload(symlink_content)
@@ -3676,6 +3672,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 				# File being attached is an Email (according to mime type or by detected multipart)
 				# TODO: remove sensitive headers?
+				attachment_email = gemlv.email.Email(attachment_email)
+				attachment_email.origin_path = attachment_path
 				part.attach(attachment_email)
 			else:
 				del attachment_email
@@ -3694,7 +3692,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
 						part.add_header(HDR_CTE, enc)
-					part._payload += buf.encode(enc)
+					part.set_payload(part._payload + buf.encode(enc))
 				fh.close()
 	
 	basename = os.path.basename(original_path)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 
 import email
+from gemlv.constants import *
 
 # TODO: factor out this block
 import time
@@ -21,6 +22,7 @@ class Email(object):
 	def __init__(self, email_obj, parent_email_obj = None):
 		self.email = email_obj
 		self.parent = parent_email_obj
+		self.origin_path = None
 		self._size_approx = None
 	
 	def __getitem__(self, itemname):
@@ -61,9 +63,10 @@ class Email(object):
 			return payload
 	
 	def set_payload(self, *args, **kwargs):
+		self.size_approx = None
 		return self.email.set_payload(*args, **kwargs)
 	
-	def get_as_stream(self):
+	def as_stream(self):
 		from email.generator import Generator
 		# TODO
 	
@@ -122,9 +125,9 @@ class Email(object):
 			if self.is_multipart():
 				for part in self.parts:
 					size_approx += part.size_approx
-				# TODO count size of headers
 			else:
-				size_approx = len(self.email.as_string())
+				size_approx = len(self.email._payload)
+			# TODO count size of headers
 			self._size_approx = size_approx
 		return self._size_approx
 	
@@ -134,6 +137,17 @@ class Email(object):
 			# clear the parent email object's size to have it re-calculated when queried
 			self.parent.size_approx = None
 		self._size_approx = size
+	
+	@property
+	def size_decoded_approx(self):
+		if self.is_multipart():
+			return self.size_approx
+		else:
+			if self[HDR_CTE] == 'base64' or self[HDR_CTE] in ENCNAMES_UUE:
+				# base64 and uuencoded have roughly 1/3 overhead
+				return int(len(self.email._payload) * 0.75)
+			else:
+				return len(self.email.get_payload(decode=True))
 	
 	@timed
 	def attach(self, attachment):
@@ -167,5 +181,4 @@ class MultipartPayload(list):
 		return self._payload_obj.__delitem__(itemname)
 	
 	def __getitem__(self, itemname):
-		self._email_obj.size_approx = None
 		return self._payload_obj.__getitem__(itemname)

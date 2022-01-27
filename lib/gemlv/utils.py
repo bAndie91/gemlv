@@ -116,8 +116,8 @@ def decode_mime_header(s, eml=None):
 def walk_multipart(eml, leaf_only=False, depth=0):
 	if not leaf_only:
 		yield (depth, eml)
-	if type(eml._payload) == list:
-		for part in eml._payload:
+	if eml.is_multipart():
+		for part in eml.parts:
 			for x in walk_multipart(part, leaf_only, depth+1):
 				yield x
 	else:

@@ -41,3 +41,5 @@ XATTR_MDNSENT = 'user.gemlv.mdn-sent-in'
 XATTR_REPLIED = 'user.gemlv.replied-in'
 XATTR_FORWARDED = 'user.gemlv.forwarded-in'
 XATTR_QUEUEID = 'user.gemlv.sent.queue-id'
+
+ENCNAMES_UUE = ('x-uuencode', 'uuencode', 'uue', 'x-uue')
