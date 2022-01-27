@@ -2,21 +2,8 @@
 
 import email
 from gemlv.constants import *
+import gemlv.profiler
 
-# TODO: factor out this block
-import time
-import traceback
-def timed(func):
-	def timed_wrap(*p, **kw):
-		t0 = time.time()
-		r = func(*p, **kw)
-		t1 = time.time()
-		delta = t1-t0
-		print "** %s %.2f" % (func.__name__, delta)
-		if delta > 0.2:
-			traceback.print_stack()
-		return r
-	return timed_wrap
 
 class PayloadError(Exception):
 	pass
@@ -47,7 +34,7 @@ class Email(object):
 	def items(self):
 		return self.email.items()
 	
-	@timed
+	@gemlv.profiler.timed
 	def as_string(self):
 		return self.email.as_string()
 	
@@ -65,6 +52,13 @@ class Email(object):
 		else:
 			return payload
 	
+	@property
+	def parts(self):
+		if self.email.is_multipart():
+			return self.email._payload
+		else:
+			return []
+	
 	def set_payload(self, *args, **kwargs):
 		self.size_approx = None
 		return self.email.set_payload(*args, **kwargs)
@@ -75,12 +69,12 @@ class Email(object):
 		self.size_approx = None
 		self.email._payload += encpayload
 	
+	def is_multipart(self):
+		return self.email.is_multipart()
+	
 	def as_stream(self):
 		from email.generator import Generator
 		# TODO
-	
-	def is_multipart(self):
-		return self.email.is_multipart()
 	
 	def get_content_type(self):
 		return self.email.get_content_type()
@@ -121,13 +115,6 @@ class Email(object):
 	
 	
 	@property
-	def parts(self):
-		if self.email.is_multipart():
-			return self.email._payload
-		else:
-			return []
-	
-	@property
 	def size_approx(self):
 		if self._size_approx is None:
 			size_approx = 0
@@ -158,7 +145,6 @@ class Email(object):
 			else:
 				return len(self.email.get_payload(decode=True))
 	
-	@timed
 	def attach(self, attachment):
 		self.size_approx = None
 		if not isinstance(attachment, self.__class__):

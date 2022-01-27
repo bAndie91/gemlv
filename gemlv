@@ -874,7 +874,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		filt = get_filter_by_mime(ct_main, ct_sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == list and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
+		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
 			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 			set_content_text(text)
 			loaded_text = text
@@ -3719,6 +3719,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 
 def attach__internal(parent_iter=None, content_disposition_params={}, basename=None, part=None, mime=None):
 	global NewEmail
+	
+	# find that multipart MIME part which is closest to parent_iter
 	while True:
 		if parent_iter is None:
 			parent_part = NewEmail
@@ -3739,9 +3741,9 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
 	subparts = part.get_payload(decode=False)
-	if mime == MIMETYPE_EMAIL or (type(subparts) == list and len(subparts) > 0):
-		attachment_email = subparts[0]
-		if isinstance(attachment_email, email.message.Message):
+	if mime == MIMETYPE_EMAIL or len(part.parts) > 0:
+		attachment_email = part.parts[0]
+		try:
 			amid = attachment_email.get(HDR_MID)
 			if amid is not None:
 				# Add Message-ID to main email's References.
@@ -3749,6 +3751,9 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 				part.add_header(HDR_MID, amid)
 			# Add parts to the attachments panel which are already attached to this email file.
 			add_already_attached_parts(iterator, attachment_email)
+		except Exception as e:
+			# can not look into message/rfc822 file as it was an email
+			warnx(str(e))
 	
 	return iterator
 
@@ -3783,10 +3788,8 @@ def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
 		icon = get_stock_by_mime(ct_main, ct_sub)
 		iterator = Attachments.append(root_iter, [eml, name, icon, None, '', calc_attachment_checksum(eml)])
-		subparts = eml.get_payload()
-		if type(subparts) == list:
-			for subpart in subparts:
-				add_already_attached_parts(iterator, subpart, callback=callback)
+		for subpart in eml.parts:
+			add_already_attached_parts(iterator, subpart, callback=callback)
 
 def drop_attachment_acceptable(targets):
 	acceptable_types = MIMETYPE_URILIST, MIMETYPE_OCTETSTREAM
@@ -3869,7 +3872,7 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 				elif relation in [gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER]:
 					parent_part = relative_part
 					newindex = 0
-				if type(parent_part.get_payload()) == list:
+				if parent_part.is_multipart():
 					# Reorder subject_part attachment.
 					subject_part = Attachments[subject_path][0]
 					old_parent_iter = Attachments.iter_parent(Attachments.get_iter(subject_path))
@@ -4805,9 +4808,8 @@ if cliArgs.compose:
 			return True
 		
 		# Import attachments.
-		parts = edit_eml.get_payload(decode=False)
-		if type(parts) == list:
-			for part in parts:
+		if edit_eml.is_multipart():
+			for part in edit_eml.parts:
 				add_already_attached_parts(None, part, detect_body_part)
 		else:
 			# Not a multipart email, set body to payload.
