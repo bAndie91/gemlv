@@ -35,7 +35,13 @@ class Email(object):
 	def items(self):
 		return self.email.items()
 	
-	@gemlv.profiler.timed
+	def keys(self):
+		return self.email.keys()
+	
+	def values(self):
+		return self.email.values()
+	
+	@gemlv.profiler.timed(threshold_sec=0.2)
 	def as_string(self):
 		return self.email.as_string()
 	
