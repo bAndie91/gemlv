@@ -487,3 +487,6 @@ msgstr "Felvétel a címtárba"
 
 msgid "Added to addressbook"
 msgstr "Felvéve a címtárba"
+
+msgid "file"
+msgstr "fájl"

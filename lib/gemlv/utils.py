@@ -118,7 +118,7 @@ def walk_multipart(eml, leaf_only=False, depth=0, index=0):
 		yield (depth, index, eml)
 	subindex = 0
 	for part in eml.parts:
-		yield from walk_multipart(part, leaf_only, depth+1, subindex):
+		for x in walk_multipart(part, leaf_only, depth+1, subindex): yield x  # replace with "yield from"
 		subindex += 1
 
 def debug_multipart(eml):

@@ -76,6 +76,12 @@ class Email(object):
 		from email.generator import Generator
 		# TODO
 	
+	def get_charset(self):
+		return self.email.get_charset()
+	
+	def set_charset(self, *args, **kwargs):
+		return self.email.set_charset(*args, **kwargs)
+	
 	def get_content_type(self):
 		return self.email.get_content_type()
 	
@@ -88,6 +94,10 @@ class Email(object):
 	def get_content_charset(self):
 		return self.email.get_content_charset()
 	
+	@property
+	def content_type(self):
+		return ContentTypeString(self.email.get_content_type())
+	
 	def get_filename(self):
 		return self.email.get_filename()
 	
@@ -95,7 +105,7 @@ class Email(object):
 		return self.email.set_type(*args, **kwargs)
 	
 	def set_param(self, *args, **kwargs):
-		return self.email.set_type(*args, **kwargs)
+		return self.email.set_param(*args, **kwargs)
 	
 	@property
 	def preamble(self):
@@ -191,3 +201,8 @@ class MultipartPayload(list):
 	def insert(self, index, item):
 		self._email_obj.size_approx = None
 		return self._payload_obj.insert(index, item)
+
+class ContentTypeString(str):
+	def __init__(self, v):
+		self._value = v
+		self.main, self.sub = v.split('/')
