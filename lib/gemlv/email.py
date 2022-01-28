@@ -91,15 +91,6 @@ class Email(object):
 	def set_charset(self, *args, **kwargs):
 		return self.email.set_charset(*args, **kwargs)
 	
-	def get_content_type(self):
-		return self.email.get_content_type()
-	
-	def get_content_maintype(self):
-		return self.email.get_content_maintype()
-	
-	def get_content_subtype(self):
-		return self.email.get_content_subtype()
-	
 	def get_content_charset(self):
 		return self.email.get_content_charset()
 	

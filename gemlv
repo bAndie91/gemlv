@@ -81,6 +81,7 @@ from gemlv.utils import walk_multipart
 from gemlv.utils import MimeDecoded
 from gemlv.utils import MimeEncoded
 from gemlv.textutils import list2text
+from gemlv.textutils import human_size
 import gemlv.addressbook
 import gemlv.sysutils
 from gemlv.sysutils import futimes
@@ -509,13 +510,6 @@ def get_iterator_from_pos(treeview, x, y):
 	return treeview.get_model().get_iter(pathinfo[0])
 
 
-def human_size(x, suffix='B', decimals=1):
-	prefixa = ['', 'K', 'M', 'G']
-	for prefixum in prefixa:
-		if abs(x) < 1024.0 or prefixum == prefixa[-1]:
-			return '%.*f %s%s' % (decimals, x, prefixum, suffix)
-		x /= 1024.0
-
 
 
 def win_main_show(widget, event):
@@ -617,7 +611,7 @@ def load_parts(eml, model, parent):
 	label = PMU_MIME + glib.markup_escape_text(eml.content_type) + PMU_MIME_CLOSE
 	filename = decode_mimetext(eml.get_filename())
 	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
-	stock = get_stock_by_mime(eml.content_type.main, eml.content_type.sub)
+	stock = gemlvtk.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb, {}])
@@ -1241,33 +1235,6 @@ def get_filters_by_mime(main, sub, all=True):
 
 def get_filter_by_mime(main, sub):
 	return get_filters_by_mime(main, sub, all=False)
-
-def get_stock_by_mime(main, sub):
-	assoc_main = {
-		'multipart': gtk.STOCK_DIRECTORY,
-		'message': 'emblem-mail',
-	}
-	assoc_full = {
-		'application/pgp-signature': 'mail-signed',
-		'application/ics': 'x-office-calendar',
-		'text/calendar': 'x-office-calendar',
-		'inode/directory': gtk.STOCK_DIRECTORY,
-		'inode/x-empty': 'document-new',
-		'multipart/digest': 'emblem-mail',
-	}
-	full = main + '/' + sub
-	
-	if assoc_full.has_key(full):
-		return assoc_full[full]
-	elif assoc_main.has_key(main):
-		return assoc_main[main]
-	
-	if full in [MIMETYPE_HTML]:
-		return main + '-' + sub
-	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
-		return main + '-x-generic'
-	
-	return gtk.STOCK_FILE
 
 def sighandler(sign, frame):
 	if sign == signal.SIGTERM:
@@ -3809,7 +3776,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), get_stock_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
+	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), gemlvtk.get_stock_icon_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
@@ -3858,7 +3825,7 @@ def check_unique_attachment(mimepart):
 def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 	if callback(eml):
 		name = decode_mimetext(eml.get_filename()) or '[%s]' % eml.content_type
-		icon = get_stock_by_mime(eml.content_type.main, eml.content_type.sub)
+		icon = gemlvtk.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
 		iterator = Attachments.append(root_iter, [eml, glib.markup_escape_text(name), icon, None, '', calc_attachment_checksum(eml)])
 		for subpart in eml.parts:
 			add_already_attached_parts(iterator, subpart, callback=callback)
@@ -4284,7 +4251,7 @@ def on_edit_message(tb):
 ### Main ###
 
 PROGNAME = 'gemlv'
-VERSION = '0.1'
+VERSION = '0.4'
 USERAGENT = PROGNAME + '/' + VERSION
 locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)

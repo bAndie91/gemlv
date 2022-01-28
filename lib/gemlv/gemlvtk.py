@@ -204,3 +204,30 @@ def add_gtk_icon_to_stock(icon_name, label_str_localized):
 	icon_factory = gtk.IconFactory()
 	icon_factory.add(icon_name, iconset)
 	icon_factory.add_default()
+
+def get_stock_icon_by_mime(main, sub):
+	assoc_main = {
+		'multipart': gtk.STOCK_DIRECTORY,
+		'message': 'emblem-mail',
+	}
+	assoc_full = {
+		'application/pgp-signature': 'mail-signed',
+		'application/ics': 'x-office-calendar',
+		'text/calendar': 'x-office-calendar',
+		'inode/directory': gtk.STOCK_DIRECTORY,
+		'inode/x-empty': 'document-new',
+		'multipart/digest': 'emblem-mail',
+	}
+	full = main + '/' + sub
+	
+	if assoc_full.has_key(full):
+		return assoc_full[full]
+	elif assoc_main.has_key(main):
+		return assoc_main[main]
+	
+	if full in [MIMETYPE_HTML]:
+		return main + '-' + sub
+	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
+		return main + '-x-generic'
+	
+	return gtk.STOCK_FILE
