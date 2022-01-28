@@ -80,6 +80,7 @@ from gemlv.utils import decode_mime_header
 from gemlv.utils import walk_multipart
 from gemlv.utils import MimeDecoded
 from gemlv.utils import MimeEncoded
+from gemlv.textutils import list2text
 import gemlv.addressbook
 import gemlv.sysutils
 from gemlv.sysutils import futimes
@@ -4132,22 +4133,20 @@ def act_dispos_notif():
 			'delivery_date': get_one_header_main('Delivery-Date') or '[somewhen]',
 			}
 		subject_text = Ltxt_subj.format(**prms)
-		message_text = ''.join(map(lambda x: x+'\n', textwrap.wrap(Ltxt_body.format(**prms), 79)))
+		message_text = list2text(textwrap.wrap(Ltxt_body.format(**prms), 79))
 		set_composer_subject(subject_text)
 		set_composer_text(message_text)
 		
 		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
-		finalrecipient = my_address
-		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]
+		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_address}]
 		if Email[HDR_OR]:
 			origrcpt = get_one_header_main(HDR_OR)
-			dn_fields += ['%s: RFC822;%s' % (HDR_OR, origrcpt)]
+			dn_fields += ['%(fieldname)s: RFC822;%(recipient)s' % {'fieldname': HDR_OR, 'recipient': origrcpt}]
 		if Email[HDR_MID]:
 			messageid = get_one_header_main(HDR_MID)
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
-		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
-		dn_part.set_payload(dn_text)
+		dn_part.set_payload(list2text(dn_fields))
 		NewEmail.attach(dn_part)
 		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
 		

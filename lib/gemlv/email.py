@@ -82,6 +82,7 @@ class Email(object):
 	def as_stream(self):
 		from email.generator import Generator
 		# TODO
+		raise NotImplementedError()
 	
 	def get_charset(self):
 		return self.email.get_charset()
