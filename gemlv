@@ -1443,8 +1443,8 @@ class compose_header_box(gtk.HBox):
 	
 	def __init__(self, chname, val, hntype=None):
 		if isinstance(val, AddressLine): val = str(val)
-		assert isinstance(chname, str), "chname is %s not str."%(repr(type(chname)),)
-		assert isinstance(val, str) or isinstance(val, unicode), "val is %s not str nor unicode."%(repr(type(val)),)
+		assert isinstance(chname, str), 'chname is %s not str.'%(repr(type(chname)),)
+		assert isinstance(val, str) or isinstance(val, unicode), 'val is %s not str nor unicode.'%(repr(type(val)),)
 		plus = True
 		minus = True
 		
@@ -1918,7 +1918,7 @@ def prompt_datetime(entry):
 		calendar.select_day(d)
 		clock.select_time(ts)
 	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
-	dlg.set_title(_("Pick date an time"))
+	dlg.set_title(_("Pick date and time"))
 	calendar = gtk.Calendar()
 	clock = gemlvtk.Clock()
 	dt = email.utils.parsedate_tz(entry.get_text())

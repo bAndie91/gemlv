@@ -168,6 +168,7 @@ class Clock(gtk.HBox):
 		self.show_all()
 	
 	def select_time(self, ts=None):
+		import time
 		t = time.localtime(ts)
 		self.spin_hour.set_value(t.tm_hour)
 		self.spin_minute.set_value(t.tm_min)
