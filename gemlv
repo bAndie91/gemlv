@@ -279,6 +279,13 @@ def timer2_flush():
 		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 
+def save_exception_traceback(exc_obj, traceback_str):
+	if hasattr(exc_obj, 'traceback_str'):
+		exc_obj.traceback_str += traceback_str
+	else:
+		exc_obj.traceback_str = traceback_str
+	exc_obj.traceback_str += '\n'
+
 def display_error(e, suppl_text=''):
 	text = None
 	if hasattr(e, 'strerror'):
@@ -290,7 +297,7 @@ def display_error(e, suppl_text=''):
 	elif isinstance(e, Exception):
 		text = e.__class__.__name__ + ':\n' + e.message
 		if hasattr(e, 'traceback_str'):
-		suppl_text += '\n' + e.traceback_str
+			suppl_text += '\n' + e.traceback_str
 	elif isinstance(e, list):
 		text = ''.join(e)
 	if text is None:
@@ -1095,7 +1102,7 @@ def load_gravatar(addr, container):
 			loader.close()
 		except glib.GError as e:
 			if e.code != 3:   # 'Unrecognized image file format'
-				raise e
+				raise
 		else:
 			pxb = loader.get_pixbuf()
 			img = container.children()[0]
@@ -1868,6 +1875,7 @@ def act_add_to_addressbook_manual(address_line):
 	try:
 		gemlv.addressbook.add(section='gemlv.manual', address_line=address_line)
 	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		raise
 	else:
@@ -2467,7 +2475,7 @@ def get_xattr(file_, attrname):
 			return xattr.getxattr(file_, attrname)
 		except IOError as e:
 			if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
-				raise e
+				raise
 	return None
 
 def append_xattrs(fh, attrs, filename='-', glue=''):
@@ -2495,7 +2503,7 @@ def set_xattrs(fh, attrs, filename='-'):
 					warnx(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
 					allok = False
 					if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
-						raise e
+						raise
 	return allok
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
@@ -2935,6 +2943,7 @@ def prepare_to_send():
 		if e.status == 'invalid recipient':
 			# TODO: choose GPG recipients
 			pass
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		raise CanNotPrepareEmailToSend()
 	
@@ -2946,6 +2955,7 @@ def act_send_to_file():
 	except (EmailPreparationCanceled, CanNotPrepareEmailToSend) as e:
 		return
 	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		return
 	
@@ -2963,6 +2973,7 @@ def act_send():
 	except (EmailPreparationCanceled, CanNotPrepareEmailToSend) as e:
 		return
 	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		return
 	
@@ -3343,9 +3354,10 @@ def gpg_encrypt_email(eml):
 		del email_to_encrypt[hname]
 	try:
 		crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
-	except Exception as err:
-		display_error(_("Encryption error"), str(err))
-		raise err
+	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(_("Encryption error"), str(e))
+		raise
 	if not crypt.ok:
 		raise GnuPGEncryptError(crypt)
 	return crypt.data
@@ -4197,8 +4209,10 @@ def act_edit_external():
 		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
 	except IOError as e:
+		save_exception_traceback(e, traceback.format_exc())
 		err = e
 	except OSError as e:
+		save_exception_traceback(e, traceback.format_exc())
 		e.filename = tmppath
 		err = e
 	if err is not None:
