@@ -41,21 +41,21 @@ class Email(object):
 	@property
 	def _payload(self):
 		if self.email.is_multipart():
-			return MultipartPayload(self.email._payload, self.email)
+			return MultipartPayload(self.email._payload, self)
 		else:
 			return self.email._payload
 	
 	def get_payload(self, *args, **kwargs):
 		payload = self.email.get_payload(*args, **kwargs)
 		if isinstance(payload, list):
-			return MultipartPayload(payload, self.email)
+			return MultipartPayload(payload, self)
 		else:
 			return payload
 	
 	@property
 	def parts(self):
 		if self.email.is_multipart():
-			return self.email._payload
+			return MultipartPayload(self.email._payload, self)
 		else:
 			return []
 	
