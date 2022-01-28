@@ -613,21 +613,20 @@ def load_parts(eml, model, parent):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
-	content_type = eml.get_content_type()
 	
-	label = PMU_MIME + glib.markup_escape_text(content_type) + PMU_MIME_CLOSE
+	label = PMU_MIME + glib.markup_escape_text(eml.content_type) + PMU_MIME_CLOSE
 	filename = decode_mimetext(eml.get_filename())
 	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
-	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
+	stock = get_stock_by_mime(eml.content_type.main, eml.content_type.sub)
 	pixb = None
 	
 	iterator = model.append(parent, [eml, label, stock, pixb, {}])
 	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is reported as text/plain by email module
-	if PartPrimary is None and content_type == MIMETYPE_TEXT:
+	if PartPrimary is None and eml.content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
-	if PartSecondary is None and content_type == MIMETYPE_HTML:
+	if PartSecondary is None and eml.content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	if content_type == 'multipart/encrypted':
+	if eml.content_type == 'multipart/encrypted':
 		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
@@ -819,7 +818,6 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
-	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 	loaded_text = None
 	
 	stck_sign_good.hide()
@@ -844,14 +842,14 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				gpg_signature_valid = gpg_info['valid']
 				gpg_signature_info = gpg_info['stderr']
 				break
-			if parent_part.get_content_type() == 'multipart/signed':
+			if parent_part.content_type == 'multipart/signed':
 				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
-				if parent_level == 1 and eml.get_content_type() == sign_protocol:
+				if parent_level == 1 and eml.content_type == sign_protocol:
 					# This part is the signature itself. Skip signature verification.
 					continue
 				if sign_protocol is not None:
 					for sibling_part in parent_part.get_payload():
-						if sibling_part.get_content_type() == sign_protocol:
+						if sibling_part.content_type == sign_protocol:
 							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
 							gpg_signature_valid = sign_verify.valid
 							gpg_signature_info = sign_verify.stderr
@@ -884,7 +882,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		lbl_content_location.hide()
 	
 	if filt is None:
-		filt = get_filter_by_mime(ct_main, ct_sub)
+		filt = get_filter_by_mime(eml.content_type.main, eml.content_type.sub)
 	
 	if filt is None:
 		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
@@ -892,7 +890,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			set_content_text(text)
 			loaded_text = text
 		else:
-			if ct_main == 'image':
+			if eml.content_type.main == 'image':
 				exif_info = load_exif_metadata(eml.get_payload(decode=True))
 				loader = gtk.gdk.PixbufLoader()
 				loader.write(eml.get_payload(decode=True))
@@ -902,10 +900,10 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				panel_content_image.set_data('last-alloc', None)
 				panel_content_image.set_data('pixbuf', pxb)
 				panel_content_image.show()
-#			elif ct_main == 'audio':
+#			elif eml.content_type.main == 'audio':
 #				TODO
 			else:
-				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
+				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
 				content_description = eml['Content-Description']
@@ -942,7 +940,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if spanel_content.get_data('-loaded-part') != eml:
 		spanel_content.get_vadjustment().set_value(0.0)
 	spanel_content.set_data('-loaded-part', eml)
-	if ct_main == 'text' and loaded_text is not None:
+	if eml.content_type.main == 'text' and loaded_text is not None:
 		spanel_content.set_data('last-loaded-text', loaded_text)
 
 def on_window_configure(widget, event):
@@ -2347,12 +2345,11 @@ def get_mime_by_data(data):
 def act_open():
 	eml = get_part_by_itpath()
 	if eml is None: return
-	mime = eml.get_content_type()
-	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
+	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(eml.content_type))
 	try:
 		save_to_filedescriptor(eml, fd)
 		fh = os.fdopen(fd, 'r')
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mime}, tmppath)
+		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: eml.content_type}, tmppath)
 		fh.close()
 	except OSError as e:
 		os.unlink(tmppath)
@@ -2371,7 +2368,7 @@ def calc_attachment_name(part, n=None):
 	if name is None:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s%s" % (get_one_header_main('Subject') or _("Email"), sfx, get_extension_by_mime(part.get_content_type()))
+		name = "%s - attachment%s%s" % (get_one_header_main('Subject') or _("Email"), sfx, get_extension_by_mime(part.content_type))
 	return basenameify(name)
 
 def find_free_filename(directory=None, nice_name=None, nice_path=None):
@@ -2401,7 +2398,7 @@ def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add
 		fname += '%s-%s' % (prefix, oid)
 		if add_extension not in [False, None]:
 			if add_extension is True:
-				fname += get_extension_by_mime(part.get_content_type())
+				fname += get_extension_by_mime(part.content_type)
 			else:
 				fname += '.' + add_extension
 	return fname
@@ -2524,7 +2521,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			fh = open(filename, 'w')
 			fd = fh.fileno()
 			save_to_filedescriptor(eml, fd, consider_preamble)
-			if eml.get_content_maintype() == 'multipart':
+			if eml.content_type.main == 'multipart':
 				mimetype = MIMETYPE_EMAIL
 			else:
 				mimetype = eml.content_type
@@ -2698,7 +2695,7 @@ def populate_filters_menu(eml):
 		menu_filters.remove(mi)
 	uniqfilt = {}
 	rmi_group = None
-	for filt in get_filters_by_mime(eml.get_content_maintype(), eml.get_content_subtype()):
+	for filt in get_filters_by_mime(eml.content_type.main, eml.content_type.sub):
 		if filt[0] == '': continue
 		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
 		uniqfilt[filt[0]] = filt[1]
@@ -3318,7 +3315,7 @@ def build_newemail_to_send():
 		signed_email = email.message_from_string(signed_email.as_string())
 		data_to_sign = signed_email.as_string()
 		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
-		if signed_email.get_content_maintype() == 'multipart' and data_to_sign[-1] != '\n':
+		if signed_email.content_type.main == 'multipart' and data_to_sign[-1] != '\n':
 			data_to_sign += '\n'
 			# there is no trailing '\n' after the closing boundary;
 			# this adds a '\n' at the end of the raw multipart/* part:
@@ -3662,11 +3659,10 @@ def on_composer_attachments_row_changed(model, itpath, iterator):
 	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
-	mime = get_mime_by_data(data)
-	ct_main, ct_sub = mime.split('/')
+	mime = ContentTypeString(get_mime_by_data(data))
 	basename = 'file%s' % (get_extension_by_mime(mime),)
 	
-	part = gemlv.email.Email(MIMEBase(ct_main, ct_sub))
+	part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
 	attachment_email = email.message_from_string(data)
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
