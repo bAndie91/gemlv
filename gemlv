@@ -2196,7 +2196,7 @@ def act_reply(compose_type):
 					fwd_header = headercase(fwd_header)
 					if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
 						del email_to_forward[fwd_header]
-				part = MIMEMessage(email_to_forward)
+				part = gemlv.email.Email(MIMEMessage(email_to_forward))
 				part.add_header(HDR_CD, 'attachment', filename=fwdname)
 				NewEmail.attach(part)
 				# TODO: make the attached email's row expandable in the attachments panel,
@@ -3240,7 +3240,7 @@ def build_newemail(with_attachment_data=True):
 
 def make_thin_mime_part(eml):
 	"create a MIME message without payload, but set content metadata in headers"
-	thin_eml = MIMEBase(eml.get_content_maintype(), eml.get_content_subtype())
+	thin_eml = gemlv.email.Email(MIMEBase(eml.content_type.main, eml.content_type.sub))
 	# remove default core headers, all core and custom headers will be copied later.
 	for header_name in thin_eml.keys():
 		del thin_eml[header_name]
@@ -3257,7 +3257,7 @@ def make_thin_mime_part(eml):
 	return thin_eml
 
 def make_protected_headers_part(eml):
-	protected_headers_part = MIMEText('')
+	protected_headers_part = gemlv.email.Email(MIMEText(''))
 	protected_headers_part.set_type(MIMETYPE_HEADERS)
 	protected_headers_part.set_charset('UTF-8')
 	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
@@ -3267,7 +3267,7 @@ def make_protected_headers_part(eml):
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
 		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part._payload += '%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable'))
+			protected_headers_part.append_encoded_payload('%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable')))
 	return protected_headers_part
 
 def build_newemail_to_send():
@@ -3283,9 +3283,9 @@ def build_newemail_to_send():
 	
 	# crypto-sign
 	if toggle_sign.get_active():
-		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
+		signed_email = gemlv.email.Email(MIMEMultipart(NewEmail.content_type.sub))
 		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
-		signature_part = MIMEBase('application', 'pgp-signature')
+		signature_part = gemlv.email.Email(MIMEBase('application', 'pgp-signature'))
 		
 		# make a MIME part containing the email's headers as a mean to sign headers as well.
 		protected_headers_part = make_protected_headers_part(email_to_send)
@@ -3320,9 +3320,9 @@ def build_newemail_to_send():
 	
 	# gpg encryption
 	if toggle_encrypt.get_active():
-		crypt_meta_part = MIMEBase('application', 'pgp-encrypted')
+		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
 		crypt_meta_part.set_payload('Version: 1\n')
-		crypt_email = MIMEBase(*MIMETYPE_OCTETSTREAM.split('/'))
+		crypt_email = gemlv.email.Email(MIMEBase(*MIMETYPE_OCTETSTREAM.split('/')))
 		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
@@ -3655,7 +3655,7 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 	ct_main, ct_sub = mime.split('/')
 	basename = 'file%s' % (get_extension_by_mime(mime),)
 	
-	part = MIMEBase(ct_main, ct_sub)
+	part = gemlv.email.Email(MIMEBase(ct_main, ct_sub))
 	attachment_email = email.message_from_string(data)
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
@@ -3732,7 +3732,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	ct_main, ct_sub = mime.split('/')
 	
 	if os.path.isdir(attachment_path) and not isalink:
-		part = MIMEMultipart('related')
+		part = gemlv.email.Email(MIMEMultipart('related'))
 	else:
 		part = gemlv.email.Email(MIMEBase(ct_main, ct_sub))
 		part.origin_path = attachment_path
@@ -4135,7 +4135,7 @@ def act_dispos_notif():
 		set_composer_subject(subject_text)
 		set_composer_text(message_text)
 		
-		dn_part = MIMEBase(*MIMETYPE_DN.split('/'))
+		dn_part = gemlv.email.Email(MIMEBase(*MIMETYPE_DN.split('/')))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
 		finalrecipient = my_address
 		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]
