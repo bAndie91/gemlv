@@ -1143,6 +1143,8 @@ def get_headers_markup(eml):
 		"X-Spam",  # @notranslate
 	]
 	from_addresses = get_email_addresses_in_main_headers('From')
+	# if there is proper sender recorded in the email then do not show the envelope sender 
+	# (ie. "mail from" sender, conventionally recorded in Return-Path header)
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
 		if eml[h] is not None:
 			hdrs.remove('Return-Path')
@@ -2666,7 +2668,7 @@ def show_view_headers(show=True):
 		panel_view_header.set_line_wrap(False)
 		s = ''
 		for hname, hval_mimeencoded in Email._headers:
-			hval = decode_mime_header(hval_mimeencoded, eml=Email)
+			hval = decode_mime_header(hval_mimeencoded, eml=Email, unfold=False)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
 		panel_view_header.set_markup(s)
 	else:

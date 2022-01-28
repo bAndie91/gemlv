@@ -79,7 +79,7 @@ def decode_mimetext(s):
 		return plain_str
 	return s
 
-def decode_mime_header(s, eml=None):
+def decode_mime_header(s, eml=None, unfold=True):
 	"""
 	Parameters
 	
@@ -88,8 +88,9 @@ def decode_mime_header(s, eml=None):
 		  the correct charset before fall back to UTF-8
 	"""
 	chunks = []
-	# unfold possibly folded header
-	s = re.sub('\r?\n\s*', ' ', s)
+	if unfold:
+		# unfold possibly folded header
+		s = re.sub('\r?\n\s*', ' ', s)
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			# encoding is not specified in this header
