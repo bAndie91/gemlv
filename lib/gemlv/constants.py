@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from contenttypestring import ContentTypeString
+
 PMU_MIME = '<i><span color=\'gray30\'>'
 PMU_MIME_CLOSE = '</span></i>'
 PMU_NAME = '<b>'
@@ -26,14 +28,14 @@ HDR_REF = 'References'
 HDR_XSD = 'X-Sent-Date'
 HDR_XQID = 'X-Queue-ID'
 
-MIMETYPE_OCTETSTREAM = 'application/octet-stream'
-MIMETYPE_EMAIL = 'message/rfc822'
-MIMETYPE_URILIST = 'text/uri-list'
-MIMETYPE_TEXT = 'text/plain'
-MIMETYPE_HTML = 'text/html'
-MIMETYPE_SYMLINK = 'inode/symlink'
-MIMETYPE_HEADERS = 'text/rfc822-headers'
-MIMETYPE_DN = 'message/disposition-notification'
+MIMETYPE_OCTETSTREAM = ContentTypeString('application/octet-stream')
+MIMETYPE_EMAIL = ContentTypeString('message/rfc822')
+MIMETYPE_URILIST = ContentTypeString('text/uri-list')
+MIMETYPE_TEXT = ContentTypeString('text/plain')
+MIMETYPE_HTML = ContentTypeString('text/html')
+MIMETYPE_SYMLINK = ContentTypeString('inode/symlink')
+MIMETYPE_HEADERS = ContentTypeString('text/rfc822-headers')
+MIMETYPE_DN = ContentTypeString('message/disposition-notification')
 
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'

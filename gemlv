@@ -18,6 +18,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
+from contenttypestring import ContentTypeString
 import gemlv.email
 import re
 from tempfile import mkstemp
@@ -2512,7 +2513,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			if not question(_("This file already exists:") + ('\n<tt>%s</tt>\n' % (glib.markup_escape_text(os.path.basename(filename)))) + _("Overwrite?"), (None, gtk.STOCK_SAVE)):
 				return None
 	try:
-		if eml.get_content_type() == MIMETYPE_SYMLINK:
+		if eml.content_type == MIMETYPE_SYMLINK:
 			link_target = eml.get_payload(decode=True)
 			os.symlink(link_target, filename)
 		else:
@@ -2522,7 +2523,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			if eml.get_content_maintype() == 'multipart':
 				mimetype = MIMETYPE_EMAIL
 			else:
-				mimetype = eml.get_content_type()
+				mimetype = eml.content_type
 			messageid = eml[HDR_MID]
 			if not messageid and hasattr(Email, '__getitem__'):  # why Email.__getitem__ checked here?
 				messageid = Email[HDR_MID]
@@ -3226,7 +3227,7 @@ def build_newemail(with_attachment_data=True):
 		for depth, index, part in walk_multipart(NewEmail):
 			if depth == 0: continue  # this is the main email object
 			if depth == 1 and index == 0: continue  # this is the email body part
-			if part.get_content_type() == MIMETYPE_DN:
+			if part.content_type == MIMETYPE_DN:
 				# attach disposition notification part directly, it is not come from a file.
 				latest_part[depth-1].attach(part)
 				continue
@@ -3322,7 +3323,7 @@ def build_newemail_to_send():
 	if toggle_encrypt.get_active():
 		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
 		crypt_meta_part.set_payload('Version: 1\n')
-		crypt_email = gemlv.email.Email(MIMEBase(*MIMETYPE_OCTETSTREAM.split('/')))
+		crypt_email = gemlv.email.Email(MIMEBase(MIMETYPE_OCTETSTREAM.main, MIMETYPE_OCTETSTREAM.sub))
 		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
@@ -3983,12 +3984,12 @@ def on_keypress_attachments(tv, evt):
 			except ValueError:
 				# Child was deleted in meantime.
 				continue
-			if Attachments[iterator][0].get_content_type() == MIMETYPE_DN:
+			if Attachments[iterator][0].content_type == MIMETYPE_DN:
 				# Disallow removing MDN part as it would lose to be an MDN anymore
 				win_comp.get_window().beep()
 				continue
 			part = Attachments[iterator][0]
-			if part.get_content_type() == MIMETYPE_EMAIL:
+			if part.content_type == MIMETYPE_EMAIL:
 				composer_substract_from_list_header(HDR_REF, [part.get(HDR_MID)])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
@@ -4135,7 +4136,7 @@ def act_dispos_notif():
 		set_composer_subject(subject_text)
 		set_composer_text(message_text)
 		
-		dn_part = gemlv.email.Email(MIMEBase(*MIMETYPE_DN.split('/')))
+		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
 		finalrecipient = my_address
 		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]
@@ -4866,7 +4867,7 @@ if cliArgs.compose:
 		
 		body_found = False
 		def detect_body_part(part):
-			if not body_found and part.get_content_type() == MIMETYPE_TEXT:
+			if not body_found and part.content_type == MIMETYPE_TEXT:
 				set_composer_text(decode_readably(part.get_payload(decode=True), part))
 				# Prevent this part to be treated as attachment. This is the body part.
 				return False

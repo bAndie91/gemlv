@@ -3,6 +3,7 @@
 import email
 from gemlv.constants import *
 import gemlv.profiler
+from contenttypestring import ContentTypeString
 
 
 class PayloadError(Exception):
@@ -203,7 +204,3 @@ class MultipartPayload(list):
 		self._email_obj.size_approx = None
 		return self._payload_obj.insert(index, item)
 
-class ContentTypeString(str):
-	def __init__(self, v):
-		self._value = v
-		self.main, self.sub = v.split('/')
