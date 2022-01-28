@@ -3974,6 +3974,7 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 	return False
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
+	assert colnum == COL_ATTACHMENTS_LABEL_MARKUP
 	eml = Attachments[iterator][COL_ATTACHMENTS_EML]
 	header_params = {}
 	if eml[HDR_CD]:
@@ -3981,7 +3982,7 @@ def rename_attachment(cellrenderer, iterator, new_text, colnum):
 		eml._headers.remove((HDR_CD, eml[HDR_CD]))
 	header_params['filename'] = new_text
 	eml.add_header(HDR_CD, 'attachment', **header_params)
-	Attachments[iterator][colnum] = new_text
+	Attachments[iterator][colnum] = glib.markup_escape_text(new_text)
 	return True
 
 def on_keypress_attachments(tv, evt):
@@ -4545,7 +4546,7 @@ panel_view_subject = gtk.Label(' ')
 spanel_view_subject = gemlvtk.Scrollable(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)
+Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)  # update COL_PARTS_* constants if changed
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
@@ -4715,7 +4716,7 @@ menu_add_header = gtk.Menu()
 panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)
+Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
 Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
@@ -4958,5 +4959,3 @@ if len(threading.enumerate()) > 1:
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
-
-# TODO: verify that all COL_ATTACHMENTS_LABEL_MARKUP accesses Attachments are via glib.markup_escape_text()

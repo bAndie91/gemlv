@@ -113,6 +113,9 @@ class Email(object):
 	def set_type(self, *args, **kwargs):
 		return self.email.set_type(*args, **kwargs)
 	
+	def get_params(self, *args, **kwargs):
+		return self.email.get_params(*args, **kwargs)
+	
 	def set_param(self, *args, **kwargs):
 		return self.email.set_param(*args, **kwargs)
 	
