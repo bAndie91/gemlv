@@ -4,9 +4,10 @@ import email
 from gemlv.constants import *
 import gemlv.profiler
 from contenttypestring import ContentTypeString
+from pythonutils import ItemIterator
 
 
-class PayloadError(Exception):
+class PayloadTypeError(Exception):
 	pass
 
 class Email(object):
@@ -61,10 +62,11 @@ class Email(object):
 	
 	@property
 	def parts(self):
+		"It's mainly for for-loop iteration."
 		if self.email.is_multipart():
 			return MultipartPayload(self.email._payload, self)
 		else:
-			return []
+			return ()
 	
 	def set_payload(self, *args, **kwargs):
 		self.size_approx = None
@@ -72,7 +74,7 @@ class Email(object):
 	
 	def append_encoded_payload(self, encpayload):
 		if self.is_multipart():
-			raise PayloadError('This is a MIME multipart message')
+			raise PayloadTypeError('This is a MIME multipart message')
 		self.size_approx = None
 		self.email._payload += encpayload
 	
@@ -201,11 +203,34 @@ class MultipartPayload(list):
 		return self._payload_obj.__delitem__(itemname)
 	
 	def __getitem__(self, itemname):
-		return self._payload_obj.__getitem__(itemname)
+		item = self._payload_obj.__getitem__(itemname)
+		# if any MIME part happens not to be also a gemlv.email.Email object,
+		# then wrap it around and replace. it may happen when loading the email
+		# object by eg. email.message_from_file or email.message_from_string.
+		if not isinstance(item, self._email_obj.__class__):
+			item = self._email_obj.__class__(item)
+			self._payload_obj.__setitem__(itemname, item)
+		return item
+	
+	def __getslice__(self, *_p):
+		raise NotImplementedError()
+	
+	def __delslice__(self, *_p):
+		raise NotImplementedError()
+	
+	def __setslice__(self, *_p):
+		raise NotImplementedError()
+	
+	def __iter__(self):
+		return ItemIterator(self)
 	
 	def remove(self, item):
 		self._email_obj.size_approx = None
 		return self._payload_obj.remove(item)
+	
+	def pop(self, *p):
+		self._email_obj.size_approx = None
+		return self._payload_obj.pop(*p)
 	
 	def insert(self, index, item):
 		self._email_obj.size_approx = None

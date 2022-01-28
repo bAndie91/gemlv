@@ -552,6 +552,7 @@ def load_file(filename):
 	global LeafParts
 	Email, fh = email_from_file(filename)
 	if Email is None: return
+	Email = gemlv.email.Email(Email)
 	win_main.set_data('email-file-handle', fh)
 	win_main.set_data('email-file', filename)
 	update_window_title(win_main, filename, get_one_header_main('Subject'))

@@ -38,3 +38,17 @@ class Cyclelist(list):
 	
 	def __str__(self):
 		return str(self[self.idx])
+
+class ItemIterator(object):
+	def __init__(self, obj):
+		self.obj = obj
+		self.index = -1
+	
+	def next(self):
+		self.index += 1
+		if self.index >= len(self.obj):
+			raise StopIteration
+		return self.obj.__getitem__(self.index)
+	
+	def __del__(self):
+		pass
