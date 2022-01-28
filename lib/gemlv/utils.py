@@ -114,7 +114,7 @@ def decode_mime_header(s, eml=None):
 	return ' '.join(chunks)
 
 def walk_multipart(eml, leaf_only=False, depth=0, index=0):
-	if leaf_only or eml.is_multipart():
+	if not leaf_only or not eml.is_multipart():
 		yield (depth, index, eml)
 	subindex = 0
 	for part in eml.parts:

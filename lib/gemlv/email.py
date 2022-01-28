@@ -179,9 +179,10 @@ class MultipartPayload(list):
 	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"
 	
 	def __init__(self, payload_obj, email_obj):
-		# let type checking done by the called methods, not us
+		super(self.__class__, self).__init__(payload_obj)
 		self._payload_obj = payload_obj
 		self._email_obj = email_obj
+		# let type checking done by the called methods, not us
 	
 	def __setitem__(self, itemname, item):
 		self._email_obj.size_approx = None
