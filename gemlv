@@ -646,7 +646,7 @@ def load_parts(eml, model, parent):
 			
 			if decrypt.key_id is not None:
 				# it's a encrypted and signed message, store signatue info for later
-				model[model.iter_nth_child(iterator, encrypted_part_num)][4]['gpg'] = {
+				model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_INFO]['gpg'] = {
 					'valid': decrypt.valid,
 					'stderr': decrypt.stderr,
 					'username': decrypt.username,
@@ -656,8 +656,8 @@ def load_parts(eml, model, parent):
 				load_parts(other_part, model, iterator)
 			
 			# Display an open/locked padlock icon
-			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
-			model[model.iter_nth_child(iterator, encrypted_part_num)][3] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+			model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_ICONNAME] = None
+			model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_ICON] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
 			if not decrypt.ok:
 				display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
 			return
@@ -832,7 +832,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_save2.set_sensitive(False)
 	gpg_msg = get_gpg_signed_data_from_mime_part(eml)
 	gpg_signature_valid = None
-	eml_data = Parts[get_part_iter(eml)][4]
+	eml_data = Parts[get_part_iter(eml)][COL_PARTS_INFO]
 	if eml_data.has_key('gpg'):
 		gpg_info = eml_data['gpg']
 		gpg_signature_valid = gpg_info['valid']
@@ -2206,7 +2206,7 @@ def act_reply(compose_type):
 				NewEmail.attach(part)
 				# TODO: make the attached email's row expandable in the attachments panel,
 				# so its big attachments can be removed by the user
-				Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
+				Attachments.append(None, [part, glib.markup_escape_text(fwdname), 'emblem-mail', None, '', calc_attachment_checksum(part)])
 			else:
 				composer_text_buffer.append('\n')
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
@@ -2389,7 +2389,7 @@ def find_free_filename(directory=None, nice_name=None, nice_path=None):
 	return os.path.basename(free_path)
 
 def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add_subject=False):
-	part = Parts[itpath][0]
+	part = Parts[itpath][COL_PARTS_EML]
 	fname = decode_mimetext(part.get_filename())
 	if fname is None:
 		fname = ''
@@ -2414,7 +2414,7 @@ def act_save_struct():
 			act_save_struct_inner(savedir, Parts.get_iter(itpaths[n]))
 
 def act_save_struct_inner(savedir, iterator):
-	part = Parts[iterator][0]
+	part = Parts[iterator][COL_PARTS_EML]
 	itpath = Parts.get_path(iterator)
 	mimepart_name = decode_mimetext(part.get_filename())
 	if mimepart_name is not None:
@@ -2832,7 +2832,7 @@ def get_all_parent_parts(part_asked):
 		if it is None:
 			break
 		else:
-			yield level, Parts[it][0], Parts[it][4]
+			yield level, Parts[it][COL_PARTS_EML], Parts[it][COL_PARTS_INFO]
 
 def load_toolitems(toolbar, toolitems):
 	items = []
@@ -2892,6 +2892,12 @@ def load_toolitems(toolbar, toolitems):
 		items.append(tbi)
 	return items
 
+COL_PARTS_EML, COL_PARTS_LABEL_MARKUP, COL_PARTS_ICONNAME, COL_PARTS_ICON, COL_PARTS_INFO = range(5)
+COL_ATTACHMENTS_EML, COL_ATTACHMENTS_LABEL_MARKUP, COL_ATTACHMENTS_ICONNAME, COL_ATTACHMENTS_ICON, COL_ATTACHMENTS_SIZE_LABEL, COL_ATTACHMENTS_CHECKSUM = range(6)
+assert COL_PARTS_LABEL_MARKUP == COL_ATTACHMENTS_LABEL_MARKUP
+assert COL_PARTS_ICONNAME == COL_ATTACHMENTS_ICONNAME
+assert COL_PARTS_ICON == COL_ATTACHMENTS_ICON
+
 def setup_treeview__icon_label(tv, label_edit_cb=None):
 	colnum_txt = 1
 	tvc = gtk.TreeViewColumn()
@@ -2903,9 +2909,9 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 		cr_txt.connect('edited', label_edit_cb, colnum_txt)
 	tvc.pack_start(cr_pix, False)
 	tvc.pack_start(cr_txt, True)
-	tvc.add_attribute(cr_txt, 'markup', colnum_txt)
-	tvc.add_attribute(cr_pix, 'icon-name', 2)
-	tvc.add_attribute(cr_pix, 'pixbuf', 3)
+	tvc.add_attribute(cr_txt, 'markup', COL_ATTACHMENTS_LABEL_MARKUP)
+	tvc.add_attribute(cr_pix, 'icon-name', COL_ATTACHMENTS_ICONNAME)
+	tvc.add_attribute(cr_pix, 'pixbuf', COL_ATTACHMENTS_ICON)
 
 
 class ComposerHeaderValidationError(Exception):
@@ -3651,8 +3657,8 @@ def analyze_for_optimal_encoding(buf):
 def on_composer_attachments_row_changed(model, itpath, iterator):
 	hid = model.get_data('row-changed-signal-handler-id')
 	model.handler_block(hid)
-	part = model[iterator][0]
-	model[iterator][4] = human_size(part.size_decoded_approx)
+	part = model[iterator][COL_ATTACHMENTS_EML]
+	model[iterator][COL_ATTACHMENTS_SIZE_LABEL] = human_size(part.size_decoded_approx)
 	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
@@ -3797,7 +3803,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 			parent_part = NewEmail
 			break
 		else:
-			parent_part = Attachments[parent_iter][0]
+			parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 			if parent_part.is_multipart():
 				break
 			parent_iter = Attachments.iter_parent(parent_iter)
@@ -3807,7 +3813,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
+	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), get_stock_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
@@ -3844,7 +3850,7 @@ def check_unique_attachment(mimepart):
 	result = {'checksum': checksum, 'unique': True}
 	
 	def compare_checksums(ts_model, ts_path, ts_iter, result):
-		cksum = ts_model[ts_path][5]
+		cksum = ts_model[ts_path][COL_ATTACHMENTS_CHECKSUM]
 		if cksum == result['checksum']:
 			result['unique'] = False
 			# terminate foreach() loop:
@@ -3855,10 +3861,9 @@ def check_unique_attachment(mimepart):
 
 def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
 	if callback(eml):
-		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
-		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
-		icon = get_stock_by_mime(ct_main, ct_sub)
-		iterator = Attachments.append(root_iter, [eml, name, icon, None, '', calc_attachment_checksum(eml)])
+		name = decode_mimetext(eml.get_filename()) or '[%s]' % eml.content_type
+		icon = get_stock_by_mime(eml.content_type.main, eml.content_type.sub)
+		iterator = Attachments.append(root_iter, [eml, glib.markup_escape_text(name), icon, None, '', calc_attachment_checksum(eml)])
 		for subpart in eml.parts:
 			add_already_attached_parts(iterator, subpart, callback=callback)
 
@@ -3929,13 +3934,13 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 			if drop_info is not None:
 				relative_iterator_path, relation = drop_info
 				relative_iterator = Attachments.get_iter(relative_iterator_path)
-				relative_part = Attachments[relative_iterator][0]
+				relative_part = Attachments[relative_iterator][COL_ATTACHMENTS_EML]
 				if relation in [gtk.TREE_VIEW_DROP_BEFORE, gtk.TREE_VIEW_DROP_AFTER]:
 					parent_iter = Attachments.iter_parent(relative_iterator)
 					if parent_iter is None:
 						parent_part = NewEmail
 					else:
-						parent_part = Attachments[parent_iter][0]
+						parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 					if relation == gtk.TREE_VIEW_DROP_BEFORE:
 						newindex = parent_part.get_payload().index(relative_part)
 					elif relation == gtk.TREE_VIEW_DROP_AFTER:
@@ -3945,12 +3950,12 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 					newindex = 0
 				if parent_part.is_multipart():
 					# Reorder subject_part attachment.
-					subject_part = Attachments[subject_path][0]
+					subject_part = Attachments[subject_path][COL_ATTACHMENTS_EML]
 					old_parent_iter = Attachments.iter_parent(Attachments.get_iter(subject_path))
 					if old_parent_iter is None:
 						old_parent_part = NewEmail
 					else:
-						old_parent_part = Attachments[old_parent_iter][0]
+						old_parent_part = Attachments[old_parent_iter][COL_ATTACHMENTS_EML]
 					if old_parent_part == parent_part:
 						idx = old_parent_part.get_payload().index(subject_part)
 						if idx < newindex:
@@ -3969,7 +3974,7 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 	return False
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
-	eml = Attachments[iterator][0]
+	eml = Attachments[iterator][COL_ATTACHMENTS_EML]
 	header_params = {}
 	if eml[HDR_CD]:
 		header_params = dict(eml.get_params(header=HDR_CD))
@@ -3988,18 +3993,18 @@ def on_keypress_attachments(tv, evt):
 			except ValueError:
 				# Child was deleted in meantime.
 				continue
-			if Attachments[iterator][0].content_type == MIMETYPE_DN:
+			if Attachments[iterator][COL_ATTACHMENTS_EML].content_type == MIMETYPE_DN:
 				# Disallow removing MDN part as it would lose to be an MDN anymore
 				win_comp.get_window().beep()
 				continue
-			part = Attachments[iterator][0]
+			part = Attachments[iterator][COL_ATTACHMENTS_EML]
 			if part.content_type == MIMETYPE_EMAIL:
 				composer_substract_from_list_header(HDR_REF, [part.get(HDR_MID)])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
 				parent_part = NewEmail
 			else:
-				parent_part = Attachments[parent_iter][0]
+				parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 			parent_part.get_payload().remove(part)
 			del Attachments[iterator]
 		update_composer_status_message()
@@ -4022,7 +4027,7 @@ def on_panel_parts_button_press_event(wdg, event):
 def set_dnd_drag_targets():
 	itpaths = selection_parts.get_selected_rows()[1]
 	if len(itpaths) == 1:
-		mime = Parts[itpaths[0]][0].get_content_type()
+		mime = Parts[itpaths[0]][COL_PARTS_EML].content_type
 		targets = [(mime, gtk.TARGET_OTHER_APP, 1), ('XdndDirectSave0', gtk.TARGET_OTHER_APP, 2), (MIMETYPE_OCTETSTREAM, gtk.TARGET_OTHER_APP, 3)]
 	else:
 		targets = [(MIMETYPE_URILIST, gtk.TARGET_OTHER_APP, 0)]
@@ -4032,7 +4037,7 @@ def drag_part_begin(wdg, context):
 	dragged_parts = []
 	itpaths = selection_parts.get_selected_rows()[1]
 	for itpath in itpaths:
-		part = Parts[itpath][0]
+		part = Parts[itpath][COL_PARTS_EML]
 		filename = part_filename_by_iteratorpath(itpath, add_extension=True, add_subject=True)
 		dragged_parts.append((part, filename))
 	
@@ -4151,7 +4156,8 @@ def act_dispos_notif():
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
 		dn_part.set_payload(list2text(dn_fields))
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
+		# TODO: set Disposition Notification name according to Accept-Language
+		Attachments.append(None, [dn_part, glib.markup_escape_text(_("Disposition Notification")), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
@@ -4808,7 +4814,7 @@ tvc = gtk.TreeViewColumn()
 cr_txt = gtk.CellRendererText()
 cr_txt.set_alignment(1, 0)
 tvc.pack_start(cr_txt, True)
-tvc.add_attribute(cr_txt, 'text', 4)
+tvc.add_attribute(cr_txt, 'text', COL_ATTACHMENTS_SIZE_LABEL)
 panel_attachments.append_column(tvc)
 
 
@@ -4952,3 +4958,5 @@ if len(threading.enumerate()) > 1:
 # TODO: make .set_label and .set_text consistent on gtk.Label()s
 
 # FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS
+
+# TODO: verify that all COL_ATTACHMENTS_LABEL_MARKUP accesses Attachments are via glib.markup_escape_text()
