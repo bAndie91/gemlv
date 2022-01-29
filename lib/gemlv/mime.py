@@ -38,3 +38,53 @@ def decode_header(s, eml=None, unfold=True):
 				encoding = 'utf-8'
 		chunks.append(chars.decode(encoding, 'replace'))
 	return ' '.join(chunks)
+
+def encode_header(header_value, **make_header_params):
+	# TODO: obey maxlinelen
+	"""
+	Make an RFC 2047-compilant header value string (without line breaks),
+	ie. encode non-ascii-only words, but leave ascii-only words as-is.
+	Encode subsequent non-ascii-only words together to keep space chars.
+	
+	Parameters
+	
+		header_value: string, mandatory
+		header_name: string, optional, default: None
+		maxlinelen: int, optional, default: None
+		continuation_ws: string, optional, default: a space
+	"""
+	chunks = []
+	CHUNK_PLAIN, CHUNK_ENCODED = range(2)
+	separator = ' '
+	prev_word = None
+	prev_chunk = None
+	for word in header_value.split(separator):
+		try:
+			if prev_chunk is not None and word == '':
+				# two or more spaces follow a non-ascii-only word, this might result
+				# in two subsequent MIME-encoded words (two or more spaces between them)
+				# which is in turn decoded as one continuous word instead of two.
+				# ie. whitespace between MIME-encoded words are ignored.
+				# so jump to the CHUNK_ENCODED branch to snap the extra space to the
+				# word before it.
+				raise UnicodeError()
+			chunk = email.Header.make_header([(word, None)], **make_header_params)
+			chunk_type = CHUNK_PLAIN
+		except (UnicodeDecodeError, UnicodeError):
+			if prev_word is not None:
+				word = prev_word + separator + word
+			chunk = email.Header.make_header([(word, 'UTF-8')], **make_header_params)
+			chunk_type = CHUNK_ENCODED
+		chunk = chunk.encode()
+		if chunk_type == CHUNK_PLAIN:
+			if prev_chunk is not None:
+				chunks.append(prev_chunk)
+			chunks.append(chunk)
+			prev_word = None
+			prev_chunk = None
+		else:
+			prev_word = word
+			prev_chunk = chunk
+	if prev_chunk is not None:
+		chunks.append(prev_chunk)
+	return separator.join(chunks)

@@ -480,16 +480,6 @@ def main_thread_alive():
 			break
 	return alive
 
-RE_HEADERPARAM = '(\\b%s)(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
-
-def get_header_parameter(text, param):
-	for left, right, dqval, val in re.findall(RE_HEADERPARAM % (re.escape(param),), text or ''):
-		if dqval != '': return dqval
-		if val != '': return val
-	return None
-
-def set_header_parameter(eml, hname, param, pvalue):
-	return eml.set_param(param, pvalue, hname)
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
@@ -559,7 +549,7 @@ def load_file(filename):
 			break
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
-	if (Email[HDR_DNT] or '').strip():
+	if Email.header.get(HDR_DNT, '').value.decoded.strip():
 		if get_xattr(filename, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
 	if truish(get_xattr(filename, XATTR_MDNSENT)):
@@ -571,7 +561,7 @@ def load_file(filename):
 	
 	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
-	if (Email['List-Unsubscribe'] or '').strip():
+	if Email.header.get('List-Unsubscribe', '').value.decoded.strip():
 		menubutton_unsubscribe.show()
 	
 	panel_view_header.set_markup(get_headers_markup(Email))
@@ -621,7 +611,7 @@ def load_parts(eml, model, parent):
 	if PartSecondary is None and eml.content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
 	if eml.content_type == 'multipart/encrypted':
-		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
+		crypto_protocol = eml.header[HDR_CT].param['protocol']
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
 			pgp_metadata_part = eml.get_payload()[0]
@@ -3127,47 +3117,6 @@ def make_msgid():
 	# Don't leak hostname, IP, or time in generated Message-ID.
 	return '<%s@%s>' % (uuid.uuid4().hex, uuid.uuid4().hex)
 
-def encode_header(header_name, header_value):
-	"""
-	Make an RFC 2047-compilant header value string (without line breaks),
-	ie. encode non-ascii-only words, but leave ascii-only words as-is.
-	Encode subsequent non-ascii-only words together to keep space chars.
-	"""
-	chunks = []
-	CHUNK_PLAIN, CHUNK_ENCODED = range(2)
-	separator = ' '
-	prev_word = None
-	prev_chunk = None
-	for word in header_value.split(separator):
-		try:
-			if prev_chunk is not None and word == '':
-				# two or more spaces follow a non-ascii-only word, this might result
-				# in two subsequent MIME-encoded words (two or more spaces between them)
-				# which is in turn decoded as one continuous word instead of two.
-				# ie. whitespace between MIME-encoded words are ignored.
-				# so jump to the CHUNK_ENCODED branch to snap the extra space to the
-				# word before it.
-				raise UnicodeError()
-			chunk = email.Header.make_header([(word, None)], header_name=header_name)
-			chunk_type = CHUNK_PLAIN
-		except (UnicodeDecodeError, UnicodeError):
-			if prev_word is not None:
-				word = prev_word + separator + word
-			chunk = email.Header.make_header([(word, 'UTF-8')], header_name=header_name)
-			chunk_type = CHUNK_ENCODED
-		chunk = chunk.encode()
-		if chunk_type == CHUNK_PLAIN:
-			if prev_chunk is not None:
-				chunks.append(prev_chunk)
-			chunks.append(chunk)
-			prev_word = None
-			prev_chunk = None
-		else:
-			prev_word = word
-			prev_chunk = chunk
-	if prev_chunk is not None:
-		chunks.append(prev_chunk)
-	return separator.join(chunks)
 
 def build_newemail(with_attachment_data=True):
 	
@@ -3182,8 +3131,7 @@ def build_newemail(with_attachment_data=True):
 		del result_eml[hname]
 	
 	for hname, hval in iterate_composer_headers():
-		mime_encoded_header = encode_header(hname, hval)
-		result_eml.add_header(hname, mime_encoded_header)
+		result_eml.headers.append(Header(hname, MimeDecoded(hval)))
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)

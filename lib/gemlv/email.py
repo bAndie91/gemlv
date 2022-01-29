@@ -23,33 +23,80 @@ class MimeDecoded(str):
 
 class Header(object):
 	def __init__(self, name, value=None, eml=None):
-		assert value is None or isinstance(value, (MimeDecoded, MimeEncoded))
-		
 		self.name = re.sub(r'\b(.)', lambda m: m.group(1).upper(), name.lower())
-		if isinstance(value, MimeDecoded):
-			self.decoded_value = value
-			self.encoded_value =
+		self._eml = eml
+		if value is None: value = MimeEncoded('')
+		self.value = HeaderValue(value, header=self)
+		self.param = HeaderParameter(header=self)
+
+class HeaderValue(object):
+	def __init__(self, value, header_obj)
+		assert isinstance(value, (MimeDecoded, MimeEncoded))
+		
+		self._encoded = None
+		self._decoded = None
+		self._header = header_obj
+		
+		if isinstance(value, MimeEncoded):
+			self._encoded = value
 		else:
-			self.encoded_value = value
-			self.decoded_value = mime.decode_header(value, eml=eml, unfold=False)
+			self._decoded = value
+	
+	def _reinit(self):
+		_header = self._header
+		self.__init__(MimeEncoded(_header._eml[_header.name]), _header)
 	
 	@property
 	def decoded(self):
-		return self.decoded_value
+		if self._decoded is None:
+			self._decoded = mime.decode_header(self._encoded, eml=self._header._eml, unfold=False)
+		return self._decoded
 	
 	@property
 	def encoded(self):
-		return self.encoded_value
+		if self._encoded is None:
+			self._encoded = mime.encode_header(self._decoded, header_name=self._header.name, maxlinelen=email.Header.MAXLINELEN)
+		return self._encoded
+
+class HeaderParameter(object):
+	RE_HEADERPARAM = '(\\b%s)(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
+	
+	def __init__(self, header_obj):
+		self._header = header_obj
+	
+	def __getitem__(self, pname, **kwargs):
+		pvalue = None
+		for _left, _right, doublequoted_val, unquoted_val in re.findall(self.RE_HEADERPARAM % (re.escape(pname),), self._header.value.encoded):
+			if doublequoted_val != '': pvalue = doublequoted_val
+			if unquoted_val != '': pvalue = unquoted_val
+		if pvalue is None:
+			if 'fallback' in kwargs:
+				return kwargs['fallback']
+			else:
+				raise KeyError
+		return HeaderValue(MimeEncoded(pvalue))
+	
+	def get(self, pname, fallback=None):
+		return self.__getitem__(pname, fallback=fallback)
+	
+	def __setitem__(self, pname, pvalue):
+		assert isinstance(pvalue, MimeEncoded)
+		self._header._eml.set_param(pname, pvalue, header=self._header.name, requote=False)
+		self._header.value._reinit()
 
 class HeaderAccessor(object):
 	def __init__(self, email_obj):
 		self.email = email_obj
-	
+
 class SingularHeaderAccessor(HeaderAccessor):
 	def __getitem__(self, headername):
 		encoded_value = self.email.get(headername, None)
 		if encoded_value is None:
 			raise KeyError
+		return Header(headername, MimeEncoded(encoded_value), self.email)
+	
+	def get(self, headername, fallback=None):
+		encoded_value = self.email.get(headername, fallback)
 		return Header(headername, MimeEncoded(encoded_value), self.email)
 	
 	def __setitem__(self, headername, decoded_value):
@@ -66,7 +113,7 @@ class PluralHeaderAccessor(HeaderAccessor):
 		
 	
 	def append(self, header_obj):
-		self.email.add_header()
+		self.email.add_header(header_obj.name, header_obj.value.encoded)
 
 class Email(object):
 	def __init__(self, email_obj, parent_email_obj = None):
