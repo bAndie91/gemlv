@@ -1,14 +1,72 @@
 #!/usr/bin/env python2
 
+from __future__ import absolute_import
 import email
 from gemlv.constants import *
 import gemlv.profiler
-from contenttypestring import ContentTypeString
-from pythonutils import ItemIterator
+from gemlv.contenttypestring import ContentTypeString
+from gemlv.pythonutils import ItemIterator
+import re
+import gemlv.mime as mime
 
 
 class PayloadTypeError(Exception):
 	pass
+
+class MimeEncoded(str):
+	"indicates that this string is a MIME-encoded string"
+	pass
+
+class MimeDecoded(str):
+	"indicates that this string is NOT a MIME-encoded string, but a user-consumable"
+	pass
+
+class Header(object):
+	def __init__(self, name, value=None, eml=None):
+		assert value is None or isinstance(value, (MimeDecoded, MimeEncoded))
+		
+		self.name = re.sub(r'\b(.)', lambda m: m.group(1).upper(), name.lower())
+		if isinstance(value, MimeDecoded):
+			self.decoded_value = value
+			self.encoded_value =
+		else:
+			self.encoded_value = value
+			self.decoded_value = mime.decode_header(value, eml=eml, unfold=False)
+	
+	@property
+	def decoded(self):
+		return self.decoded_value
+	
+	@property
+	def encoded(self):
+		return self.encoded_value
+
+class HeaderAccessor(object):
+	def __init__(self, email_obj):
+		self.email = email_obj
+	
+class SingularHeaderAccessor(HeaderAccessor):
+	def __getitem__(self, headername):
+		encoded_value = self.email.get(headername, None)
+		if encoded_value is None:
+			raise KeyError
+		return Header(headername, MimeEncoded(encoded_value), self.email)
+	
+	def __setitem__(self, headername, decoded_value):
+		
+
+class PluralHeaderAccessor(HeaderAccessor):
+	def __getitem__(self, headername):
+		return [Header(headername, MimeEncoded(encoded_value), self.email) for encoded_value in self.email.get_all(headername, [])]
+	
+	def __delitem__(self, headername):
+		self.email.__delitem__(headername)
+	
+	def __setitem__(self, headername, decoded_value):
+		
+	
+	def append(self, header_obj):
+		self.email.add_header()
 
 class Email(object):
 	def __init__(self, email_obj, parent_email_obj = None):
@@ -17,33 +75,22 @@ class Email(object):
 		self.origin_path = None
 		self._size_approx = None
 	
-	def __getitem__(self, itemname):
-		return self.email.__getitem__(itemname)
-	
-	def __setitem__(self, itemname, item):
-		return self.email.__setitem__(itemname, item)
-	
-	def __delitem__(self, itemname):
-		return self.email.__delitem__(itemname)
-	
-	def get_all(self, *args, **kwargs):
-		return self.email.get_all(*args, **kwargs)
+	@property
+	def header(self):
+		return SingularHeaderAccessor(self)
 	
 	@property
-	def _headers(self):
-		return self.email._headers
+	def headers(self):
+		return PluralHeaderAccessor(self)
 	
-	def items(self):
-		return self.email.items()
-	
-	def keys(self):
-		return self.email.keys()
-	
-	def values(self):
-		return self.email.values()
 	
 	def as_string(self):
 		return self.email.as_string()
+	
+	def as_stream(self):
+		from email.generator import Generator
+		# TODO
+		raise NotImplementedError()
 	
 	@property
 	def _payload(self):
@@ -79,11 +126,6 @@ class Email(object):
 	
 	def is_multipart(self):
 		return self.email.is_multipart()
-	
-	def as_stream(self):
-		from email.generator import Generator
-		# TODO
-		raise NotImplementedError()
 	
 	def get_charset(self):
 		return self.email.get_charset()
@@ -170,12 +212,6 @@ class Email(object):
 		if not isinstance(part, self.__class__):
 			part = self.__class__(part, self)
 		self.email._payload = [part] + self.email._payload
-	
-	def add_header(self, *args, **kwargs):
-		return self.email.add_header(*args, **kwargs)
-		
-	def replace_header(self, *args, **kwargs):
-		return self.email.replace_header(*args, **kwargs)
 
 
 class MultipartPayload(list):

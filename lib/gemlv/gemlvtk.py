@@ -2,6 +2,7 @@
 
 import gtk
 import glib
+from gemlv.constants import *
 
 class Window(gtk.Window):
 	def set_icon_name(self, name):

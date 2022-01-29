@@ -1,12 +1,16 @@
 #!/usr/bin/env python2
 
 from __future__ import absolute_import
-import re
 import email
+import re
 import pwd
 import os
 from gemlv.constants import *
 from gemlv.sysutils import warnx
+from gemlv.email import MimeDecoded
+from gemlv.email import MimeEncoded
+import gemlv.mime as mime
+
 
 def fix_unquoted_comma(s):
 	"""Many MUA do not enclose real names which contain comma, in double quotes.
@@ -27,19 +31,8 @@ def getaddresses(array):
 def getaddresslines(array, eml=None):
 	return map(lambda t: AddressLine(t, eml=eml), getaddresses(array))
 
-def headercase(s):
-	return re.sub(r'\b(.)', lambda x: x.group(1).upper(), s.lower())
-
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
-
-class MimeEncoded(str):
-	"indicates that this string is a MIME-encoded string"
-	pass
-
-class MimeDecoded(str):
-	"indicates that this string is NOT a MIME-encoded string"
-	pass
 
 class AddressLine(object):
 	"""
@@ -59,7 +52,7 @@ class AddressLine(object):
 			if isinstance(p, MimeDecoded):
 				self.realname = realname_raw
 			else:
-				self.realname = decode_mime_header(realname_raw, eml=eml)
+				self.realname = mime.decode_header(realname_raw, eml=eml)
 		self.addressline = email.utils.formataddr((self.realname, self.email))
 		# always put email address in angle brackets,
 		# even if there is not realname part:
@@ -78,41 +71,6 @@ def decode_mimetext(s):
 		plain_str = ' '.join([s.decode(encoding or 'ascii', 'replace') for s, encoding in email.Header.decode_header(s)])
 		return plain_str
 	return s
-
-def decode_mime_header(s, eml=None, unfold=True):
-	"""
-	Parameters
-	
-		eml: optional email object; if the charset can not be
-		  detected, look up headers in this email to guess what would be
-		  the correct charset before fall back to UTF-8
-	"""
-	chunks = []
-	if unfold:
-		# unfold possibly folded header
-		s = re.sub('\r?\n\s*', ' ', s)
-	for chars, encoding in email.Header.decode_header(s):
-		if encoding is None:
-			# encoding is not specified in this header
-			# first try to decode in UTF-8
-			# then guess by other available encodings in the email
-			# lastly fall back to UTF-8 but mask unrecognizable chars
-			encodings = ['utf-8']
-			if eml:
-				for _depth, _index, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
-					if m:
-						encodings.append(m.group(1))
-			for encoding in encodings:
-				try:
-					chars.decode(encoding, 'strict')
-					break
-				except UnicodeDecodeError:
-					encoding = None
-			if encoding is None:
-				encoding = 'utf-8'
-		chunks.append(chars.decode(encoding, 'replace'))
-	return ' '.join(chunks)
 
 def walk_multipart(eml, leaf_only=False, depth=0, index=0):
 	if not leaf_only or not eml.is_multipart():

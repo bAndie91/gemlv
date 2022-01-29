@@ -76,10 +76,9 @@ except ImportError:
 from gemlv.utils import headercase
 from gemlv.utils import AddressLine
 from gemlv.utils import decode_mimetext
-from gemlv.utils import decode_mime_header
 from gemlv.utils import walk_multipart
-from gemlv.utils import MimeDecoded
-from gemlv.utils import MimeEncoded
+from gemlv.email import MimeDecoded
+from gemlv.email import MimeEncoded
 from gemlv.textutils import list2text
 from gemlv.textutils import human_size
 import gemlv.addressbook
@@ -98,6 +97,7 @@ from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
+import gemlv.mime as mime
 
 
 ### helper classes, functions ###
@@ -1018,10 +1018,10 @@ def resize_panel_view_header(wdg, rect=None):
 def get_one_header_main(hname):
 	hval = Email[hname]
 	if hval is None: return None
-	return decode_mime_header(hval, eml=Email)
+	return mime.decode_header(hval, eml=Email)
 
 def get_all_headers_main(hname):
-	return map(lambda hdr: decode_mime_header(hdr, eml=Email), Email.get_all(hname) or [])
+	return map(lambda hdr: mime.decode_header(hdr, eml=Email), Email.get_all(hname) or [])
 
 def get_all_headers_main_mimeencoded(hname):
 	return (Email.get_all(hname) or [])
@@ -1145,7 +1145,7 @@ def get_headers_markup(eml):
 	for hname in hdrs:
 		hvals_mu = []
 		for hval_mimeencoded in eml.get_all(hname) or []:
-			hval = decode_mime_header(hval_mimeencoded, eml=eml)
+			hval = mime.decode_header(hval_mimeencoded, eml=eml)
 			if hname != 'From' and hname in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
 				addr = AddressLine(hval_mimeencoded, eml=eml).email
@@ -2632,7 +2632,7 @@ def show_view_headers(show=True):
 		panel_view_header.set_line_wrap(False)
 		s = ''
 		for hname, hval_mimeencoded in Email._headers:
-			hval = decode_mime_header(hval_mimeencoded, eml=Email, unfold=False)
+			hval = mime.decode_header(hval_mimeencoded, eml=Email, unfold=False)
 			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
 		panel_view_header.set_markup(s)
 	else:
@@ -3242,7 +3242,7 @@ def make_protected_headers_part(eml):
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
 		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part.append_encoded_payload('%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable')))
+			protected_headers_part.append_encoded_payload('%s: %s\n' % (hname, mime.decode_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable')))
 	return protected_headers_part
 
 def build_newemail_to_send():
@@ -4824,7 +4824,7 @@ if cliArgs.compose:
 		supersedes = []
 		for hname, hval_mimeencoded in edit_eml._headers:
 			hname = headercase(hname)
-			hval = decode_mime_header(hval_mimeencoded, eml=edit_eml)
+			hval = mime.decode_header(hval_mimeencoded, eml=edit_eml)
 			if hname == HDR_MID:
 				supersedes.append(hval)
 			elif hname == 'Subject':
