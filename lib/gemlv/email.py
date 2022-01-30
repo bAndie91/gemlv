@@ -14,11 +14,17 @@ from gemlv.textutils import unquote_header_parameter
 class PayloadTypeError(Exception):
 	pass
 
-class MimeEncoded(str):
+class MimeCoded(str)
+	def __init__(self, i):
+		# None becomes '' here
+		if i is None: i = ''
+		super(self.__class__, self).__init__(i)
+
+class MimeEncoded(MimeCoded):
 	"indicates that this string is a MIME-encoded string"
 	pass
 
-class MimeDecoded(str):
+class MimeDecoded(MimeCoded):
 	"indicates that this string is NOT a MIME-encoded string, but a user-consumable"
 	pass
 
@@ -28,6 +34,22 @@ class Header(object):
 		self._eml = eml
 		self.value = HeaderValue(value, header=self)
 		self.param = HeaderParameterAccessor(header=self)
+	
+	@property
+	def decoded(self):
+		return self.value.decoded
+	
+	@property
+	def encoded(self):
+		return self.value.encoded
+	
+	@decoded.setter
+	def decoded(self, new):
+		self.value.decoded = new
+	
+	@encoded.setter
+	def encoded(self, new):
+		self.value.encoded = new
 
 class HeaderValue(object):
 	def __init__(self, value, header_obj)
@@ -51,19 +73,15 @@ class HeaderValue(object):
 	
 	@property
 	def decoded(self):
-		if self._decoded is None:
-			if self._encoded is None:
-				return ''
+		if self._decoded is None and self._encoded is not None:
 			self._decoded = mime.decode_header(self._encoded, eml=self._header._eml, unfold=False)
-		return self._decoded
+		return MimeDecoded(self._decoded)
 	
 	@property
 	def encoded(self):
-		if self._encoded is None:
-			if self._decoded is None:
-				return ''
+		if self._encoded is None and self._decoded is not None:
 			self._encoded = mime.encode_header(self._decoded, header_name=self._header.name, maxlinelen=email.Header.MAXLINELEN)
-		return self._encoded
+		return MimeEncoded(self._encoded)
 	
 	@decoded.setter
 	def decoded(self, new):

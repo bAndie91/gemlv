@@ -611,7 +611,7 @@ def load_parts(eml, model, parent):
 	if PartSecondary is None and eml.content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
 	if eml.content_type == 'multipart/encrypted':
-		crypto_protocol = eml.header[HDR_CT].param['protocol']
+		crypto_protocol = eml.header[HDR_CT].param['protocol'].decoded
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
 			pgp_metadata_part = eml.get_payload()[0]
@@ -827,11 +827,11 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				gpg_signature_info = gpg_info['stderr']
 				break
 			if parent_part.content_type == 'multipart/signed':
-				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
+				sign_protocol = parent_part.header[HDR_CT].parameter['protocol'].decoded
 				if parent_level == 1 and eml.content_type == sign_protocol:
 					# This part is the signature itself. Skip signature verification.
 					continue
-				if sign_protocol is not None:
+				if sign_protocol:
 					for sibling_part in parent_part.get_payload():
 						if sibling_part.content_type == sign_protocol:
 							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
@@ -857,8 +857,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
 	
-	if eml['Content-Location']:
-		uri = urllib2.unquote(eml['Content-Location'])
+	if eml.header['Content-Location'].decoded:
+		uri = urllib2.unquote(eml.header['Content-Location'].decoded)
 		uri_esc = glib.markup_escape_text(uri)
 		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
 		lbl_content_location.show()
@@ -890,8 +890,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
 				filename = decode_mimetext(eml.get_filename())
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
-				content_description = eml['Content-Description']
-				if content_description is not None:
+				content_description = eml.header['Content-Description'].decoded
+				if content_description:
 					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
 				label += '\n' + _("Size: %s") % (human_size(eml.size_decoded_approx),)
 				lbl_right.set_markup(label)
@@ -1006,9 +1006,9 @@ def resize_panel_view_header(wdg, rect=None):
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
 def get_one_header_main(hname):
-	hval = Email[hname]
-	if hval is None: return None
-	return mime.decode_header(hval, eml=Email)
+	hval = Email.header[hname].decoded
+	if hval == '': return None  # TODO: revise where is it relied upon
+	return hval
 
 def get_all_headers_main(hname):
 	return map(lambda hdr: mime.decode_header(hdr, eml=Email), Email.get_all(hname) or [])
@@ -1105,7 +1105,7 @@ def get_listaddressline_main():
 
 def get_headers_markup(eml):
 	lns = []
-	hdrs = [
+	display_headers = [
 		"Return-Path",
 		"X-X-Sender",
 		"X-Sender",
@@ -1128,11 +1128,11 @@ def get_headers_markup(eml):
 	# if there is proper sender recorded in the email then do not show the envelope sender 
 	# (ie. "mail from" sender, conventionally recorded in Return-Path header)
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
-		if eml[h] is not None:
-			hdrs.remove('Return-Path')
+		if h in eml.headers:
+			display_headers.remove('Return-Path')
 			break
 	
-	for hname in hdrs:
+	for hname in display_headers:
 		hvals_mu = []
 		for hval_mimeencoded in eml.get_all(hname) or []:
 			hval = mime.decode_header(hval_mimeencoded, eml=eml)
@@ -2088,9 +2088,9 @@ def guess_my_addressline():
 def guess_reply_addressline():
 	if Email is None: return AddressLine('')
 	for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-		if Email[hname] is not None:
+		if hname in Email.headers:
 			break
-	return AddressLine(Email[hname], eml=Email)
+	return AddressLine(Email.header[hname].encoded, eml=Email)
 
 def add_composer_From_hidden():
 	addressline = guess_my_addressline()
@@ -2390,8 +2390,8 @@ def act_save_struct_inner(savedir, iterator):
 			for nth in range(0, Parts.iter_n_children(iterator)):
 				subiter = Parts.iter_nth_child(iterator, nth)
 				act_save_struct_inner(mysavedir, subiter)
-			moddatetime = get_header_parameter(part[HDR_CD], 'modification-date')
-			posixmode = get_header_parameter(part[HDR_CD], 'posix-mode')
+			moddatetime = part.header[HDR_CD].param['modification-date'].decoded
+			posixmode = part.header[HDR_CD].param['posix-mode'].decoded
 			try:
 				if moddatetime:
 					mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
@@ -2482,13 +2482,13 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				mimetype = MIMETYPE_EMAIL
 			else:
 				mimetype = eml.content_type
-			messageid = eml[HDR_MID]
-			if not messageid and hasattr(Email, '__getitem__'):  # why Email.__getitem__ checked here?
-				messageid = Email[HDR_MID]
+			messageid = eml.header[HDR_MID].decoded
+			if not messageid:
+				messageid = Email.header[HDR_MID].decoded
 			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
-			moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
-			posixmode = get_header_parameter(eml[HDR_CD], 'posix-mode')
+			moddatetime = eml.header[HDR_CD].param['modification-date']
+			posixmode = eml.header[HDR_CD].param['posix-mode']
 			if moddatetime:
 				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
 				futimes(fd, (-1, mod_timestamp))
@@ -3128,7 +3128,7 @@ def build_newemail(with_attachment_data=True):
 	result_eml = make_new_blank_email()
 	
 	for hname, _hval in iterate_composer_headers():
-		del result_eml[hname]
+		del result_eml.headers[hname]
 	
 	for hname, hval in iterate_composer_headers():
 		result_eml.headers.append(Header(hname, MimeDecoded(hval)))
@@ -3166,7 +3166,7 @@ def make_thin_mime_part(eml):
 	thin_eml = gemlv.email.Email(MIMEBase(eml.content_type.main, eml.content_type.sub))
 	# remove default core headers, all core and custom headers will be copied later.
 	for header_name in thin_eml.keys():
-		del thin_eml[header_name]
+		del thin_eml.headers[header_name]
 	# copy all headers from the original email.
 	for header_name, header_value in eml._headers:
 		# TODO: call make_header or similar to format header rfc-compilant
@@ -3175,7 +3175,7 @@ def make_thin_mime_part(eml):
 	thin_eml.preamble = eml.preamble
 	thin_eml.epilogue = eml.epilogue
 	if hasattr(eml, 'origin_path'):
-		thin_eml['Content-Location'] = 'file://' + urllib2.quote(eml.origin_path.encode('utf-8'))
+		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(eml.origin_path.encode('utf-8'))
 	# intentionally skip payload.
 	return thin_eml
 
