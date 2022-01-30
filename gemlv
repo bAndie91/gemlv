@@ -549,7 +549,7 @@ def load_file(filename):
 			break
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
-	if Email.header.get(HDR_DNT, '').value.decoded.strip():
+	if Email.header[HDR_DNT].decoded.strip():
 		if get_xattr(filename, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
 	if truish(get_xattr(filename, XATTR_MDNSENT)):
@@ -561,7 +561,7 @@ def load_file(filename):
 	
 	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
-	if Email.header.get('List-Unsubscribe', '').value.decoded.strip():
+	if Email.header['List-Unsubscribe'].decoded.strip():
 		menubutton_unsubscribe.show()
 	
 	panel_view_header.set_markup(get_headers_markup(Email))
@@ -827,7 +827,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				gpg_signature_info = gpg_info['stderr']
 				break
 			if parent_part.content_type == 'multipart/signed':
-				sign_protocol = parent_part.header[HDR_CT].parameter['protocol'].decoded
+				sign_protocol = parent_part.header[HDR_CT].param['protocol'].decoded
 				if parent_level == 1 and eml.content_type == sign_protocol:
 					# This part is the signature itself. Skip signature verification.
 					continue
@@ -892,7 +892,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
 				content_description = eml.header['Content-Description'].decoded
 				if content_description:
-					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
+					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
 				label += '\n' + _("Size: %s") % (human_size(eml.size_decoded_approx),)
 				lbl_right.set_markup(label)
 				
@@ -2487,8 +2487,8 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				messageid = Email.header[HDR_MID].decoded
 			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
-			moddatetime = eml.header[HDR_CD].param['modification-date']
-			posixmode = eml.header[HDR_CD].param['posix-mode']
+			moddatetime = eml.header[HDR_CD].param['modification-date'].decoded
+			posixmode = eml.header[HDR_CD].param['posix-mode'].decoded
 			if moddatetime:
 				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
 				futimes(fd, (-1, mod_timestamp))
@@ -3208,7 +3208,7 @@ def build_newemail_to_send():
 	# crypto-sign
 	if toggle_sign.get_active():
 		signed_email = gemlv.email.Email(MIMEMultipart(NewEmail.content_type.sub))
-		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
+		signed_email.header[HDR_CT].param['protected-headers'].decoded = 'v1'
 		signature_part = gemlv.email.Email(MIMEBase('application', 'pgp-signature'))
 		
 		# make a MIME part containing the email's headers as a mean to sign headers as well.
@@ -3225,7 +3225,7 @@ def build_newemail_to_send():
 		email_to_send.set_payload([])
 		# change the root MIME email type to indicate that it is (including) a signed email.
 		email_to_send.set_type('multipart/signed')
-		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-signature'
 		
 		# produce signature
 		signed_email = email.message_from_string(signed_email.as_string())
@@ -3254,7 +3254,7 @@ def build_newemail_to_send():
 		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
 		email_to_send.set_payload([])
 		email_to_send.set_type('multipart/encrypted')
-		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-encrypted')
+		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-encrypted'
 		email_to_send.attach(crypt_meta_part)
 		email_to_send.attach(crypt_email)
 		for hname in HeadersObfuscate:
@@ -3289,7 +3289,6 @@ def gpg_encrypt_email(eml):
 	return crypt.data
 
 def add_autocrypt_headers(eml):
-	hname = 'Autocrypt'
 	try:
 		author_email_address = find_signature_author_address(eml)
 	except GnuPGSignError:
@@ -3301,8 +3300,7 @@ def add_autocrypt_headers(eml):
 		pass
 	if keydata:
 		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
-		del eml[hname]
-		eml[hname] = hvalue
+		eml.header['Autocrypt'].decoded = hvalue
 
 def find_signature_author_address(email_root):
 	"""
@@ -3721,7 +3719,7 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 			parent_iter = Attachments.iter_parent(parent_iter)
 	
 	ct_main, ct_sub = mime.split('/')
-	part.add_header(HDR_CD, 'attachment', filename=basename, **content_disposition_params)
+	part.header[HDR_CD].params.decoded = [('attachment', ''), ('filename', basename)] + content_disposition_params.items()
 	parent_part.attach(part)
 	set_unsaved()
 	

@@ -3,6 +3,11 @@
 from __future__ import absolute_import
 import email
 import re
+from gemlv.utils import walk_multipart
+from gemlv.textutils import unquote_header_parameter
+from gemlv.constants import *
+from gemlv.email import Email
+
 
 def decode_header(s, eml=None, unfold=True):
 	"""
@@ -24,10 +29,13 @@ def decode_header(s, eml=None, unfold=True):
 			# lastly fall back to UTF-8 but mask unrecognizable chars
 			encodings = ['utf-8']
 			if eml:
+				assert isinstance(eml, Email)
 				for _depth, _index, part in walk_multipart(eml):
-					m = re.search('\\bcharset=([a-z0-9_-]+)', part[HDR_CT] or '', re.I)
-					if m:
-						encodings.append(m.group(1))
+					# do not call .decoded here because it will call us thus infinite recursion; 
+					# and hope charset is not really MIME-encoded away
+					charset = part.header[HDR_CT].param['charset'].encoded
+					if charset: encodings.append(charset)
+					# TODO: search charset definitions in MIME-encoded texts in each individual header
 			for encoding in encodings:
 				try:
 					chars.decode(encoding, 'strict')
