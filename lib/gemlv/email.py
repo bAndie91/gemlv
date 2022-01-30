@@ -8,6 +8,7 @@ from gemlv.contenttypestring import ContentTypeString
 from gemlv.pythonutils import ItemIterator
 import re
 import gemlv.mime as mime
+from gemlv.textutils import unquote_header_parameter
 
 
 class PayloadTypeError(Exception):
@@ -63,6 +64,16 @@ class HeaderValue(object):
 				return ''
 			self._encoded = mime.encode_header(self._decoded, header_name=self._header.name, maxlinelen=email.Header.MAXLINELEN)
 		return self._encoded
+	
+	@decoded.setter
+	def decoded(self, new):
+		# TODO
+		raise NotImplementedError()
+	
+	@encoded.setter
+	def encoded(self, new):
+		# TODO
+		raise NotImplementedError()
 
 class HeaderParameterAccessor(object):
 	RE_HEADERPARAM = r'\b(%s)\b(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
@@ -84,10 +95,12 @@ class HeaderParameterAccessor(object):
 		self._header._eml.set_param(pname, pvalue, header=self._header.name, requote=False)
 		self._header.value._reinit()
 	
-	def __contains__(self, pname):
+	def all(self):
 		header = self._header
-		parameters = header._eml.get_params(header=header.name, failobj=[])
-		parameter_names = [p.lower() for p in dict(parameters).keys()]
+		return [(pname, MimeEncoded(unquote_header_parameter(pval)) for pname, pval in header._eml.get_params(header=header.name, failobj=[], unquote=False)]
+	
+	def __contains__(self, pname):
+		parameter_names = [p.lower() for p in dict(self.all).keys()]
 		return pname.lower() in parameter_names
 
 class HeaderAccessor(object):
@@ -197,12 +210,6 @@ class Email(object):
 	
 	def set_type(self, *args, **kwargs):
 		return self.email.set_type(*args, **kwargs)
-	
-	def get_params(self, *args, **kwargs):
-		return self.email.get_params(*args, **kwargs)
-	
-	def set_param(self, *args, **kwargs):
-		return self.email.set_param(*args, **kwargs)
 	
 	@property
 	def preamble(self):
