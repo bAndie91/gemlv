@@ -86,12 +86,12 @@ class HeaderValue(object):
 	@decoded.setter
 	def decoded(self, new):
 		# TODO
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	@encoded.setter
 	def encoded(self, new):
 		# TODO
-		raise NotImplementedError()
+		raise NotImplementedError
 
 class HeaderParameterAccessor(object):
 	RE_HEADERPARAM = r'\b(%s)\b(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
@@ -130,9 +130,17 @@ class SingularHeaderAccessor(HeaderAccessor):
 		encoded_value = self.email.get(headername, '')
 		return Header(headername, MimeEncoded(encoded_value), self.email)
 	
-	def __setitem__(self, headername, decoded_value):
-		# TODO
-		raise NotImplementedError()
+	def __setitem__(self, headername, value):
+		assert isinstance(value, (MimeEncoded, MimeDecoded, HeaderValue))
+		self.email.__delitem__(headername)
+		if isinstance(value, (MimeEncoded, MimeDecoded)):
+			newheader = Header(headername, value, eml=self.email)
+		elif isinstance(value, HeaderValue):
+			newheader = Header(headername, None, eml=self.email)
+			newheader.value = value
+		else:
+			raise NotImplementedError
+		self.email.add_header(newheader.name, newheader.value.encoded)
 
 class PluralHeaderAccessor(HeaderAccessor):
 	def __getitem__(self, headername):
@@ -143,12 +151,13 @@ class PluralHeaderAccessor(HeaderAccessor):
 	
 	def __setitem__(self, headername, decoded_value):
 		# TODO
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	def __contains__(self, headername):
 		return self.email.__contains__(headername)
 	
 	def append(self, header_obj):
+		assert isinstance(header_obj, Header)
 		self.email.add_header(header_obj.name, header_obj.value.encoded)
 
 class Email(object):
@@ -173,7 +182,7 @@ class Email(object):
 	def as_stream(self):
 		from email.generator import Generator
 		# TODO
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	@property
 	def _payload(self):
@@ -319,13 +328,13 @@ class MultipartPayload(list):
 		return item
 	
 	def __getslice__(self, *_p):
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	def __delslice__(self, *_p):
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	def __setslice__(self, *_p):
-		raise NotImplementedError()
+		raise NotImplementedError
 	
 	def __iter__(self):
 		return ItemIterator(self)

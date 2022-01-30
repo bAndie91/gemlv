@@ -3183,9 +3183,10 @@ def make_protected_headers_part(eml):
 	protected_headers_part = gemlv.email.Email(MIMEText(''))
 	protected_headers_part.set_type(MIMETYPE_HEADERS)
 	protected_headers_part.set_charset('UTF-8')
-	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
-	protected_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
-	protected_headers_part.replace_header(HDR_CTE, 'quoted-printable')
+	protected_headers_part.header[HDR_CT].param['protected-headers'].decoded = 'v1'
+	protected_headers_part.header[HDR_CD].decoded = 'inline'
+	protected_headers_part.header[HDR_CD].param['filename'].decoded = 'rfc822-headers.txt'
+	protected_headers_part.header[HDR_CTE] = MimeDecoded('quoted-printable')
 	for hname, hvalue_mimeencoded in eml._headers:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
