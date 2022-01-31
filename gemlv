@@ -3706,6 +3706,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	return True
 
 def attach__internal(parent_iter=None, content_disposition_params={}, basename=None, part=None, mime=None):
+	assert 'attachment' not in content_disposition_params
+	assert 'filename' not in content_disposition_params
 	
 	# find that multipart MIME part which is closest to parent_iter
 	while True:
@@ -4014,7 +4016,7 @@ def drag_part_end(wdg, context):
 def act_dispos_notif():
 	if open_composer(reason=COMPOSE_MDN):
 		NewEmail.set_type('multipart/report')
-		NewEmail.set_param('report-type', 'disposition-notification', header=HDR_CT)
+		NewEmail.header[HDR_CT].param['report-type'].decoded = 'disposition-notification'
 		
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
@@ -4054,10 +4056,10 @@ def act_dispos_notif():
 		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
 		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_address}]
-		if Email[HDR_OR]:
+		if Email.header[HDR_OR].nonempty:
 			origrcpt = get_one_header_main(HDR_OR)
 			dn_fields += ['%(fieldname)s: RFC822;%(recipient)s' % {'fieldname': HDR_OR, 'recipient': origrcpt}]
-		if Email[HDR_MID]:
+		if Email.header[HDR_MID].nonempty:
 			messageid = get_one_header_main(HDR_MID)
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
 		dn_part.set_payload(list2text(dn_fields))
