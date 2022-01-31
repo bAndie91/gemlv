@@ -3,10 +3,8 @@
 from __future__ import absolute_import
 import email
 import re
-from gemlv.utils import walk_multipart
 from gemlv.textutils import unquote_header_parameter
 from gemlv.constants import *
-from gemlv.email import Email
 
 
 def decode_header(s, eml=None, unfold=True):
@@ -21,6 +19,8 @@ def decode_header(s, eml=None, unfold=True):
 	if unfold:
 		# unfold possibly folded header
 		s = re.sub('\r?\n\s*', ' ', s)
+	# TODO: decode header parameters too?
+	# it does not decodes MIME-encoded strings which immediately followed by semicolon
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			# encoding is not specified in this header
@@ -29,8 +29,7 @@ def decode_header(s, eml=None, unfold=True):
 			# lastly fall back to UTF-8 but mask unrecognizable chars
 			encodings = ['utf-8']
 			if eml:
-				assert isinstance(eml, Email)
-				for _depth, _index, part in walk_multipart(eml):
+				for _depth, _index, part in eml.iterate_parts_recursively():
 					# do not call .decoded here because it will call us thus infinite recursion; 
 					# and hope charset is not really MIME-encoded away
 					charset = part.header[HDR_CT].param['charset'].encoded

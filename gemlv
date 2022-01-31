@@ -77,8 +77,8 @@ from gemlv.utils import headercase
 from gemlv.utils import AddressLine
 from gemlv.utils import decode_mimetext
 from gemlv.utils import walk_multipart
-from gemlv.email import MimeDecoded
-from gemlv.email import MimeEncoded
+from gemlv.mimetext import MimeDecoded
+from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
 from gemlv.textutils import human_size
 import gemlv.addressbook
@@ -549,7 +549,7 @@ def load_file(filename):
 			break
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
-	if Email.header[HDR_DNT].decoded.strip():
+	if Email.header[HDR_DNT].nonempty:
 		if get_xattr(filename, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
 	if truish(get_xattr(filename, XATTR_MDNSENT)):
@@ -561,7 +561,7 @@ def load_file(filename):
 	
 	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
-	if Email.header['List-Unsubscribe'].decoded.strip():
+	if Email.header['List-Unsubscribe'].nonempty:
 		menubutton_unsubscribe.show()
 	
 	panel_view_header.set_markup(get_headers_markup(Email))
@@ -857,7 +857,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
 	
-	if eml.header['Content-Location'].decoded:
+	if eml.header['Content-Location'].nonempty:
 		uri = urllib2.unquote(eml.header['Content-Location'].decoded)
 		uri_esc = glib.markup_escape_text(uri)
 		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
@@ -3886,12 +3886,7 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	assert colnum == COL_ATTACHMENTS_LABEL_MARKUP
 	eml = Attachments[iterator][COL_ATTACHMENTS_EML]
-	header_params = {}
-	if eml[HDR_CD]:
-		header_params = dict(eml.get_params(header=HDR_CD))
-		eml._headers.remove((HDR_CD, eml[HDR_CD]))
-	header_params['filename'] = new_text
-	eml.add_header(HDR_CD, 'attachment', **header_params)
+	eml.header[HDR_CD].param['filename'].decoded = new_text
 	Attachments[iterator][colnum] = glib.markup_escape_text(new_text)
 	return True
 

@@ -7,8 +7,8 @@ import pwd
 import os
 from gemlv.constants import *
 from gemlv.sysutils import warnx
-from gemlv.email import MimeDecoded
-from gemlv.email import MimeEncoded
+from gemlv.mimetext import MimeDecoded
+from gemlv.mimetext import MimeEncoded
 import gemlv.mime as mime
 
 
@@ -72,15 +72,3 @@ def decode_mimetext(s):
 		plain_str = ' '.join([s.decode(encoding or 'ascii', 'replace') for s, encoding in email.Header.decode_header(s)])
 		return plain_str
 	return s
-
-def walk_multipart(eml, leaf_only=False, depth=0, index=0):
-	if not leaf_only or not eml.is_multipart():
-		yield (depth, index, eml)
-	subindex = 0
-	for part in eml.parts:
-		for x in walk_multipart(part, leaf_only, depth+1, subindex): yield x  # replace with "yield from"
-		subindex += 1
-
-def debug_multipart(eml):
-	for depth, _index, part in walk_multipart(eml):
-		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))

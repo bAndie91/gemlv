@@ -8,31 +8,14 @@ from gemlv.contenttypestring import ContentTypeString
 from gemlv.pythonutils import ItemIterator
 import re
 import gemlv.mime as mime
+from gemlv.mimetext import MimeEncoded
+from gemlv.mimetext import MimeDecoded
 from gemlv.textutils import unquote_header_parameter
 
 
 class PayloadTypeError(Exception):
 	pass
 
-class MimeCoded(str):
-	def __init__(self, x):
-		# None becomes '' here
-		if x is None: x = ''
-		super(str, self).__init__(x)
-
-class MimeEncoded(MimeCoded):
-	"indicates that this string is a MIME-encoded string"
-	def __init__(self, x):
-		if isinstance(x, MimeDecoded):
-			raise TypeError
-		super(self.__class__, self).__init__(x)
-
-class MimeDecoded(MimeCoded):
-	"indicates that this string is NOT a MIME-encoded string, but a user-consumable"
-	def __init__(self, x):
-		if isinstance(x, MimeEncoded):
-			raise TypeError
-		super(self.__class__, self).__init__(x)
 
 class Header(object):
 	def __init__(self, name, value=None, email=None):
@@ -44,6 +27,10 @@ class Header(object):
 		self.params = HeaderParameterPluralAccessor(self)
 	
 	@property
+	def nonempty(self):
+		return bool(self.value.decoded)
+	
+	@property
 	def value(self):
 		return self._value
 	
@@ -51,6 +38,8 @@ class Header(object):
 	def value(self, new):
 		self._value = new
 		self._value._header = self
+	
+	# shortcut methods:
 	
 	@property
 	def decoded(self):
@@ -68,26 +57,40 @@ class Header(object):
 	def encoded(self, new):
 		self.value.encoded = new
 
-class HeaderValue(object):
-	def __init__(self, value, header_obj):
-		assert isinstance(value, (MimeDecoded, MimeEncoded, None.__class__))
+class MimeTextValue(object):
+	"""
+	MimeTextValue represents arbitrary string both in user-consumable form and in MIME-encoded form.
+	When value is set by either .encoded or .decoded attribute, it calls update_func(old_value, new_value)
+	to let the new encoded value known by other parts of the code.
+	You may set update_func to a method which updates an email's headers.
+	
+	Attributes
+	
+		decoded
 		
+		returns the decoded, user-consumable string.
+		if a "=?..." sequence in the encoded form can not be decoded, returns it as-is.
+		
+		encoded
+		
+		returns the raw string, MIME-encoded if needed (ie. start with "=?").
+	"""
+	
+	def __init__(self, value, header_obj, update_func):
+		assert isinstance(value, (MimeDecoded, MimeEncoded, None.__class__))
 		self._encoded = None
 		self._decoded = None
 		self._header = header_obj
 		self._hl_email = self._header._hl_email
 		self._ll_email = self._hl_email._ll_email
+		# update_func is called when the value is to be changed and
+		# its responsibility to propagate changes up to the low level email object
+		self._update_func = update_func
 		
 		if isinstance(value, MimeEncoded):
 			self._encoded = value
 		else:
 			self._decoded = value
-	
-	def _reinit(self):
-		new_encoded_value = self._ll_email[self._header.name]
-		if new_encoded_value is None: value = None
-		else: value = MimeEncoded(new_encoded_value)
-		self.__init__(value, self._header)
 	
 	@property
 	def decoded(self):
@@ -100,7 +103,7 @@ class HeaderValue(object):
 		old_encoded = self.encoded
 		self._decoded = new
 		self._encoded = None
-		self._set_header_value_on_email(old_encoded, self.encoded)
+		self._update_func(old_encoded, self.encoded)
 	
 	@property
 	def encoded(self):
@@ -110,9 +113,17 @@ class HeaderValue(object):
 	
 	@encoded.setter
 	def encoded(self, new):
-		self._set_header_value_on_email(self._encoded, new)
+		self._update_func(self._encoded, MimeEncoded(new))
 		self._decoded = None
 		self._encoded = new
+
+class HeaderValue(MimeTextValue):
+	def __init__(self, value, header_obj):
+		super(self.__class__, self).__init__(value, header_obj, self._update_func)
+	
+	def _update_func(self, old, new):
+		assert isinstance(new, MimeEncoded)
+		self._set_header_value_on_email(old, new)
 	
 	def _set_header_value_on_email(self, old, new):
 		if self._ll_email.__contains__(self._header.name):
@@ -138,13 +149,7 @@ class HeaderParameterAccessor(object):
 	def __getitem__(self, pname):
 		pvalue_uq = self._ll_email.get_param(pname, header=self._header.name, failobj='', unquote=False)
 		pvalue = unquote_header_parameter(pvalue_uq)
-		return HeaderValue(MimeEncoded(pvalue), self._header)
-		# FIXME: if user calls .param[xy].decoded='...' then it changes the whole header value, not just the parameter's.
-	
-	def __setitem__(self, pname, pvalue):
-		assert isinstance(pvalue, MimeEncoded)
-		self._ll_email.set_param(pname, pvalue, header=self._header.name, requote=False)
-		self._header.value._reinit()
+		return HeaderParameterValue(pname, MimeEncoded(pvalue), self._header)
 
 class HeaderParameterPluralAccessor(object):
 	def __init__(self, header_obj):
@@ -173,8 +178,7 @@ class HeaderParameterPluralAccessor(object):
 	@property
 	def encoded(self):
 		return [(MimeEncoded(pname), MimeEncoded(unquote_header_parameter(pval))) \
-			for pname, pval in \
-			self._ll_email.get_params(header=self._header.name, failobj=[], unquote=False)\
+			for pname, pval in self.items
 		]
 	
 	@encoded.setter
@@ -190,6 +194,51 @@ class HeaderParameterPluralAccessor(object):
 	def __contains__(self, pname):
 		parameter_names = [p.lower() for p in self.keys()]
 		return pname.lower() in parameter_names
+	
+	@property
+	def items(self):
+		# borrowed from email.message._get_params_preserve
+		_parseparam = email.message._parseparam
+		params = []
+		for p in _parseparam(';' + self._header.value.encoded):
+			try:
+				name, val = p.split('=', 1)
+				name = name.strip()
+				val = val.strip()
+			except ValueError:
+				# Must have been a bare attribute
+				name = p.strip()
+				val = ''
+			# TODO: are param names case insensitive?
+			params.append((name, val))
+		params = email.utils.decode_params(params)
+		return params
+
+class HeaderParameterValue(MimeTextValue):
+	def __init__(self, param_name, param_value, header_obj):
+		super(self.__class__, self).__init__(param_value, header_obj, self._update_func)
+		self.name = param_name.lower()
+	
+	def _update_func(self, _old, new):
+		assert isinstance(new, MimeEncoded)
+		self._set_parameter_value_in_header_value(new)
+	
+	def _set_parameter_value_in_header_value(self, new):
+		param_separator = email.message.SEMISPACE
+		_formatparam = email.message._formatparam
+		requote = False
+		
+		new_params = []
+		this_param_found = False
+		for pn, pv in self._header.params.items:
+			if pn.lower() == self.name:
+				pv = new
+				this_param_found = True
+			new_params.append(_formatparam(pn, pv, requote))
+		if not this_param_found:
+			new_params.append(_formatparam(self.name, new, requote))
+		self._header.value.encoded = param_separator.join(new_params)
+
 
 class HeaderAccessor(object):
 	def __init__(self, email_obj):
@@ -368,7 +417,19 @@ class Email(object):
 		if not isinstance(part, self.__class__):
 			part = self.__class__(part, self)
 		self._ll_email._payload = [part] + self._ll_email._payload
+	
+	def iterate_parts_recursively(self, leaf_only=False, depth=0, index=0):
+		if not leaf_only or not self.is_multipart():
+			yield (depth, index, self)
+		subindex = 0
+		for part in self.parts:
+			# replace it with "yield from":
+			for x in part.iterate_parts_recursively(leaf_only, depth+1, subindex):
+				yield x
+			subindex += 1
 
+# TODO: dont decode param values in header value !
+# TODO: unquote param values in HeaderParameterPluralAccessor.items !
 
 class MultipartPayload(list):
 	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"
