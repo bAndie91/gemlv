@@ -2249,9 +2249,9 @@ def runcmd_thread(args, input_fd, out_buffer, vb):
 	gtk.threads_leave()
 
 def get_extension_by_mime(mime):
-	if mime is None:
+	if not mime:
 		e = None
-	elif mime.startswith('multipart/'):
+	elif mime.main == 'multipart':
 		e = '.eml'
 	else:
 		e = guess_extension(mime)
@@ -2268,7 +2268,7 @@ def get_mime_by_filepath(path):
 	return ContentTypeString(t)
 
 def get_mime_by_data(data):
-	return Magic.buffer(data)
+	return ContentTypeString(Magic.buffer(data))
 
 def act_open():
 	eml = get_part_by_itpath()
@@ -3544,7 +3544,7 @@ def on_composer_attachments_row_changed(model, itpath, iterator):
 	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
-	mime = ContentTypeString(get_mime_by_data(data))
+	mime = get_mime_by_data(data)
 	basename = 'file%s' % (get_extension_by_mime(mime),)
 	
 	part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
@@ -3621,12 +3621,11 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	
 	if mime is None:
 		mime = get_mime_by_filepath(attachment_path)
-	ct_main, ct_sub = mime.split('/')
 	
 	if os.path.isdir(attachment_path) and not isalink:
 		part = gemlv.email.Email(MIMEMultipart('related'))
 	else:
-		part = gemlv.email.Email(MIMEBase(ct_main, ct_sub))
+		part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
 		part.origin_path = attachment_path
 		
 		if isalink:
@@ -3691,12 +3690,11 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 				break
 			parent_iter = Attachments.iter_parent(parent_iter)
 	
-	ct_main, ct_sub = mime.split('/')
 	part.header[HDR_CD].params.decoded = [('attachment', ''), ('filename', basename)] + content_disposition_params.items()
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), gemlvtk.get_stock_icon_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
+	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), gemlvtk.get_stock_icon_by_mime(mime.main, mime.sub), None, '', calc_attachment_checksum(part)])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
