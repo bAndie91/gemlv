@@ -27,6 +27,7 @@ HDR_MID = 'Message-ID'
 HDR_REF = 'References'
 HDR_XSD = 'X-Sent-Date'
 HDR_XQID = 'X-Queue-ID'
+HDR_SUBJ = 'Subject'
 
 MIMETYPE_OCTETSTREAM = ContentTypeString('application/octet-stream')
 MIMETYPE_EMAIL = ContentTypeString('message/rfc822')
