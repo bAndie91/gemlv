@@ -21,3 +21,9 @@ def unquote_header_parameter(s):
         if s.startswith('<') and s.endswith('>'):
             return s[1:-1]
     return s
+
+def shorturl(url, maxlength=72):
+	if len(url) > maxlength:
+		return url[0:maxlength-1] + '…'
+	else:
+		return None

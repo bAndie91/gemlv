@@ -97,3 +97,12 @@ def basenameify(s):
 	Replace ASCII slash (/) to a similar-looking multibyte char (U+2215 DIVISION SLASH)
 	"""
 	return s.replace('/', u'\u2215')
+
+def file_uri_to_path(uri):
+	if uri.startswith('file:///'):
+		return urllib2.unquote(uri[7:])
+	elif uri.startswith('file://'):
+		return urllib2.unquote(uri[6:])
+	elif uri.startswith('file:/'):
+		return urllib2.unquote(uri[5:])
+	return None

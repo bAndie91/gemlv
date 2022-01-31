@@ -81,8 +81,8 @@ from gemlv.mimetext import MimeDecoded
 from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
 from gemlv.textutils import human_size
+from gemlv.textutils import shorturl
 import gemlv.addressbook
-import gemlv.sysutils
 from gemlv.sysutils import futimes
 from gemlv.sysutils import recursive_rm
 from gemlv.sysutils import set_blocking
@@ -92,6 +92,7 @@ from gemlv.sysutils import make_relative_symlink
 from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
 from gemlv.sysutils import basenameify
+from gemlv.sysutils import file_uri_to_path
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
@@ -485,15 +486,6 @@ def main_thread_alive():
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
-def file_uri_to_path(uri):
-	if uri.startswith('file:///'):
-		return urllib2.unquote(uri[7:])
-	elif uri.startswith('file://'):
-		return urllib2.unquote(uri[6:])
-	elif uri.startswith('file:/'):
-		return urllib2.unquote(uri[5:])
-	return None
-
 
 def get_iterator_from_pos(treeview, x, y):
 	pathinfo = treeview.get_path_at_pos(x, y)
@@ -520,6 +512,7 @@ def extract_1_email_address_from_headers(headername, email_obj):
 	addresses = extract_email_addresses_from_headers(headername, email_obj)
 	if len(addresses) == 0: return None
 	else: return addresses[0]
+
 
 def email_from_file(filename):
 	try:
@@ -1943,12 +1936,12 @@ def set_composer_subject(s):
 def get_composer_subject():
 	return entry_subject.get_text()
 
-def on_edit_subject(wdg):
+def on_edit_subject(_wdg):
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), entry_subject.get_text())
 	set_unsaved()
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
 
-def on_change_message(wdg):
+def on_change_message(_wdg):
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
 	win_comp.set_data('is-auto-saved', False)
 
@@ -2094,12 +2087,12 @@ def act_compose():
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
 
 class InvalidSubjectLinePrefix(Exception):
 	pass
 
 def make_subject_line(original, pre_kind):
+	# TODO: get language-alternative subject prefixes from gettext database
 	if pre_kind == SUBJECT_PREFIX_FWD:
 		pre = _("Fwd: ")
 		alternatives = ["to:", "tov:"]  # @notranslate
@@ -2187,11 +2180,6 @@ def act_reply(compose_type):
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-def shorturl(url, maxlength=72):
-	if len(url) > maxlength:
-		return url[0:maxlength-1] + '…'
-	else:
-		return None
 
 def act_unsubscribe():
 	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
@@ -2277,7 +2265,7 @@ def get_mime_by_filepath(path):
 		t = Magic.file(os.path.realpath(path))
 		if t is None or t.find('/')<1:
 			return MIMETYPE_OCTETSTREAM
-	return t
+	return ContentTypeString(t)
 
 def get_mime_by_data(data):
 	return Magic.buffer(data)

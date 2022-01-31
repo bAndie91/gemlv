@@ -47,3 +47,5 @@ XATTR_FORWARDED = 'user.gemlv.forwarded-in'
 XATTR_QUEUEID = 'user.gemlv.sent.queue-id'
 
 ENCNAMES_UUE = ('x-uuencode', 'uuencode', 'uue', 'x-uue')
+
+SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
