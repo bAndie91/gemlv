@@ -210,7 +210,7 @@ class HeaderParameterPluralAccessor(object):
 				name = p.strip()
 				val = ''
 			# TODO: are param names case insensitive?
-			params.append((name, val))
+			params.append((name, unquote_header_parameter(val)))
 		params = email.utils.decode_params(params)
 		return params
 
@@ -428,8 +428,6 @@ class Email(object):
 				yield x
 			subindex += 1
 
-# TODO: dont decode param values in header value !
-# TODO: unquote param values in HeaderParameterPluralAccessor.items !
 
 class MultipartPayload(list):
 	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"

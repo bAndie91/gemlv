@@ -19,8 +19,8 @@ def decode_header(s, eml=None, unfold=True):
 	if unfold:
 		# unfold possibly folded header
 		s = re.sub('\r?\n\s*', ' ', s)
-	# TODO: decode header parameters too?
 	# it does not decodes MIME-encoded strings which immediately followed by semicolon
+	# TODO: decode first no-value parameter too?
 	for chars, encoding in email.Header.decode_header(s):
 		if encoding is None:
 			# encoding is not specified in this header

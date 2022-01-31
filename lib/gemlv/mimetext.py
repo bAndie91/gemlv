@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-class MimeCoded(str):
+class MimeCoded(unicode):
 	def __init__(self, x):
 		# None becomes '' here
 		if x is None: x = ''
-		super(str, self).__init__(x)
+		super(unicode, self).__init__(x)
 
 class MimeEncoded(MimeCoded):
 	"indicates that this string is a MIME-encoded string"
