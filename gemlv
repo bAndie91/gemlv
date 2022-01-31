@@ -510,16 +510,16 @@ def win_main_show(widget, event):
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
 
-def get_email_addresses_in_main_headers(h):
-	return get_email_addresses_from_headers(h, Email)
 
-def get_email_addresses_from_headers(h, email_obj):
-	return map(lambda x: x[1], gemlv.utils.getaddresses(email_obj.get_all(h) or []))
+def extract_email_addresses_from_headers(headername, email_obj):
+	return map(lambda al: al.email, \
+		gemlv.utils.getaddresslines( [header.decoded for header in \
+			email_obj.headers[headername]] ))
 
-def get_email_address_from_headers(h, email_obj):
-	l = get_email_addresses_from_headers(h, email_obj)
-	if len(l) == 0: return None
-	else: return l[0]
+def extract_1_email_address_from_headers(headername, email_obj):
+	addresses = extract_email_addresses_from_headers(headername, email_obj)
+	if len(addresses) == 0: return None
+	else: return addresses[0]
 
 def email_from_file(filename):
 	try:
@@ -543,9 +543,9 @@ def load_file(filename):
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
-		addrs = get_email_addresses_in_main_headers(h)
-		if len(addrs) > 0:
-			senderaddr = addrs[0]
+		addr = extract_1_email_address_from_headers(h, Email)
+		if addr:
+			senderaddr = addr
 			break
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
@@ -1104,7 +1104,7 @@ def get_listaddressline_main():
 	return listaddressline
 
 def get_headers_markup(eml):
-	lns = []
+	display_lines = []
 	display_headers = [
 		"Return-Path",
 		"X-X-Sender",
@@ -1124,7 +1124,7 @@ def get_headers_markup(eml):
 		"Expires",
 		"X-Spam",  # @notranslate
 	]
-	from_addresses = get_email_addresses_in_main_headers('From')
+	from_addresses = extract_email_addresses_from_headers('From', eml)
 	# if there is proper sender recorded in the email then do not show the envelope sender 
 	# (ie. "mail from" sender, conventionally recorded in Return-Path header)
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
@@ -1196,8 +1196,8 @@ def get_headers_markup(eml):
 			if hval_mu is not None and len(hval_mu):
 				hvals_mu.append(hval_mu)
 		if len(hvals_mu):
-			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(hvals_mu))
-	return '\n'.join(lns)
+			display_lines.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(hvals_mu))
+	return '\n'.join(display_lines)
 
 def get_filters_by_mime(main, sub, all=True):
 	filters = []
@@ -4047,7 +4047,7 @@ def act_dispos_notif():
 			'me': my_address or '[someone]',
 			'subject': get_one_header_main('Subject'),
 			'delivery_date': get_one_header_main('Delivery-Date') or '[somewhen]',
-			}
+		}
 		subject_text = Ltxt_subj.format(**prms)
 		message_text = list2text(textwrap.wrap(Ltxt_body.format(**prms), 79))
 		set_composer_subject(subject_text)

@@ -13,7 +13,7 @@ import gemlv.mime as mime
 
 
 def fix_unquoted_comma(s):
-	"""Many MUA do not enclose real names which contain comma, in double quotes.
+	"""Many MUA do not enclose real names which contain comma in double quotes.
 	This causes issues in splitting address lines into individual addesses.
 	Try to work around this."""
 	def repl(m):
@@ -25,11 +25,16 @@ def fix_unquoted_comma(s):
 			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
 	return re.sub('(^|,)(.+)(<)', repl, s)
 
-def getaddresses(array):
+def _getaddresses(array):
 	return filter(lambda a: a[1] != '', email.utils.getaddresses(map(fix_unquoted_comma, array)))
 
-def getaddresslines(array, eml=None):
-	return map(lambda t: AddressLine(t, eml=eml), getaddresses(array))
+def getaddresslines(array):
+	"""
+	Arguments
+	
+		array: list of MIME-decoded strings
+	"""
+	return map(lambda t: AddressLine(t), _getaddresses(array))
 
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
@@ -38,11 +43,11 @@ class AddressLine(object):
 	"""
 	EXAMPLES
 
-	al = AddressLine((realname, email))  # realname is not MIME-encoded here
+	al = AddressLine((realname, email))  # realname is NOT MIME-encoded here
 
 	al = AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))  # not recommended
 
-	al = AddressLine("John Doe <john@example.net>")  # recommended, the string is MIME-encoded here
+	al = AddressLine("John Doe <john@example.net>")  # recommended, the string has to be MIME-encoded here
 	"""
 	def __init__(self, p, eml=None):
 		assert isinstance(p, (tuple.__class__, MimeEncoded, MimeDecoded))
