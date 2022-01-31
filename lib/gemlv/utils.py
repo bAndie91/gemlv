@@ -42,23 +42,29 @@ def get_gecos_name():
 class AddressLine(object):
 	"""
 	EXAMPLES
-
-	al = AddressLine((realname, email))  # realname is NOT MIME-encoded here
-
-	al = AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))  # not recommended
-
-	al = AddressLine("John Doe <john@example.net>")  # recommended, the string has to be MIME-encoded here
+	
+	# realname has NOT to be MIME-encoded here, but MIME-decoded
+	AddressLine((realname, email))
+	
+	# NOT recommended, parseaddr may need some augmentation
+	AddressLine(email.utils.parseaddr("John Doe <john@example.net>"))
+	
+	# recommended, the string has to be MIME-encoded here
+	AddressLine("John Doe <john@example.net>")
+	
+	# you may pass MIME-decoded string this way, if you are sure it's user-consumable
+	AddressLine(MimeDecoded("Jörg <jorg@example.net>"))
 	"""
 	def __init__(self, p, eml=None):
 		assert isinstance(p, (tuple, MimeEncoded, MimeDecoded))
 		if isinstance(p, tuple):
-			self.realname, self.email = p[:]
+			self.realname, self.email = MimeDecoded(p[0]), p[1]
 		else:
 			realname_raw, self.email = email.utils.parseaddr(fix_unquoted_comma(p))
 			if isinstance(p, MimeDecoded):
 				self.realname = realname_raw
 			else:
-				self.realname = mime.decode_header(realname_raw, eml=eml)
+				self.realname = MimeDecoded(mime.decode_header(realname_raw, eml=eml))
 		self.addressline = email.utils.formataddr((self.realname, self.email))
 		# always put email address in angle brackets,
 		# even if there is not realname part:

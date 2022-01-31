@@ -682,8 +682,9 @@ def verify_gpg_signature(message, signature):
 	sgn_fh.close()
 	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
 
-def gpg_sign_data(message, author_address):
-	gpg_uid = '<%s>'%author_address
+def gpg_sign_data(message, gpg_uid):
+	assert gpg_uid[0] == '<' and gpg_uid[-1] == '>', "Need GPG UID in \"<name@example.net>\" format."
+	
 	sgn = gpg.sign(message, keyid=gpg_uid, detach=True, extra_args=['--local-user', gpg_uid])
 	if sgn.data == '':
 		raise GnuPGSignError(sgn)
@@ -748,14 +749,15 @@ def gpg_strip_all_uids(key_data, except_uid):
 	recursive_rm(tmp_gpghome)
 	return new_key_data
 
-def gpg_export_pubkey(addr):
+def gpg_export_pubkey(gpg_uid):
 	"""
 	Returns the ascii-armoured representation (without BEGIN, END marks, or header)
 	of the public key with the given email address. Removes all UIDs from the key
 	except the selected one.
 	"""
 	
-	gpg_uid = '<%s>' % addr
+	assert gpg_uid[0] == '<' and gpg_uid[-1] == '>', "Need GPG UID in \"<name@example.net>\" format."
+	
 	data = gpg.export_keys(gpg_uid, minimal=True)
 	if data == '':
 		raise GnuPGError(_("Could not find public key for %s.") % (gpg_uid,))
@@ -1116,15 +1118,14 @@ def get_headers_markup(eml):
 	
 	for hname in display_headers:
 		hvals_mu = []
-		for hval_mimeencoded in eml.get_all(hname) or []:
-			hval = mime.decode_header(hval_mimeencoded, eml=eml)
+		for hval in eml.headers[hname].decoded:
 			if hname != 'From' and hname in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
-				addr = AddressLine(hval_mimeencoded, eml=eml).email
+				addr = AddressLine(hval).email
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for al in gemlv.utils.getaddresslines([hval], eml=eml):
+				for al in gemlv.utils.getaddresslines([hval]):
 					if al.realname:
 						mu = '%s <a href=\'mailto:%s\'>%s</a>' % (
 							glib.markup_escape_text(al.realname),
@@ -1148,12 +1149,13 @@ def get_headers_markup(eml):
 					hval = email.utils.formatdate(timestamp, True)
 				hval_mu = glib.markup_escape_text(hval)
 				if timestamp is not None and timestamp < time.time():
+					wrn = None
 					if hname == 'Reply-By':
 						wrn = _("Overdue")
 					elif hname == 'Expires':
 						wrn = _("(Expired)")
-					try: hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
-					except NameError: pass
+					if wrn is not None:
+						hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
 			else:
 				hval_mu = glib.markup_escape_text(hval)
 			
@@ -1365,13 +1367,12 @@ def composer_append_to_list_header(hname, hvals, delimiter=' '):
 		reset_composer_headers(HDR_REF, headers, manual_call=False)
 
 def composer_substract_from_list_header(hname, hvals, delimiter=' '):
-	hvals = filter(lambda x: x is not None, hvals)
 	headers = get_composer_headers(hname)
 	for idx in reversed(range(len(headers))):
 		newvalue = []
 		for word in headers[idx].split(delimiter):
 			if word in hvals:
-				hvals.remove(word)
+				hvals.remove(word)  # FIXME: is it needed??
 			else:
 				newvalue.append(word)
 		headers[idx] = delimiter.join(newvalue)
@@ -2062,11 +2063,11 @@ def guess_my_addressline():
 	return AddressLine((realname, addr))
 
 def guess_reply_addressline():
-	if Email is None: return AddressLine('')
-	for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-		if hname in Email.headers:
-			break
-	return AddressLine(Email.header[hname].encoded, eml=Email)
+	if Email is not None:
+		for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
+			if hname in Email.headers:
+				return AddressLine(Email.header[hname].decoded)
+	return AddressLine('')
 
 def add_composer_From_hidden():
 	addressline = guess_my_addressline()
@@ -2128,12 +2129,12 @@ def act_reply(compose_type):
 			
 			if compose_type == COMPOSE_FORWARD_MSG:
 				email_to_forward = email.message_from_string(Email.as_string())
-				for fwd_header in email_to_forward.keys():
-					fwd_header = headercase(fwd_header)
-					if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
-						del email_to_forward[fwd_header]
+				for fwd_header in email_to_forward.headers.keys:
+					if any(fnmatch(fwd_header.lower(), sensitive_header.lower())) for sensitive_header in SensitiveHeaders):
+						del email_to_forward.headers[fwd_header]
 				part = gemlv.email.Email(MIMEMessage(email_to_forward))
-				part.add_header(HDR_CD, 'attachment', filename=fwdname)
+				part.header[HDR_CD].decoded = 'attachment'
+				part.header[HDR_CD].param['filename'].decoded = fwdname
 				NewEmail.attach(part)
 				# TODO: make the attached email's row expandable in the attachments panel,
 				# so its big attachments can be removed by the user
@@ -2182,7 +2183,7 @@ def act_reply(compose_type):
 
 
 def act_unsubscribe():
-	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
+	links = get_header_links(','.join(Email.headers['List-Unsubscribe'].encoded), schemata=['*'])
 	if len(links) == 1 and links[0]['scheme'] == 'mailto':
 		if open_composer(reason=COMPOSE_UNSUB):
 			add_composer_mailto(links[0])
@@ -2943,9 +2944,9 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	global StopSending
 	StopSending = False
 	
-	recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
-	recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
-	recipients_addr = gemlv.utils.getaddresslines(recipients_flat, eml=email_to_send)
+	recipients_deep = [email_to_send.headers[h].decoded for h in RecipientHeaders]
+	recipients_flat = reduce(lambda a, b: a+b, recipients_deep)
+	recipients_addr = gemlv.utils.getaddresslines(recipients_flat)
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
@@ -3133,18 +3134,21 @@ def build_newemail(with_attachment_data=True):
 	return result_eml
 
 def make_thin_mime_part(eml):
-	"create a MIME message without payload, but set content metadata in headers"
+	"""
+	Create a MIME message without payload, but set content metadata in MIME headers.
+	It is intended only for the user's personal use, not to send away,
+	because it records the local filesystem path where the attachments came from.
+	"""
 	thin_eml = gemlv.email.Email(MIMEBase(eml.content_type.main, eml.content_type.sub))
 	# remove default core headers, all core and custom headers will be copied later.
-	for header_name in thin_eml.keys():
+	for header_name in thin_eml.headers.keys:
 		del thin_eml.headers[header_name]
 	# copy all headers from the original email.
-	for header_name, header_value in eml._headers:
-		# TODO: call make_header or similar to format header rfc-compilant
-		# TODO: pay attention to mime-decoded strings
-		thin_eml.add_header(header_name, header_value)
+	for header in eml.headers.items:
+		thin_eml.headers.append(header)
 	thin_eml.preamble = eml.preamble
 	thin_eml.epilogue = eml.epilogue
+	# record where this file was attached from, if it's known
 	if hasattr(eml, 'origin_path'):
 		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(eml.origin_path.encode('utf-8'))
 	# intentionally skip payload.
@@ -3186,9 +3190,9 @@ def build_newemail_to_send():
 		protected_headers_part = make_protected_headers_part(email_to_send)
 		signed_email.attach(protected_headers_part)
 		# copy over the email's headers to the attached signed email. this is another way to sign headers.
-		for hname, hvalue in email_to_send._headers:
-			if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-				signed_email.add_header(hname, hvalue)
+		for header in email_to_send.headers.items:
+			if header.name not in DontLeakHeaders and not header.name.startswith('Content-') and header.name not in CoreTechnicalHeaders:
+				signed_email.headers.append(header)
 		
 		# move all attachments over to the signed email.
 		for part in email_to_send.get_payload():
@@ -3209,7 +3213,8 @@ def build_newemail_to_send():
 			signed_email.epilogue = ''
 		signature = generate_signature(email_to_send, data_to_sign)
 		signature_part.set_payload(signature)
-		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
+		signature_part.header[HDR_CD].decoded = 'attachment'
+		signature_part.header[HDR_CD].param['filename'].decoded = 'signature.pgp.asc'
 		email_to_send.attach(signed_email)
 		email_to_send.attach(signature_part)
 	
@@ -3218,7 +3223,8 @@ def build_newemail_to_send():
 		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
 		crypt_meta_part.set_payload('Version: 1\n')
 		crypt_email = gemlv.email.Email(MIMEBase(MIMETYPE_OCTETSTREAM.main, MIMETYPE_OCTETSTREAM.sub))
-		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
+		crypt_email.header[HDR_CD] = 'attachment'
+		crypt_email.header[HDR_CD].param['filename'].decoded = 'encrypted_message.pgp.asc'
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
 			email_to_send.prepend_part(protected_headers_part)
@@ -3242,7 +3248,7 @@ def gpg_encrypt_email(eml):
 	hidden_recipients = []
 	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
 		for hname in hnames:
-			array.extend(['<'+al.email+'>' for al in gemlv.utils.getaddresslines(eml.get_all(hname) or [])])
+			array.extend([al.email for al in gemlv.utils.getaddresslines(eml.headers[hname].decoded)])
 	extra_args = []
 	for r in hidden_recipients:
 		extra_args.extend(['--hidden-recipient', r])
@@ -3270,14 +3276,14 @@ def add_autocrypt_headers(eml):
 	except GnuPGError:
 		pass
 	if keydata:
-		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address.strip('<>'), re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
 		eml.header['Autocrypt'].decoded = hvalue
 
 def find_signature_author_address(email_root):
 	"""
 	Find out with which GPG uid (email address) the email should be signed with.
 	"""
-	addr = gemlv.utils.getaddresslines(email_root.get_all('From') or [])
+	addr = gemlv.utils.getaddresslines(email_root.headers['From'].decoded)
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0].email
@@ -3553,7 +3559,8 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 		part.attach(attachment_email)
 	else:
 		enc = analyze_for_optimal_encoding(data[0:4096*3])
-		part.add_header(HDR_CTE, enc)
+		part.header[HDR_CTE].decoded = enc
+		# TODO: in background thread?
 		part.set_payload(data.encode(enc))
 	if check_unique_file and not check_unique_attachment(part):
 		display_info_box_async(_("This file is already attached"))
@@ -3655,7 +3662,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 					if buf == '': break
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
-						part.add_header(HDR_CTE, enc)
+						part.header[HDR_CTE].decoded = enc
 					part.append_encoded_payload(buf.encode(enc))
 				fh.close()
 	
@@ -3702,11 +3709,11 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	if mime == MIMETYPE_EMAIL or len(part.parts) > 0:
 		attachment_email = part.parts[0]
 		try:
-			amid = attachment_email.get(HDR_MID)
-			if amid is not None:
+			amid = attachment_email.header[HDR_MID].decoded
+			if amid:
 				# Add Message-ID to main email's References.
 				composer_append_to_list_header(HDR_REF, [amid])
-				part.add_header(HDR_MID, amid)
+				part.headers.append(gemlv.email.Header(HDR_MID, amid))
 			# Add parts to the attachments panel which are already attached to this email file.
 			add_already_attached_parts(iterator, attachment_email)
 		except Exception as e:
@@ -3876,7 +3883,7 @@ def on_keypress_attachments(tv, evt):
 				continue
 			part = Attachments[iterator][COL_ATTACHMENTS_EML]
 			if part.content_type == MIMETYPE_EMAIL:
-				composer_substract_from_list_header(HDR_REF, [part.get(HDR_MID)])
+				composer_substract_from_list_header(HDR_REF, [part.header[HDR_MID].decoded])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
 				parent_part = NewEmail
@@ -3994,10 +4001,10 @@ def act_dispos_notif():
 		pndr_box['readonly'] = True
 		toggle_rqdn.set_sensitive(False)
 		
-		dnt_addresses = Email.get_all(HDR_DNT)
+		dnt_addresses = Email.headers[HDR_DNT].decoded
 		my_address = guess_my_address()
 		if dnt_addresses:
-			for al in gemlv.utils.getaddresslines(dnt_addresses, eml=Email):
+			for al in gemlv.utils.getaddresslines(dnt_addresses):
 				add_composer_header('To', al.addressline)
 		else:
 			add_composer_header('To', str(guess_reply_addressline()))

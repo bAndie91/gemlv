@@ -21,7 +21,8 @@ class Header(object):
 	def __init__(self, name, value=None, email=None):
 		self.name = re.sub(r'\b(.)', lambda m: m.group(1).upper(), name.lower())
 		self._hl_email = email  # the high level gemlv.Email object
-		self._ll_email = self._hl_email._ll_email  # the low level email object
+		if self._hl_email:
+			self._ll_email = self._hl_email._ll_email  # the low level email object
 		self._value = HeaderValue(value, self)
 		self.param = HeaderParameterAccessor(self)
 		self.params = HeaderParameterPluralAccessor(self)
@@ -82,7 +83,8 @@ class MimeTextValue(object):
 		self._decoded = None
 		self._header = header_obj
 		self._hl_email = self._header._hl_email
-		self._ll_email = self._hl_email._ll_email
+		if self._hl_email:
+			self._ll_email = self._hl_email._ll_email
 		# update_func is called when the value is to be changed and
 		# its responsibility to propagate changes up to the low level email object
 		self._update_func = update_func
@@ -144,7 +146,8 @@ class HeaderParameterAccessor(object):
 	def __init__(self, header_obj):
 		self._header = header_obj
 		self._hl_email = self._header._hl_email
-		self._ll_email = self._hl_email._ll_email
+		if self._hl_email:
+			self._ll_email = self._hl_email._ll_email
 	
 	def __getitem__(self, pname):
 		pvalue_uq = self._ll_email.get_param(pname, header=self._header.name, failobj='', unquote=False)
@@ -155,7 +158,8 @@ class HeaderParameterPluralAccessor(object):
 	def __init__(self, header_obj):
 		self._header = header_obj
 		self._hl_email = self._header._hl_email
-		self._ll_email = self._hl_email._ll_email
+		if self._hl_email:
+			self._ll_email = self._hl_email._ll_email
 	
 	@property
 	def decoded(self):
@@ -291,10 +295,18 @@ class PluralHeaderAccessor(HeaderAccessor):
 	
 	@property
 	def keys(self):
-		return self._ll_email.keys()
+		return [Header(name).name for name in self._ll_email.keys()]
+	
+	@property
+	def items(self):
+		return [Header(name, MimeEncoded(value), self._hl_email) for name, value in self._ll_email._headers]
 	
 	def append(self, header_obj):
 		assert isinstance(header_obj, Header)
+		# Note, we don't carry on the header_obj's connection to its original Email (header_obj._hl_email)
+		# to let it freed. This may lead to exception in mime.decode_header or garbage chars in the
+		# decoded representation, if there was bad or missing charset or invalid byte-sequence in the 
+		# original MIME-encoded value.
 		self._ll_email.add_header(header_obj.name, header_obj.value.encoded)
 
 class Email(object):
