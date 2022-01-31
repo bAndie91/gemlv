@@ -73,7 +73,6 @@ try:
 except ImportError:
 	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
 	sqlite3 = None
-from gemlv.utils import headercase
 from gemlv.utils import AddressLine
 from gemlv.utils import decode_mimetext
 from gemlv.utils import walk_multipart
@@ -1780,7 +1779,7 @@ class compose_header_box(gtk.HBox):
 			else:
 				ret = self.wdg_name.get_data('name')
 			if ret is not None:
-				ret = headercase(ret)
+				ret = gemlv.email.Header(ret).name
 			return ret
 		elif key == 'name_lc':
 			return self['name'].lower()
@@ -1795,7 +1794,7 @@ class compose_header_box(gtk.HBox):
 	
 	def __setitem__(self, key, newvalue):
 		if key == 'name':
-			newvalue = headercase(newvalue)
+			newvalue = gemlv.email.Header(newvalue).name
 			old = self[key]
 			self.wdg_name.set_data('name', newvalue)
 			if self.hntype == self.HNTYPE_CUSTOM:
@@ -2039,7 +2038,7 @@ def add_composer_agent_headers():
 def add_composer_mailto(mailto):
 	for field in AcceptableMailtoFields:
 		if field in mailto:
-			header = headercase(field)
+			header = gemlv.email.Header(field).name
 			if field in MultiRecipientsMailtoFields:
 				add_composer_headers(header, mailto[field])
 			elif field == 'subject':
@@ -4743,13 +4742,13 @@ if cliArgs.compose:
 		# Import headers.
 		supersedes = []
 		for hname, hval_mimeencoded in edit_eml._headers:
-			hname = headercase(hname)
+			hname = gemlv.email.Header(hname).name
 			hval = mime.decode_header(hval_mimeencoded, eml=edit_eml)
 			if hname == HDR_MID:
 				supersedes.append(hval)
 			elif hname == HDR_SUBJ:
 				set_composer_subject(hval)
-			if any(fnmatch(hname, headercase(hdr)) for hdr in EditExcludedHeaders):
+			if any(fnmatch(hname.lower(), hdr.lower()) for hdr in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
 				warnx("Skip header '%s' in email editing." % (hname,))
 				pass
@@ -4803,7 +4802,7 @@ if cliArgs.compose:
 		for header in cliArgs.header:
 			if header.find(':') == -1: header += ':'
 			hname, hval = re.split(': ?', header, 1)
-			add_composer_headers(headercase(hname), [hval])
+			add_composer_headers(gemlv.email.Header(hname).name, [hval])
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
