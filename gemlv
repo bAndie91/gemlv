@@ -691,15 +691,15 @@ def gpg_sign_data(message, gpg_uid):
 
 def get_uids_from_key0(gpg_handle):
 	"""
-	Return list of (the email part of) all UIDs in the 0th key on the keyring.
+	Return list of (the email part of) all UIDs in the 0th key on the keyring in "<name@example.net>" format.
 	"""
 	uids = []
 	for uid_full in gpg_handle.list_keys()[0]['uids']:
-		uid_mail = re.findall(r'(<[^<]+>)\s*$', uid_full)[0]
+		uid_mail = re.findall(r'(<[^<>]+>)\s*$', uid_full)[0]
 		uids.append(uid_mail)
 	return uids
 
-def gpg_strip_all_uids(key_data, except_uid):
+def gpg_strip_all_uids(key_data, except_uid=except_uid):
 	if GnuPG_stripped_UIDs_keyring.has_key(key_data) and GnuPG_stripped_UIDs_keyring[key_data].has_key(except_uid):
 		return GnuPG_stripped_UIDs_keyring[key_data][except_uid]
 	
@@ -760,7 +760,7 @@ def gpg_export_pubkey(gpg_uid):
 	data = gpg.export_keys(gpg_uid, minimal=True)
 	if data == '':
 		raise GnuPGError(_("Could not find public key for %s.") % (gpg_uid,))
-	data = gpg_strip_all_uids(data, gpg_uid)
+	data = gpg_strip_all_uids(data, except_uid=gpg_uid)
 	keydata = ''
 	for line in data.split('\n'):
 		if line.startswith('-'): pass
