@@ -95,6 +95,7 @@ from gemlv.sysutils import basenameify
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
+from gemlv.pythonutils import SubstractableList
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
 import gemlv.mime as mime
@@ -513,8 +514,7 @@ def win_main_show(widget, event):
 
 def extract_email_addresses_from_headers(headername, email_obj):
 	return map(lambda al: al.email, \
-		gemlv.utils.getaddresslines( [header.decoded for header in \
-			email_obj.headers[headername]] ))
+		gemlv.utils.getaddresslines(email_obj.headers[headername].decoded))
 
 def extract_1_email_address_from_headers(headername, email_obj):
 	addresses = extract_email_addresses_from_headers(headername, email_obj)
@@ -1010,12 +1010,6 @@ def get_one_header_main(hname):
 	if hval == '': return None  # TODO: revise where is it relied upon
 	return hval
 
-def get_all_headers_main(hname):
-	return map(lambda hdr: mime.decode_header(hdr, eml=Email), Email.get_all(hname) or [])
-
-def get_all_headers_main_mimeencoded(hname):
-	return (Email.get_all(hname) or [])
-
 def get_header_links(s, schemata):
 	"""
 	parse "Link:"-type headers and return parsed links' URI (and comments) that schema is in 
@@ -1098,7 +1092,7 @@ def get_listaddressline_main():
 	try:
 		# Assuming there is only one list address.
 		# Take the first 'To' parameter from the first mailto link.
-		listaddressline = get_header_links(','.join(get_all_headers_main_mimeencoded('List-Post') or []), schemata=['mailto'])[0]['to'][0]
+		listaddressline = get_header_links(','.join(Email.headers['List-Post'].encoded), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
 		listaddressline = AddressLine('')
 	return listaddressline
@@ -2048,13 +2042,6 @@ def auto_save_draft():
 	# Keep timer running:
 	return True
 
-def filter_out_addresses(noaddrs, hvals_mimeencoded):
-	filtered = []
-	for al in gemlv.utils.getaddresslines(hvals_mimeencoded):
-		if al.email not in noaddrs:
-			filtered.append(al)
-	return filtered
-
 def add_composer_agent_headers():
 	add_composer_header('User-Agent', USERAGENT)
 	add_composer_header('X-Mailer', USERAGENT)
@@ -2192,7 +2179,7 @@ def act_reply(compose_type):
 					add_composer_header('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for h in RecipientHeaders:
-					for addressline in filter_out_addresses(skip_addresses, get_all_headers_main_mimeencoded(h)):
+					for addressline in SubstractableList([al.email for al in gemlv.utils.getaddresslines(Email.headers[h].decoded)]) - SubstractableList(skip_addresses):
 						add_composer_header(h, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:

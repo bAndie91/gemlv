@@ -52,3 +52,13 @@ class ItemIterator(object):
 	
 	def __del__(self):
 		pass
+
+class SubstractableList(list):
+	def __init__(self, init):
+		super(self.__class__, self).__init__(init)
+	
+	def __sub__(self, reductor):
+		return SubstractableList([item for item in self if item not in reductor])
+	
+	def __rsub__(self, reductand):
+		return SubstractableList([item for item in reductand if item not in self])

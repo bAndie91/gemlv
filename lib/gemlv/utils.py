@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 from __future__ import absolute_import
-import email
+import email.utils
 import re
 import pwd
 import os
@@ -50,7 +50,7 @@ class AddressLine(object):
 	al = AddressLine("John Doe <john@example.net>")  # recommended, the string has to be MIME-encoded here
 	"""
 	def __init__(self, p, eml=None):
-		assert isinstance(p, (tuple.__class__, MimeEncoded, MimeDecoded))
+		assert isinstance(p, (tuple, MimeEncoded, MimeDecoded))
 		if isinstance(p, tuple):
 			self.realname, self.email = p[:]
 		else:

@@ -255,16 +255,36 @@ class SingularHeaderAccessor(HeaderAccessor):
 		self._ll_email.__delitem__(headername)
 		self[headername].value = value
 
+class HeaderList(list):
+	def __init__(self, init):
+		super(self.__class__, self).__init__(init)
+	
+	@property
+	def encoded(self):
+		return [header.encoded for header in self]
+	
+	@encoded.setter
+	def encoded(self, new):
+		raise NotImplementedError
+	
+	@property
+	def decoded(self):
+		return [header.decoded for header in self]
+	
+	@decoded.setter
+	def decoded(self, new):
+		raise NotImplementedError
+
 class PluralHeaderAccessor(HeaderAccessor):
 	def __getitem__(self, headername):
-		return [Header(headername, MimeEncoded(encoded_value), self._hl_email) for encoded_value in self._ll_email.get_all(headername, [])]
+		return HeaderList([Header(headername, MimeEncoded(encoded_value), self._hl_email) \
+			for encoded_value in self._ll_email.get_all(headername, [])])
+	
+	def __setitem__(self, headername, decoded_value):
+		raise NotImplementedError
 	
 	def __delitem__(self, headername):
 		self._ll_email.__delitem__(headername)
-	
-	def __setitem__(self, headername, decoded_value):
-		# TODO
-		raise NotImplementedError
 	
 	def __contains__(self, headername):
 		return self._ll_email.__contains__(headername)
