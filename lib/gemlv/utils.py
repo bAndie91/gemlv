@@ -12,7 +12,7 @@ from gemlv.mimetext import MimeEncoded
 import gemlv.mime as mime
 
 
-def fix_unquoted_comma(s):
+def _fix_unquoted_comma(s):
 	"""Many MUA do not enclose real names which contain comma in double quotes.
 	This causes issues in splitting address lines into individual addesses.
 	Try to work around this."""
@@ -26,7 +26,7 @@ def fix_unquoted_comma(s):
 	return re.sub('(^|,)(.+)(<)', repl, s)
 
 def _getaddresses(array):
-	return filter(lambda a: a[1] != '', email.utils.getaddresses(map(fix_unquoted_comma, array)))
+	return filter(lambda a: a[1] != '', email.utils.getaddresses(map(_fix_unquoted_comma, array)))
 
 def getaddresslines(array):
 	"""
@@ -35,9 +35,6 @@ def getaddresslines(array):
 		array: list of MIME-decoded strings
 	"""
 	return map(lambda t: AddressLine(t), _getaddresses(array))
-
-def get_gecos_name():
-	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
 
 class AddressLine(object):
 	"""
@@ -60,7 +57,7 @@ class AddressLine(object):
 		if isinstance(p, tuple):
 			self.realname, self.email = MimeDecoded(p[0]), p[1]
 		else:
-			realname_raw, self.email = email.utils.parseaddr(fix_unquoted_comma(p))
+			realname_raw, self.email = email.utils.parseaddr(_fix_unquoted_comma(p))
 			if isinstance(p, MimeDecoded):
 				self.realname = realname_raw
 			else:
@@ -75,11 +72,15 @@ class AddressLine(object):
 	def __repr__(self):
 		return repr(self.addressline)
 
-def decode_mimetext(s):
+def decode_mimetext(encoded_text):
 	"""
 	Takes one or more '=?...?=' tokens or non-encoded substrings and returns the complete decoded string.
 	"""
-	if s is not None:
-		plain_str = ' '.join([s.decode(encoding or 'ascii', 'replace') for s, encoding in email.Header.decode_header(s)])
-		return plain_str
-	return s
+	if encoded_text is None:
+		return encoded_text
+	plain_str = ' '.join([chunk_str.decode(encoding or 'ascii', 'replace') for chunk_str, encoding in email.Header.decode_header(encoded_text)])
+	return MimeDecoded(plain_str)
+
+def get_gecos_name():
+	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
+

@@ -67,15 +67,15 @@ try:
 except ImportError:
 	warnx("No module named pyexiv2. Degrading image auto rotation.")
 	pyexiv2 = None
-import gemlv.utils
 try:
 	import sqlite3
 except ImportError:
 	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
 	sqlite3 = None
 from gemlv.utils import AddressLine
+from gemlv.utils import getaddresslines
 from gemlv.utils import decode_mimetext
-from gemlv.utils import walk_multipart
+from gemlv.utils import get_gecos_name
 from gemlv.mimetext import MimeDecoded
 from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
@@ -505,7 +505,7 @@ def win_main_show(widget, event):
 
 def extract_email_addresses_from_headers(headername, email_obj):
 	return map(lambda al: al.email, \
-		gemlv.utils.getaddresslines(email_obj.headers[headername].decoded))
+		getaddresslines(email_obj.headers[headername].decoded))
 
 def extract_1_email_address_from_headers(headername, email_obj):
 	addresses = extract_email_addresses_from_headers(headername, email_obj)
@@ -1031,21 +1031,22 @@ def get_header_links(s, schemata):
 			link['scheme'] = uriparts.scheme.lower()
 			link['comment'] = comment
 			if link['scheme'] == 'mailto':
-				for hname in MultiRecipientsMailtoFields:
-					link[hname] = []
-				link['to'] = gemlv.utils.getaddresslines([urlparse.unquote(uriparts.path)])
-				for hname, hvalues in urlparse.parse_qs(uriparts.query).iteritems():
-					hname = hname.lower()
-					if hname in AcceptableMailtoFields and len(hvalues) > 0:
-						if hname in MultiRecipientsMailtoFields:
+				for field_name in MultiRecipientsMailtoFields:
+					link[field_name] = []
+				link['to'] = getaddresslines([decode_mimetext(urlparse.unquote(uriparts.path))])
+				for field_name, field_values in urlparse.parse_qs(uriparts.query).iteritems():
+					field_name = field_name.lower()
+					if field_name in AcceptableMailtoFields and len(field_values) > 0:
+						field_values = [decode_mimetext(v) for v in field_values]
+						if field_name in MultiRecipientsMailtoFields:
 							# RFC2368
 							# there may be multiple fields of the same kind (eg. "?cc=addr1&cc=addr2")
 							# and each of them may hold multiple addresses delimited by comma (eg. "addr1%2C%20addr2")
-							hvalues = gemlv.utils.getaddresslines(hvalues)
-						if hname in MultiRecipientsMailtoFields:
-							link[hname].extend(hvalues)
+							field_values = getaddresslines(field_values)
+						if field_name in MultiRecipientsMailtoFields:
+							link[field_name].extend(field_values)
 						else:
-							link[hname] = hvalues[0]
+							link[field_name] = field_values[0]
 			links.append(link)
 	return links
 
@@ -1124,7 +1125,7 @@ def get_headers_markup(eml):
 				if addr in from_addresses: continue
 			if hname in RecipientHeaders or hname in OriginatorHeaders:
 				list_mu = []
-				for al in gemlv.utils.getaddresslines([hval]):
+				for al in getaddresslines([hval]):
 					if al.realname:
 						mu = '%s <a href=\'mailto:%s\'>%s</a>' % (
 							glib.markup_escape_text(al.realname),
@@ -1927,7 +1928,7 @@ def get_composer_headerbox_last(hname):
 	return None
 
 def get_composer_all_recipients_emails():
-	return [al.email for al in gemlv.utils.getaddresslines(get_composer_headers(RecipientHeaders))]
+	return [al.email for al in getaddresslines(get_composer_headers(RecipientHeaders))]
 
 
 def set_composer_subject(s):
@@ -2168,7 +2169,7 @@ def act_reply(compose_type):
 					add_composer_header('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for h in RecipientHeaders:
-					for addressline in SubstractableList([al.email for al in gemlv.utils.getaddresslines(Email.headers[h].decoded)]) - SubstractableList(skip_addresses):
+					for addressline in [al.email for al in getaddresslines(Email.headers[h].decoded)] - SubstractableList(skip_addresses):
 						add_composer_header(h, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
@@ -2946,7 +2947,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	
 	recipients_deep = [email_to_send.headers[h].decoded for h in RecipientHeaders]
 	recipients_flat = reduce(lambda a, b: a+b, recipients_deep)
-	recipients_addr = gemlv.utils.getaddresslines(recipients_flat)
+	recipients_addr = getaddresslines(recipients_flat)
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
@@ -3118,7 +3119,7 @@ def build_newemail(with_attachment_data=True):
 	else:
 		# clone each MIME parts (except the first one which is part_body) without scalar payload
 		latest_parts = [result_eml]
-		for depth, index, part in walk_multipart(NewEmail):
+		for depth, index, part in NewEmail.iterate_parts_recursively():
 			if depth == 0: continue  # this is the main email object
 			if depth == 1 and index == 0: continue  # this is the email body part
 			if part.content_type == MIMETYPE_DN:
@@ -3248,7 +3249,7 @@ def gpg_encrypt_email(eml):
 	hidden_recipients = []
 	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
 		for hname in hnames:
-			array.extend([al.email for al in gemlv.utils.getaddresslines(eml.headers[hname].decoded)])
+			array.extend([al.email for al in getaddresslines(eml.headers[hname].decoded)])
 	extra_args = []
 	for r in hidden_recipients:
 		extra_args.extend(['--hidden-recipient', r])
@@ -3283,7 +3284,7 @@ def find_signature_author_address(email_root):
 	"""
 	Find out with which GPG uid (email address) the email should be signed with.
 	"""
-	addr = gemlv.utils.getaddresslines(email_root.headers['From'].decoded)
+	addr = getaddresslines(email_root.headers['From'].decoded)
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0].email
@@ -3371,7 +3372,7 @@ def update_addressbook_highlights(abook_model=None):
 		if abook_model is None: return
 	added_recipients = get_composer_all_recipients_emails()
 	for item in abook_model:
-		item_emailaddresses = gemlv.utils.getaddresslines([item[0]])
+		item_emailaddresses = getaddresslines([item[0]])
 		try:
 			item[1] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddresses[0].email in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[0]),)
 		except IndexError:
@@ -4004,7 +4005,7 @@ def act_dispos_notif():
 		dnt_addresses = Email.headers[HDR_DNT].decoded
 		my_address = guess_my_address()
 		if dnt_addresses:
-			for al in gemlv.utils.getaddresslines(dnt_addresses):
+			for al in getaddresslines(dnt_addresses):
 				add_composer_header('To', al.addressline)
 		else:
 			add_composer_header('To', str(guess_reply_addressline()))
