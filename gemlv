@@ -2591,11 +2591,12 @@ def show_view_headers(show=True):
 		spanel_view_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 		panel_view_header.set_size_request(-1, -1)
 		panel_view_header.set_line_wrap(False)
-		s = ''
-		for hname, hval_mimeencoded in Email._headers:
-			hval = mime.decode_header(hval_mimeencoded, eml=Email, unfold=False)
-			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
-		panel_view_header.set_markup(s)
+		headers_markup = [ \
+			PMU_HEAD + glib.markup_escape_text(header.name) + PMU_HEAD_CLOSE + ': ' + \
+			glib.markup_escape_text(header.value.decoded) \
+			for header in Email.headers.items \
+		]
+		panel_view_header.set_markup(list2text(headers_markup))
 	else:
 		spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
 		resize_panel_view_header(spanel_view_header)
@@ -3161,11 +3162,11 @@ def make_protected_headers_part(eml):
 	protected_headers_part.header[HDR_CD].decoded = 'inline'
 	protected_headers_part.header[HDR_CD].param['filename'].decoded = 'rfc822-headers.txt'
 	protected_headers_part.header[HDR_CTE] = MimeDecoded('quoted-printable')
-	for hname, hvalue_mimeencoded in eml._headers:
+	for header in eml.headers.items:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
-		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part.append_encoded_payload('%s: %s\n' % (hname, mime.decode_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable')))
+		if header.name not in DontLeakHeaders and not header.name.startswith('Content-') and header.name not in CoreTechnicalHeaders:
+			protected_headers_part.append_encoded_payload('%s: %s\n' % (header.name, header.value.decoded.encode('quoted-printable')))
 	return protected_headers_part
 
 def build_newemail_to_send():
@@ -4741,19 +4742,16 @@ if cliArgs.compose:
 		
 		# Import headers.
 		supersedes = []
-		for hname, hval_mimeencoded in edit_eml._headers:
-			hname = gemlv.email.Header(hname).name
-			hval = mime.decode_header(hval_mimeencoded, eml=edit_eml)
-			if hname == HDR_MID:
-				supersedes.append(hval)
-			elif hname == HDR_SUBJ:
-				set_composer_subject(hval)
-			if any(fnmatch(hname.lower(), hdr.lower()) for hdr in EditExcludedHeaders):
+		for header in edit_eml.headers.items:
+			if header.name == HDR_MID:
+				supersedes.append(header.value.decoded)
+			elif header.name == HDR_SUBJ:
+				set_composer_subject(header.value.decoded)
+			if any(fnmatch(header.name.lower(), exclude_header.lower()) for exclude_header in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
-				warnx("Skip header '%s' in email editing." % (hname,))
-				pass
+				warnx("Skip header '%s' in email editing." % (header.name,))
 			else:
-				add_composer_header(hname, hval)
+				add_composer_header(header.name, header.value.decoded)
 		reset_composer_headers('Supersedes', [', '.join(supersedes)])
 		
 		body_found = False
