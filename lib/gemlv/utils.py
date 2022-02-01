@@ -1,4 +1,5 @@
 #!/usr/bin/env python2
+# -*- coding: utf-8 -*-
 
 from __future__ import absolute_import
 import email.utils
@@ -53,7 +54,7 @@ class AddressLine(object):
 	AddressLine(MimeDecoded("Jörg <jorg@example.net>"))
 	"""
 	def __init__(self, p, eml=None):
-		assert isinstance(p, (tuple, MimeEncoded, MimeDecoded))
+		assert isinstance(p, (tuple, MimeEncoded, MimeDecoded)) or p == ''
 		if isinstance(p, tuple):
 			self.realname, self.email = MimeDecoded(p[0]), p[1]
 		else:
@@ -65,7 +66,7 @@ class AddressLine(object):
 		self.addressline = email.utils.formataddr((self.realname, self.email))
 		# always put email address in angle brackets,
 		# even if there is not realname part:
-		if not self.addressline.endswith('>'):
+		if len(self.addressline) > 0 and not self.addressline.endswith('>'):
 			self.addressline = '<' + self.addressline + '>'
 	def __str__(self):
 		return self.addressline

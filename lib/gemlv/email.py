@@ -431,7 +431,7 @@ class Email(object):
 		if self.is_multipart():
 			return self.size_approx
 		else:
-			if self[HDR_CTE] == 'base64' or self[HDR_CTE] in ENCNAMES_UUE:
+			if self._ll_email[HDR_CTE] == 'base64' or self._ll_email[HDR_CTE] in ENCNAMES_UUE:
 				# base64 and uuencoded have roughly 1/3 overhead
 				return int(len(self._ll_email._payload) * 0.75)
 			else:
