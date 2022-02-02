@@ -3129,7 +3129,7 @@ def build_newemail(with_attachment_data=True):
 			if depth == 1 and index == 0: continue  # this is the email body part
 			if part.content_type == MIMETYPE_DN:
 				# attach disposition notification part directly, it is not come from a file.
-				latest_part[depth-1].attach(part)
+				latest_parts[depth-1].attach(part)
 				continue
 			# TODO: what to do with forwarded envelopes here?
 			thin_part = make_thin_mime_part(part)
@@ -3950,7 +3950,7 @@ def drag_part_begin(wdg, context):
 
 def drag_part_data(wdg, context, dnd_data, intid, time):
 	targettype = dnd_data.get_target()
-	warnx("Dropping %d %s" % (intid, targettype,))
+	warnx("Dropping %d %s" % (intid, targettype,))  # @notranslate
 	dragged_parts = context.get_data('dragged-parts')
 	
 	if targettype == MIMETYPE_URILIST:
