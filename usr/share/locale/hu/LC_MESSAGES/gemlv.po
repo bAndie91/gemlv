@@ -503,3 +503,5 @@ msgstr "A '%s' fejléc kihagyása az email szerkesztésekor."
 msgid "Executing outstanding timers."
 msgstr "Időzített feladatok lefuttatása."
 
+msgid "Contact Address Chooser"
+msgstr "Kapcsolattartási Cím Választó"

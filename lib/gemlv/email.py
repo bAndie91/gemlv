@@ -97,7 +97,7 @@ class MimeTextValue(object):
 	@property
 	def decoded(self):
 		if self._decoded is None and self._encoded is not None:
-			self._decoded = mime.decode_header(self._encoded, eml=self._hl_email, unfold=False)
+			self._decoded = mime.decode_header(self._encoded, eml=self._hl_email, unfold=True)
 		return MimeDecoded(self._decoded)
 	
 	@decoded.setter
@@ -165,8 +165,8 @@ class HeaderParameterPluralAccessor(object):
 	def decoded(self):
 		return [\
 			(\
-				MimeDecoded(mime.decode_header(pname, eml=self._hl_email, unfold=False)), \
-				MimeDecoded(mime.decode_header(pval, eml=self._hl_email, unfold=False)) \
+				MimeDecoded(mime.decode_header(pname, eml=self._hl_email, unfold=True)), \
+				MimeDecoded(mime.decode_header(pval, eml=self._hl_email, unfold=True)) \
 			)\
 			for pname, pval in self.encoded \
 		]
