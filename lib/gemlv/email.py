@@ -311,7 +311,7 @@ class PluralHeaderAccessor(HeaderAccessor):
 
 
 class Email(object):
-	def __init__(self, email_obj, parent_email_obj = None):
+	def __init__(self, email_obj, parent_email_obj=None):
 		if isinstance(email_obj, self.__class__):
 			email_obj = email_obj._ll_email
 		self._ll_email = email_obj  # the low level email object
@@ -344,9 +344,24 @@ class Email(object):
 	def parts(self):
 		"It's mainly for for-loop iteration."
 		if self._ll_email.is_multipart():
-			return MultipartPayload(self._ll_email._payload, self)
+			return MultipartPayload(self)
 		else:
 			return ()
+	
+	@property
+	def payload_encoded(self):
+		return self._ll_email.get_payload(decode=False)
+	
+	@payload_encoded.setter
+	def payload_encoded(self, encpayload):
+		self.size_approx = None
+		self._ll_email.set_payload(encpayload)
+	
+	@property
+	def payload_decoded(self):
+		if self._ll_email.is_multipart():
+			raise PayloadTypeError('This is a MIME multipart message')
+		return self._ll_email.get_payload(decode=True)
 	
 	def append_encoded_payload(self, encpayload):
 		if self.is_multipart():
@@ -387,9 +402,8 @@ class Email(object):
 	
 	def prepend_part(self, part):
 		self.size_approx = None
-		if not isinstance(part, self.__class__):
-			part = self.__class__(part, self)
-		self._ll_email._payload = [part] + self._ll_email._payload
+		if isinstance(part, self.__class__): part = part._ll_email
+		self._ll_email._payload.insert(0, [part])
 	
 	def iterate_parts_recursively(self, leaf_only=False, depth=0, index=0):
 		if not leaf_only or not self.is_multipart():
@@ -413,25 +427,6 @@ class Email(object):
 		self._ll_email.set_charset(*args, **kwargs)
 	
 	
-	@property
-	def _payload(self):
-		if self._ll_email.is_multipart():
-			return MultipartPayload(self._ll_email._payload, self)
-		else:
-			return self._ll_email._payload
-	
-	def get_payload(self, *args, **kwargs):
-		payload = self._ll_email.get_payload(*args, **kwargs)
-		if isinstance(payload, list):
-			return MultipartPayload(payload, self)
-		else:
-			return payload
-	
-	def set_payload(self, *args, **kwargs):
-		self.size_approx = None
-		return self._ll_email.set_payload(*args, **kwargs)
-	
-	
 	def is_multipart(self):
 		return self._ll_email.is_multipart()
 	
@@ -451,74 +446,43 @@ class Email(object):
 	def epilogue(self, s):
 		self._ll_email.epilogue = s
 	
-	def attach(self, attachment):
+	def attach(self, item):
 		self.size_approx = None
-		if not isinstance(attachment, self.__class__):
-			attachment = self.__class__(attachment, self)
-			# TODO: what if this attachment is attached to multiple envelopes at once
-		self._ll_email.attach(attachment)
+		# add te low-level email object to the attachments
+		if isinstance(item, self.__class__): item = item._ll_email
+		self._ll_email.attach(item)
 	
 	
 	# the following proxy methods are not meant to be used by the user,
 	# but kept for internal use by low-level code (email.generator.Generator).
 	
-	def get_charset(self):
-		return self._ll_email.get_charset()
-	
-	def get_unixfrom(self):
-		return self._ll_email.get_unixfrom()
-	
-	def get_content_charset(self):
-		return self._ll_email.get_content_charset()
-	
-	def get_content_maintype(self):
-		return self._ll_email.get_content_maintype()
-	
-	def get_content_subtype(self):
-		return self._ll_email.get_content_subtype()
-	
-	def get_filename(self):
-		return self._ll_email.get_filename()
-	
-	def get_boundary(self, *args, **kwargs):
-		return self._ll_email.get_boundary(*args, **kwargs)
-
-	def set_boundary(self, *args, **kwargs):
-		self._ll_email.set_boundary(*args, **kwargs)
-	
-	def items(self, *args, **kwargs):
-		return self._ll_email.items(*args, **kwargs)
-
-	def walk(self, *args, **kwargs):
-		return self._ll_email.walk(*args, **kwargs)
+	def get_payload(self, *args, **kwargs):
+		return self._ll_email.get_payload(*args, **kwargs)
 
 
-class MultipartPayload(list):
-	"this class represents email payload and maintains the parent email object's registered size when changing payloads in place"
+class MultipartPayload(object):
+	"""
+	this class represents email payload and maintains the parent email object's 
+	registered size when changing payloads in place
+	"""
 	
-	def __init__(self, payload_obj, email_obj):
-		super(self.__class__, self).__init__(payload_obj)
-		self._payload_obj = payload_obj
+	def __init__(self, email_obj):
 		self._hl_email = email_obj
-		# let type checking done by the called methods, not us
 	
 	def __setitem__(self, itemname, item):
 		self._hl_email.size_approx = None
-		return self._payload_obj.__setitem__(itemname, item)
+		# set the low-level email object
+		if isinstance(item, self._hl_email.__class__): item = item._ll_email
+		self._hl_email._ll_email._payload.__setitem__(itemname, item)
 	
 	def __delitem__(self, itemname):
 		self._hl_email.size_approx = None
-		return self._payload_obj.__delitem__(itemname)
+		self._hl_email._ll_email._payload.__delitem__(itemname)
 	
 	def __getitem__(self, itemname):
-		item = self._payload_obj.__getitem__(itemname)
-		# if any MIME part happens not to be also a gemlv.email.Email object,
-		# then wrap it around and replace. it may happen when loading the email
-		# object by eg. email.message_from_file or email.message_from_string.
-		if not isinstance(item, self._hl_email.__class__):
-			item = self._hl_email.__class__(item)
-			self._payload_obj.__setitem__(itemname, item)
-		return item
+		item = self._hl_email._ll_email._payload.__getitem__(itemname)
+		# make it look like a high-level Email object
+		return self._hl_email.__class__(item, self._hl_email)
 	
 	def __getslice__(self, *_p):
 		raise NotImplementedError
@@ -534,13 +498,17 @@ class MultipartPayload(list):
 	
 	def remove(self, item):
 		self._hl_email.size_approx = None
-		return self._payload_obj.remove(item)
+		# search for the low-level email object in the payloads
+		if isinstance(item, self._hl_email.__class__): item = item._ll_email
+		return self._hl_email._ll_email._payload.remove(item)
 	
-	def pop(self, *p):
+	def pop(self, *args):
 		self._hl_email.size_approx = None
-		return self._payload_obj.pop(*p)
+		return self._hl_email._ll_email._payload.pop(*args)
 	
 	def insert(self, index, item):
 		self._hl_email.size_approx = None
-		return self._payload_obj.insert(index, item)
+		# add the low-level email object into the payloads
+		if isinstance(item, self._hl_email.__class__): item = item._ll_email
+		return self._hl_email._ll_email._payload.insert(index, item)
 
