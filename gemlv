@@ -2130,11 +2130,12 @@ def act_reply(compose_type):
 			if compose_type == COMPOSE_FORWARD_MSG:
 				# copy the whole viewed email to an attachment
 				email_to_forward = gemlv.email.Email(email.message_from_string(Email.as_string()))
+				# remove sensitive email headers from the forwarded email
 				for fwd_header in email_to_forward.headers.keys:
 					if any(fnmatch(fwd_header.lower(), sensitive_header.lower()) for sensitive_header in SensitiveHeaders):
 						del email_to_forward.headers[fwd_header]
-				part = gemlv.email.Email(MIMEMessage(email_to_forward))
-				part.header[HDR_CD].value.decoded = 'attachment'
+				part = gemlv.email.Email(MIMEMessage(email_to_forward._ll_email))
+				part.header[HDR_CD].value.encoded = 'attachment'
 				part.header[HDR_CD].param['filename'].decoded = fwdname
 				NewEmail.attach(part)
 				# TODO: make the attached email's row expandable in the attachments panel,
@@ -3113,7 +3114,7 @@ def build_newemail(with_attachment_data=True):
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
 	part_body = result_eml.parts[0]
-	part_body.replace_header(HDR_CTE, enc)
+	part_body.header[HDR_CTE].encoded = enc
 	part_body.payload_encoded = text
 	
 	if with_attachment_data:
@@ -3175,8 +3176,8 @@ def make_protected_headers_part(eml):
 
 def build_newemail_to_send():
 	email_to_send = build_newemail()
-	del email_to_send[HDR_XSD]
-	del email_to_send[HDR_XQID]
+	del email_to_send.headers[HDR_XSD]
+	del email_to_send.headers[HDR_XQID]
 	
 	# set the Disposition-Notification-To header if the user has not set it.
 	if toggle_rqdn.get_active() and email_to_send[HDR_DNT] == '':
@@ -3240,8 +3241,8 @@ def build_newemail_to_send():
 		email_to_send.attach(crypt_email)
 		for hname in HeadersObfuscate:
 			if email_to_send.has_key(hname):
-				del email_to_send[hname]
-				email_to_send[hname] = '...'
+				del email_to_send.headers[hname]
+				email_to_send.header[hname] = '...'
 	
 	add_autocrypt_headers(email_to_send)
 	
@@ -3258,7 +3259,7 @@ def gpg_encrypt_email(eml):
 		extra_args.extend(['--hidden-recipient', r])
 	email_to_encrypt = email.message_from_string(eml.as_string())
 	for hname in DontLeakHeaders:
-		del email_to_encrypt[hname]
+		del email_to_encrypt.headers[hname]
 	try:
 		crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
 	except Exception as e:

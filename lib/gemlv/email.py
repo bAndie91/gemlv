@@ -177,7 +177,7 @@ class HeaderParameterPluralAccessor(object):
 		for n, v in decoded_list_of_tuples:
 			en = mime.encode_header(n)
 			ev = mime.encode_header(v)
-			self._header.param[en] = MimeEncoded(ev)
+			self._header.param[en].encoded = MimeEncoded(ev)
 	
 	@property
 	def encoded(self):
@@ -189,7 +189,7 @@ class HeaderParameterPluralAccessor(object):
 	def encoded(self, encoded_list_of_tuples):
 		self._header.value.encoded = ''
 		for n, v in encoded_list_of_tuples:
-			self._header.param[n] = MimeEncoded(v)
+			self._header.param[n].encoded = MimeEncoded(v)
 	
 	@property
 	def keys(self):
