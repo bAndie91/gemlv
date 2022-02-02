@@ -64,10 +64,12 @@ class AddressLine(object):
 			else:
 				self.realname = MimeDecoded(mime.decode_header(realname_raw, eml=eml))
 		self.addressline = email.utils.formataddr((self.realname, self.email))
-		# always put email address in angle brackets,
-		# even if there is not realname part:
-		if len(self.addressline) > 0 and not self.addressline.endswith('>'):
+		# in the full address line, always put email address in angle brackets,
+		# even if there is no realname part:
+		if not self.addressline.endswith('>') and len(self.addressline) > 0:
 			self.addressline = '<' + self.addressline + '>'
+		# note that Addressline().email is still only the bare email address
+		# without angle brackets.
 	def __str__(self):
 		return self.addressline
 	def __repr__(self):

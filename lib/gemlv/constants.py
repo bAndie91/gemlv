@@ -2,6 +2,8 @@
 
 from contenttypestring import ContentTypeString
 
+COMMON_MULTIPART_PREAMBLE = "This is a multi-part message in MIME format."  # @notranslate
+
 PMU_MIME = '<i><span color=\'gray30\'>'
 PMU_MIME_CLOSE = '</span></i>'
 PMU_NAME = '<b>'
