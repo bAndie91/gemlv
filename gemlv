@@ -2128,12 +2128,13 @@ def act_reply(compose_type):
 			composer_maintain_references_headers()
 			
 			if compose_type == COMPOSE_FORWARD_MSG:
-				email_to_forward = email.message_from_string(Email.as_string())
+				# copy the whole viewed email to an attachment
+				email_to_forward = gemlv.email.Email(email.message_from_string(Email.as_string()))
 				for fwd_header in email_to_forward.headers.keys:
 					if any(fnmatch(fwd_header.lower(), sensitive_header.lower()) for sensitive_header in SensitiveHeaders):
 						del email_to_forward.headers[fwd_header]
 				part = gemlv.email.Email(MIMEMessage(email_to_forward))
-				part.header[HDR_CD].decoded = 'attachment'
+				part.header[HDR_CD].value.decoded = 'attachment'
 				part.header[HDR_CD].param['filename'].decoded = fwdname
 				NewEmail.attach(part)
 				# TODO: make the attached email's row expandable in the attachments panel,
@@ -3104,7 +3105,7 @@ def build_newemail(with_attachment_data=True):
 		del result_eml.headers[hname]
 	
 	for hname, hval in iterate_composer_headers():
-		result_eml.headers.append(Header(hname, MimeDecoded(hval)))
+		result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)

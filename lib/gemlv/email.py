@@ -309,6 +309,7 @@ class PluralHeaderAccessor(HeaderAccessor):
 		# original MIME-encoded value.
 		self._ll_email.add_header(header_obj.name, header_obj.value.encoded)
 
+
 class Email(object):
 	def __init__(self, email_obj, parent_email_obj = None):
 		if isinstance(email_obj, self.__class__):
@@ -326,28 +327,18 @@ class Email(object):
 	def headers(self):
 		return PluralHeaderAccessor(self)
 	
-	
-	def as_string(self):
-		return self._ll_email.as_string()
-	
 	def as_stream(self):
 		from email.generator import Generator
 		# TODO
 		raise NotImplementedError
 	
 	@property
-	def _payload(self):
-		if self._ll_email.is_multipart():
-			return MultipartPayload(self._ll_email._payload, self)
-		else:
-			return self._ll_email._payload
+	def content_type(self):
+		return ContentTypeString(self._ll_email.get_content_type())
 	
-	def get_payload(self, *args, **kwargs):
-		payload = self._ll_email.get_payload(*args, **kwargs)
-		if isinstance(payload, list):
-			return MultipartPayload(payload, self)
-		else:
-			return payload
+	@content_type.setter
+	def content_type(self, content_type):
+		self._ll_email.set_type(content_type, requote=False)
 	
 	@property
 	def parts(self):
@@ -357,54 +348,11 @@ class Email(object):
 		else:
 			return ()
 	
-	def set_payload(self, *args, **kwargs):
-		self.size_approx = None
-		return self._ll_email.set_payload(*args, **kwargs)
-	
 	def append_encoded_payload(self, encpayload):
 		if self.is_multipart():
 			raise PayloadTypeError('This is a MIME multipart message')
 		self.size_approx = None
 		self._ll_email._payload += encpayload
-	
-	def is_multipart(self):
-		return self._ll_email.is_multipart()
-	
-	def get_charset(self):
-		return self._ll_email.get_charset()
-	
-	def set_charset(self, *args, **kwargs):
-		return self._ll_email.set_charset(*args, **kwargs)
-	
-	def get_content_charset(self):
-		return self._ll_email.get_content_charset()
-	
-	@property
-	def content_type(self):
-		return ContentTypeString(self._ll_email.get_content_type())
-	
-	def get_filename(self):
-		return self._ll_email.get_filename()
-	
-	def set_type(self, *args, **kwargs):
-		return self._ll_email.set_type(*args, **kwargs)
-	
-	@property
-	def preamble(self):
-		return self._ll_email.preamble
-	
-	@preamble.setter
-	def preamble(self, s):
-		self._ll_email.preamble = s
-	
-	@property
-	def epilogue(self):
-		return self._ll_email.epilogue
-	
-	@epilogue.setter
-	def epilogue(self, s):
-		self._ll_email.epilogue = s
-	
 	
 	@property
 	def size_approx(self):
@@ -437,13 +385,6 @@ class Email(object):
 			else:
 				return len(self._ll_email.get_payload(decode=True))
 	
-	def attach(self, attachment):
-		self.size_approx = None
-		if not isinstance(attachment, self.__class__):
-			attachment = self.__class__(attachment, self)
-			# TODO: what if this attachment is attached to multiple envelopes at once
-		self._ll_email.attach(attachment)
-	
 	def prepend_part(self, part):
 		self.size_approx = None
 		if not isinstance(part, self.__class__):
@@ -459,6 +400,97 @@ class Email(object):
 			for x in part.iterate_parts_recursively(leaf_only, depth+1, subindex):
 				yield x
 			subindex += 1
+	
+	# proxy methods:
+	
+	def as_string(self):
+		return self._ll_email.as_string()
+	
+	def get_charset(self):
+		return self._ll_email.get_charset()
+	
+	def set_charset(self, *args, **kwargs):
+		self._ll_email.set_charset(*args, **kwargs)
+	
+	
+	@property
+	def _payload(self):
+		if self._ll_email.is_multipart():
+			return MultipartPayload(self._ll_email._payload, self)
+		else:
+			return self._ll_email._payload
+	
+	def get_payload(self, *args, **kwargs):
+		payload = self._ll_email.get_payload(*args, **kwargs)
+		if isinstance(payload, list):
+			return MultipartPayload(payload, self)
+		else:
+			return payload
+	
+	def set_payload(self, *args, **kwargs):
+		self.size_approx = None
+		return self._ll_email.set_payload(*args, **kwargs)
+	
+	
+	def is_multipart(self):
+		return self._ll_email.is_multipart()
+	
+	@property
+	def preamble(self):
+		return self._ll_email.preamble
+	
+	@preamble.setter
+	def preamble(self, s):
+		self._ll_email.preamble = s
+	
+	@property
+	def epilogue(self):
+		return self._ll_email.epilogue
+	
+	@epilogue.setter
+	def epilogue(self, s):
+		self._ll_email.epilogue = s
+	
+	def attach(self, attachment):
+		self.size_approx = None
+		if not isinstance(attachment, self.__class__):
+			attachment = self.__class__(attachment, self)
+			# TODO: what if this attachment is attached to multiple envelopes at once
+		self._ll_email.attach(attachment)
+	
+	
+	# the following proxy methods are not meant to be used by the user,
+	# but kept for internal use by low-level code (email.generator.Generator).
+	
+	def get_charset(self):
+		return self._ll_email.get_charset()
+	
+	def get_unixfrom(self):
+		return self._ll_email.get_unixfrom()
+	
+	def get_content_charset(self):
+		return self._ll_email.get_content_charset()
+	
+	def get_content_maintype(self):
+		return self._ll_email.get_content_maintype()
+	
+	def get_content_subtype(self):
+		return self._ll_email.get_content_subtype()
+	
+	def get_filename(self):
+		return self._ll_email.get_filename()
+	
+	def get_boundary(self, *args, **kwargs):
+		return self._ll_email.get_boundary(*args, **kwargs)
+
+	def set_boundary(self, *args, **kwargs):
+		self._ll_email.set_boundary(*args, **kwargs)
+	
+	def items(self, *args, **kwargs):
+		return self._ll_email.items(*args, **kwargs)
+
+	def walk(self, *args, **kwargs):
+		return self._ll_email.walk(*args, **kwargs)
 
 
 class MultipartPayload(list):
