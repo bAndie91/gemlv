@@ -524,24 +524,24 @@ def email_from_file(filename):
 	return gemlv.email.Email(eml), fh
 
 def load_file(filename):
-	global Email
+	global TheEmail
 	global LeafParts
-	Email, fh = email_from_file(filename)
-	if Email is None: return
-	Email = gemlv.email.Email(Email)
+	TheEmail, fh = email_from_file(filename)
+	if TheEmail is None: return
+	TheEmail = gemlv.email.Email(TheEmail)
 	win_main.set_data('email-file-handle', fh)
 	win_main.set_data('email-file', filename)
-	update_window_title(win_main, filename, Email.header[HDR_SUBJ].decoded)
+	update_window_title(win_main, filename, TheEmail.header[HDR_SUBJ].decoded)
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
-		addr = extract_1_email_address_from_headers(h, Email)
+		addr = extract_1_email_address_from_headers(h, TheEmail)
 		if addr:
 			senderaddr = addr
 			break
 	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
 	
-	if Email.header[HDR_DNT].nonempty:
+	if TheEmail.header[HDR_DNT].nonempty:
 		if get_xattr(filename, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
 	if truish(get_xattr(filename, XATTR_MDNSENT)):
@@ -553,15 +553,15 @@ def load_file(filename):
 	
 	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
-	if Email.header['List-Unsubscribe'].nonempty:
+	if TheEmail.header['List-Unsubscribe'].nonempty:
 		menubutton_unsubscribe.show()
 	
-	panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(Email.header[HDR_SUBJ].decoded.replace('\n', '')) + PMU_SUBJ_CLOSE)
+	panel_view_header.set_markup(get_headers_markup(TheEmail))
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(TheEmail.header[HDR_SUBJ].decoded.replace('\n', '')) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
-	load_parts(Email, Parts, Parts.get_iter_root())
+	load_parts(TheEmail, Parts, Parts.get_iter_root())
 	panel_parts.expand_all()
-	if Email.is_multipart():
+	if TheEmail.is_multipart():
 		if PartPrimary is not None:
 			selection_parts.select_iter(PartPrimary)
 		elif PartSecondary is not None:
@@ -1081,7 +1081,7 @@ def get_listaddressline_main():
 	try:
 		# Assuming there is only one list address.
 		# Take the first 'To' parameter from the first mailto link.
-		listaddressline = get_header_links(','.join(Email.headers['List-Post'].encoded), schemata=['mailto'])[0]['to'][0]
+		listaddressline = get_header_links(','.join(TheEmail.headers['List-Post'].encoded), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
 		listaddressline = AddressLine('')
 	return listaddressline
@@ -1346,8 +1346,8 @@ def clear_composer_headers(hname, content=None):
 			box.cancel(manual=False)
 
 def composer_maintain_references_headers():
-	references = Email.header[HDR_REF].decoded
-	messageid = Email.header[HDR_MID].decoded
+	references = TheEmail.header[HDR_REF].decoded
+	messageid = TheEmail.header[HDR_MID].decoded
 	if messageid:
 		if references:
 			references = references + ' ' + messageid
@@ -2051,8 +2051,8 @@ def add_composer_mailto(mailto):
 
 def guess_my_address():
 	"guess what is the user's email address to which the currently opened email is sent"
-	if Email is None: return None
-	return Email.header['Envelope-To'].decoded or Email.header['Delivered-To'].decoded
+	if TheEmail is None: return None
+	return TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
 
 def guess_my_addressline():
 	"like guess_my_address() but with added realname"
@@ -2063,10 +2063,10 @@ def guess_my_addressline():
 	return AddressLine((realname, addr))
 
 def guess_reply_addressline():
-	if Email is not None:
+	if TheEmail is not None:
 		for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-			if hname in Email.headers:
-				return AddressLine(Email.header[hname].decoded)
+			if hname in TheEmail.headers:
+				return AddressLine(TheEmail.header[hname].decoded)
 	return AddressLine('')
 
 def add_composer_From_hidden():
@@ -2111,7 +2111,7 @@ def make_subject_line(original, pre_kind):
 def act_reply(compose_type):
 	if open_composer(reason=compose_type):
 		add_composer_agent_headers()
-		orig_subj = Email.header[HDR_SUBJ].decoded
+		orig_subj = TheEmail.header[HDR_SUBJ].decoded
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
@@ -2129,7 +2129,7 @@ def act_reply(compose_type):
 			
 			if compose_type == COMPOSE_FORWARD_MSG:
 				# copy the whole viewed email to an attachment
-				email_to_forward = gemlv.email.Email(email.message_from_string(Email.as_string()))
+				email_to_forward = gemlv.email.Email(email.message_from_string(TheEmail.as_string()))
 				# remove sensitive email headers from the forwarded email
 				for fwd_header in email_to_forward.headers.keys:
 					if any(fnmatch(fwd_header.lower(), sensitive_header.lower()) for sensitive_header in SensitiveHeaders):
@@ -2146,13 +2146,13 @@ def act_reply(compose_type):
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
-			add_composer_header('Thread-Topic', Email.header['Thread-Topic'].decoded or orig_subj)
+			add_composer_header('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_RE)
 			set_composer_subject(subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 			
-			messageid = Email.header[HDR_MID].decoded
+			messageid = TheEmail.header[HDR_MID].decoded
 			add_composer_header('In-Reply-To', messageid)
 			composer_maintain_references_headers()
 			
@@ -2171,7 +2171,7 @@ def act_reply(compose_type):
 					add_composer_header('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for h in RecipientHeaders:
-					for addressline in [al.email for al in getaddresslines(Email.headers[h].decoded)] - SubstractableList(skip_addresses):
+					for addressline in [al.email for al in getaddresslines(TheEmail.headers[h].decoded)] - SubstractableList(skip_addresses):
 						add_composer_header(h, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
@@ -2185,7 +2185,7 @@ def act_reply(compose_type):
 
 
 def act_unsubscribe():
-	links = get_header_links(','.join(Email.headers['List-Unsubscribe'].encoded), schemata=['*'])
+	links = get_header_links(','.join(TheEmail.headers['List-Unsubscribe'].encoded), schemata=['*'])
 	if len(links) == 1 and links[0]['scheme'] == 'mailto':
 		if open_composer(reason=COMPOSE_UNSUB):
 			add_composer_mailto(links[0])
@@ -2299,7 +2299,7 @@ def calc_attachment_name(part, n=None):
 	if not name:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s%s" % (Email.header[HDR_SUBJ].decoded or _("Email"), sfx, get_extension_by_mime(part.content_type))
+		name = "%s - attachment%s%s" % (TheEmail.header[HDR_SUBJ].decoded or _("Email"), sfx, get_extension_by_mime(part.content_type))
 	return basenameify(name)
 
 def find_free_filename(directory=None, nice_name=None, nice_path=None):
@@ -2322,7 +2322,7 @@ def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add
 	if not fname:
 		fname = ''
 		if add_subject:
-			fname += basenameify(Email.header[HDR_SUBJ].decoded)
+			fname += basenameify(TheEmail.header[HDR_SUBJ].decoded)
 			if fname:
 				fname += ' - '
 		oid = '-'.join(map(str, itpath))
@@ -2459,7 +2459,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				mimetype = eml.content_type
 			messageid = eml.header[HDR_MID].decoded
 			if not messageid:
-				messageid = Email.header[HDR_MID].decoded
+				messageid = TheEmail.header[HDR_MID].decoded
 			set_xattrs(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
 			moddatetime = eml.header[HDR_CD].param['modification-date'].decoded
@@ -2599,14 +2599,14 @@ def show_view_headers(show=True):
 		headers_markup = [ \
 			PMU_HEAD + glib.markup_escape_text(header.name) + PMU_HEAD_CLOSE + ': ' + \
 			glib.markup_escape_text(header.value.decoded) \
-			for header in Email.headers.items \
+			for header in TheEmail.headers.items \
 		]
 		panel_view_header.set_markup(list2text(headers_markup))
 	else:
 		spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
 		resize_panel_view_header(spanel_view_header)
 		panel_view_header.set_line_wrap(True)
-		panel_view_header.set_markup(get_headers_markup(Email))
+		panel_view_header.set_markup(get_headers_markup(TheEmail))
 	panel_view_header.set_data('all-headers', show)
 
 def populate_header_menu(label, menu):
@@ -4011,14 +4011,14 @@ def act_dispos_notif():
 		pndr_box['readonly'] = True
 		toggle_rqdn.set_sensitive(False)
 		
-		dnt_addresses = Email.headers[HDR_DNT].decoded
+		dnt_addresses = TheEmail.headers[HDR_DNT].decoded
 		my_address = guess_my_address()
 		if dnt_addresses:
 			for al in getaddresslines(dnt_addresses):
 				add_composer_header('To', al.addressline)
 		else:
 			add_composer_header('To', str(guess_reply_addressline()))
-		lang = Email.header['Accept-Language'].decoded
+		lang = TheEmail.header['Accept-Language'].decoded
 		if lang:
 			savelang = os.environ['LANGUAGE']
 			os.environ['LANGUAGE'] = lang
@@ -4029,10 +4029,10 @@ def act_dispos_notif():
 		if lang:
 			os.environ['LANGUAGE'] = savelang
 		prms = {
-			'date': Email.header['Date'].decoded or '[somewhen]',
+			'date': TheEmail.header['Date'].decoded or '[somewhen]',
 			'me': my_address or '[someone]',
-			'subject': Email.header[HDR_SUBJ].decoded,
-			'delivery_date': Email.header['Delivery-Date'].decoded or '[somewhen]',
+			'subject': TheEmail.header[HDR_SUBJ].decoded,
+			'delivery_date': TheEmail.header['Delivery-Date'].decoded or '[somewhen]',
 		}
 		subject_text = Ltxt_subj.format(**prms)
 		message_text = list2text(textwrap.wrap(Ltxt_body.format(**prms), 79))
@@ -4042,11 +4042,11 @@ def act_dispos_notif():
 		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
 		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_address}]
-		if Email.header[HDR_OR].nonempty:
-			origrcpt = Email.header[HDR_OR].decoded
+		if TheEmail.header[HDR_OR].nonempty:
+			origrcpt = TheEmail.header[HDR_OR].decoded
 			dn_fields += ['%(fieldname)s: RFC822;%(recipient)s' % {'fieldname': HDR_OR, 'recipient': origrcpt}]
-		if Email.header[HDR_MID].nonempty:
-			messageid = Email.header[HDR_MID].decoded
+		if TheEmail.header[HDR_MID].nonempty:
+			messageid = TheEmail.header[HDR_MID].decoded
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
 		dn_part.payload_encoded = list2text(dn_fields)
 		NewEmail.attach(dn_part)
@@ -4238,7 +4238,7 @@ VAL_PRECEDENCE = [{
 	'require': '^(?i)(%s)$' % '|'.join(Precedences),
 	}]
 COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY, COMPOSE_MDN, COMPOSE_UNSUB = range(8)
-Email = None
+TheEmail = None
 PartPrimary = None
 PartSecondary = None
 FileChooserLastFolder = os.getcwd()
