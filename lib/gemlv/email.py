@@ -341,6 +341,11 @@ class Email(object):
 		self._ll_email.set_type(content_type, requote=False)
 	
 	@property
+	def filename(self):
+		return self.header[HDR_CD].param['filename'].decoded \
+			or self.header[HDR_CT].param['name'].decoded
+	
+	@property
 	def parts(self):
 		if self._ll_email.is_multipart():
 			return MultipartPayload(self)
