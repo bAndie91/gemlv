@@ -606,10 +606,10 @@ def load_parts(eml, model, parent):
 		crypto_protocol = eml.header[HDR_CT].param['protocol'].decoded
 		if crypto_protocol == 'application/pgp-encrypted':
 			# RFC3156
-			pgp_metadata_part = eml.get_payload()[0]
+			pgp_metadata_part = eml.parts[0]
 			load_parts(pgp_metadata_part, model, iterator)
 			encrypted_part_num = 1
-			encrypted_part = eml.get_payload()[encrypted_part_num]
+			encrypted_part = eml.parts[encrypted_part_num]
 			encrypted_data = encrypted_part.as_string()
 			decrypt = gpg.decrypt(encrypted_data)
 			if decrypt.ok:
@@ -627,7 +627,7 @@ def load_parts(eml, model, parent):
 					'username': decrypt.username,
 				}
 			
-			for other_part in eml.get_payload()[2:]:
+			for other_part in eml.parts[2:]:
 				load_parts(other_part, model, iterator)
 			
 			# Display an open/locked padlock icon
@@ -649,18 +649,18 @@ def clear_content(s=''):
 	return bufr
 
 def decode_readably(s, eml):
-	charset = eml.get_content_charset()
-	if charset is None: charset = 'utf-8'
+	charset = eml.header[HDR_CT].param['charset'].decoded or 'utf-8'
 	return s.decode(charset, 'replace')
 
 def get_content_readably(eml):
 	return decode_readably(get_content_any(eml), eml)
 
 def get_content_any(eml):
-	s = eml.get_payload(decode=True)
-	# TODO: preamble+epilogue instead of as_string?
-	if s is None: s = eml.as_string()
-	return s
+	if eml.is_multipart():
+		# TODO: preamble+epilogue instead of as_string?
+		return eml.as_string()
+	else:
+		return eml.payload_decoded
 
 def set_content_text(s):
 	bufr = panel_content.get_buffer()
@@ -826,9 +826,9 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 					# This part is the signature itself. Skip signature verification.
 					continue
 				if sign_protocol:
-					for sibling_part in parent_part.get_payload():
+					for sibling_part in parent_part.parts:
 						if sibling_part.content_type == sign_protocol:
-							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
+							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.payload_decoded)
 							gpg_signature_valid = sign_verify.valid
 							gpg_signature_info = sign_verify.stderr
 							break
@@ -869,9 +869,10 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			loaded_text = text
 		else:
 			if eml.content_type.main == 'image':
-				exif_info = load_exif_metadata(eml.get_payload(decode=True))
+				image_data = eml.payload_decoded
+				exif_info = load_exif_metadata(image_data)
 				loader = gtk.gdk.PixbufLoader()
-				loader.write(eml.get_payload(decode=True))
+				loader.write(image_data)
 				loader.close()
 				pxb = loader.get_pixbuf()
 				pxb = exif_transforms(pxb, exif_info)
@@ -2279,7 +2280,7 @@ def act_open():
 	try:
 		save_to_filedescriptor(eml, fd)
 		fh = os.fdopen(fd, 'r')
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: eml.content_type}, tmppath)
+		set_xattrs(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: eml.content_type}, tmppath)
 		fh.close()
 	except OSError as e:
 		os.unlink(tmppath)
@@ -2349,11 +2350,12 @@ def act_save_struct_inner(savedir, iterator):
 	if Parts.iter_has_child(iterator):
 		if mimepart_name is None:
 			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='multipart', add_extension=False)
-		body = part.get_payload(decode=True)
-		if body is None and (part.preamble is not None or part.epilogue is not None):
+		if part.is_multipart():
 			savefile = os.path.join(savedir, part_filename_by_iteratorpath(itpath, prefix='part', add_extension='txt'))
 			# TODO: should we care about overwriting files here?
 			save_to_file(part, savefile, consider_preamble=True)
+		else:
+			body = part.payload_decoded
 		mysavedir = os.path.join(savedir, mimepart_name)
 		try:
 			mkdir(mysavedir)
@@ -2375,8 +2377,7 @@ def act_save_struct_inner(savedir, iterator):
 				display_error(e)
 	else:
 		if mimepart_name is None:
-			body = part.get_payload(decode=True)
-			if body is None or len(body) == 0:
+			if part.is_multipart() or part.payload_decoded == '':
 				# Skip empty noname parts.
 				return
 			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True)
@@ -2445,7 +2446,8 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 				return None
 	try:
 		if eml.content_type == MIMETYPE_SYMLINK:
-			link_target = eml.get_payload(decode=True)
+			link_target = eml.payload_decoded
+			# TODO: check safe symlink
 			os.symlink(link_target, filename)
 		else:
 			fh = open(filename, 'w')
@@ -2458,7 +2460,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			messageid = eml.header[HDR_MID].decoded
 			if not messageid:
 				messageid = Email.header[HDR_MID].decoded
-			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
+			set_xattrs(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
 			moddatetime = eml.header[HDR_CD].param['modification-date'].decoded
 			posixmode = eml.header[HDR_CD].param['posix-mode'].decoded
@@ -2478,12 +2480,13 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	return False
 
 def save_to_filedescriptor(eml, fd, consider_preamble=False):
-	s = eml.get_payload(decode=True)
-	if s is None:
+	if eml.is_multipart():
 		if consider_preamble:
 			s = '\n'.join([eml.preamble or '', eml.epilogue or ''])
 		else:
 			s = eml.as_string()
+	else:
+		s = eml.payload_decoded
 	written = os.write(fd, s)
 	if written != len(s):
 		raise OSError(5, 'Write Error. %d out of %d bytes written.' % (written, len(s)))
@@ -3112,7 +3115,7 @@ def build_newemail(with_attachment_data=True):
 	text = text.encode(enc)
 	part_body = result_eml.parts[0]
 	part_body.replace_header(HDR_CTE, enc)
-	part_body.set_payload(text)
+	part_body.payload_encoded = text
 	
 	if with_attachment_data:
 		for part in NewEmail.parts[1:]:
@@ -3158,12 +3161,12 @@ def make_thin_mime_part(eml):
 
 def make_protected_headers_part(eml):
 	protected_headers_part = gemlv.email.Email(MIMEText(''))
-	protected_headers_part.set_type(MIMETYPE_HEADERS)
+	protected_headers_part.content_type = MIMETYPE_HEADERS
 	protected_headers_part.set_charset('UTF-8')
-	protected_headers_part.header[HDR_CT].param['protected-headers'].decoded = 'v1'
-	protected_headers_part.header[HDR_CD].decoded = 'inline'
+	protected_headers_part.header[HDR_CT].param['protected-headers'].encoded = 'v1'
+	protected_headers_part.header[HDR_CD].encoded = 'inline'
 	protected_headers_part.header[HDR_CD].param['filename'].decoded = 'rfc822-headers.txt'
-	protected_headers_part.header[HDR_CTE] = MimeDecoded('quoted-printable')
+	protected_headers_part.header[HDR_CTE].encoded = 'quoted-printable'
 	for header in eml.headers.items:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
@@ -3197,11 +3200,11 @@ def build_newemail_to_send():
 				signed_email.headers.append(header)
 		
 		# move all attachments over to the signed email.
-		for part in email_to_send.get_payload():
+		for part in email_to_send.parts:
 			signed_email.attach(part)
-		email_to_send.set_payload([])
+		email_to_send.parts.clear()
 		# change the root MIME email type to indicate that it is (including) a signed email.
-		email_to_send.set_type('multipart/signed')
+		email_to_send.content_type = 'multipart/signed'
 		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-signature'
 		
 		# produce signature
@@ -3214,7 +3217,7 @@ def build_newemail_to_send():
 			# this adds a '\n' at the end of the raw multipart/* part:
 			signed_email.epilogue = ''
 		signature = generate_signature(email_to_send, data_to_sign)
-		signature_part.set_payload(signature)
+		signature_part.payload_encoded = signature
 		signature_part.header[HDR_CD].decoded = 'attachment'
 		signature_part.header[HDR_CD].param['filename'].decoded = 'signature.pgp.asc'
 		email_to_send.attach(signed_email)
@@ -3223,16 +3226,16 @@ def build_newemail_to_send():
 	# gpg encryption
 	if toggle_encrypt.get_active():
 		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
-		crypt_meta_part.set_payload('Version: 1\n')
+		crypt_meta_part.payload_encoded = 'Version: 1\n'
 		crypt_email = gemlv.email.Email(MIMEBase(MIMETYPE_OCTETSTREAM.main, MIMETYPE_OCTETSTREAM.sub))
 		crypt_email.header[HDR_CD] = 'attachment'
 		crypt_email.header[HDR_CD].param['filename'].decoded = 'encrypted_message.pgp.asc'
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
 			email_to_send.prepend_part(protected_headers_part)
-		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
-		email_to_send.set_payload([])
-		email_to_send.set_type('multipart/encrypted')
+		crypt_email.payload_encoded = gpg_encrypt_email(email_to_send)
+		email_to_send.parts.clear()
+		email_to_send.content_type = 'multipart/encrypted'
 		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-encrypted'
 		email_to_send.attach(crypt_meta_part)
 		email_to_send.attach(crypt_email)
@@ -3563,7 +3566,7 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 		enc = analyze_for_optimal_encoding(data[0:4096*3])
 		part.header[HDR_CTE].decoded = enc
 		# TODO: in background thread?
-		part.set_payload(data.encode(enc))
+		part.payload_encoded = data.encode(enc)
 	if check_unique_file and not check_unique_attachment(part):
 		display_info_box_async(_("This file is already attached"))
 		return False
@@ -3634,12 +3637,14 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	if os.path.isdir(attachment_path) and not isalink:
 		part = gemlv.email.Email(MIMEMultipart('related'))
 	else:
-		part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
-		part.origin_path = attachment_path
-		
 		if isalink:
-			part.set_payload(symlink_content)
+			part = gemlv.email.Email(MIMETYPE_SYMLINK)
+			part.header[HDR_CTE].decoded = 'quoted-printable'
+			part.payload_encoded = symlink_content.encode('quoted-printable')
 		else:
+			part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
+			part.origin_path = attachment_path
+			
 			# Check whether this file is an email file.
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
 			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
@@ -3650,7 +3655,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 				part.attach(attachment_email)
 			else:
 				del attachment_email
-				part.set_payload('')
+				part.payload_encoded = ''
 				enc = None
 				# Load file into memory
 				try:
@@ -3707,7 +3712,6 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
-	subparts = part.get_payload(decode=False)
 	if mime == MIMETYPE_EMAIL or len(part.parts) > 0:
 		attachment_email = part.parts[0]
 		try:
@@ -3725,8 +3729,11 @@ def attach__internal(parent_iter=None, content_disposition_params={}, basename=N
 	return iterator
 
 def calc_attachment_checksum(part):
-	data = part.get_payload(decode=True)
-	if data is None or data == '': return None
+	if part.is_multipart():
+		return None
+	data = part.payload_decoded
+	if data == '':
+		return None
 	return hashlib.md5(data).hexdigest()
 
 def check_unique_attachment(mimepart):
@@ -3832,9 +3839,9 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 					else:
 						parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 					if relation == gtk.TREE_VIEW_DROP_BEFORE:
-						newindex = parent_part.get_payload().index(relative_part)
+						newindex = parent_part.parts.index(relative_part)
 					elif relation == gtk.TREE_VIEW_DROP_AFTER:
-						newindex = parent_part.get_payload().index(relative_part) + 1
+						newindex = parent_part.parts.index(relative_part) + 1
 				elif relation in [gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER]:
 					parent_part = relative_part
 					newindex = 0
@@ -3847,11 +3854,11 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 					else:
 						old_parent_part = Attachments[old_parent_iter][COL_ATTACHMENTS_EML]
 					if old_parent_part == parent_part:
-						idx = old_parent_part.get_payload().index(subject_part)
+						idx = old_parent_part.parts.index(subject_part)
 						if idx < newindex:
 							newindex -= 1
-					old_parent_part.get_payload().remove(subject_part)
-					parent_part.get_payload().insert(newindex, subject_part)
+					old_parent_part.parts.remove(subject_part)
+					parent_part.parts.insert(newindex, subject_part)
 					success = True
 		context.finish(success, False, time)
 		event_is_handled = not success
@@ -3891,7 +3898,7 @@ def on_keypress_attachments(tv, evt):
 				parent_part = NewEmail
 			else:
 				parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
-			parent_part.get_payload().remove(part)
+			parent_part.parts.remove(part)
 			del Attachments[iterator]
 		update_composer_status_message()
 		return True
@@ -3961,9 +3968,10 @@ def drag_part_data(wdg, context, dnd_data, intid, time):
 	else:
 		dragged_part = dragged_parts[0][0]
 		if targettype == MIMETYPE_OCTETSTREAM:
-			filedata = dragged_part.get_payload(decode=True)
-			if filedata is None:
+			if dragged_part.is_multipart():
 				filedata = dragged_part.as_string()
+			else:
+				filedata = dragged_part.payload_decoded
 			atom = gtk.gdk.atom_intern(MIMETYPE_OCTETSTREAM)
 			dnd_data.set(atom, 8, filedata)
 		elif targettype == 'XdndDirectSave0':
@@ -3993,7 +4001,7 @@ def drag_part_end(wdg, context):
 
 def act_dispos_notif():
 	if open_composer(reason=COMPOSE_MDN):
-		NewEmail.set_type('multipart/report')
+		NewEmail.content_type = 'multipart/report'
 		NewEmail.header[HDR_CT].param['report-type'].decoded = 'disposition-notification'
 		
 		win_comp.set_data('is-an-mdn', True)
@@ -4040,7 +4048,7 @@ def act_dispos_notif():
 		if Email.header[HDR_MID].nonempty:
 			messageid = Email.header[HDR_MID].decoded
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
-		dn_part.set_payload(list2text(dn_fields))
+		dn_part.payload_encoded = list2text(dn_fields)
 		NewEmail.attach(dn_part)
 		# TODO: set Disposition Notification name according to Accept-Language
 		Attachments.append(None, [dn_part, glib.markup_escape_text(_("Disposition Notification")), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
@@ -4759,7 +4767,7 @@ if cliArgs.compose:
 		body_found = False
 		def detect_body_part(part):
 			if not body_found and part.content_type == MIMETYPE_TEXT:
-				set_composer_text(decode_readably(part.get_payload(decode=True), part))
+				set_composer_text(decode_readably(part.payload_decoded, part))
 				# Prevent this part to be treated as attachment. This is the body part.
 				return False
 			# Attach this part.
@@ -4773,7 +4781,7 @@ if cliArgs.compose:
 				add_already_attached_parts(None, part, detect_body_part)
 		else:
 			# Not a multipart email, set body to payload.
-			set_composer_text(decode_readably(edit_eml.get_payload(decode=True), edit_eml))
+			set_composer_text(decode_readably(edit_eml.payload_decoded, edit_eml))
 	else:
 		# Open a clear composer window.
 		add_composer_agent_headers()

@@ -342,7 +342,6 @@ class Email(object):
 	
 	@property
 	def parts(self):
-		"It's mainly for for-loop iteration."
 		if self._ll_email.is_multipart():
 			return MultipartPayload(self)
 		else:
@@ -484,8 +483,9 @@ class MultipartPayload(object):
 		# make it look like a high-level Email object
 		return self._hl_email.__class__(item, self._hl_email)
 	
-	def __getslice__(self, *_p):
-		raise NotImplementedError
+	def __getslice__(self, start, end):
+		return [self._hl_email.__class__(item, self._hl_email) for item in \
+			self._hl_email._ll_email._payload.__getslice__(start, end)]
 	
 	def __delslice__(self, *_p):
 		raise NotImplementedError
@@ -493,14 +493,26 @@ class MultipartPayload(object):
 	def __setslice__(self, *_p):
 		raise NotImplementedError
 	
+	def __len__(self):
+		return self._hl_email._ll_email._payload.__len__()
+	
 	def __iter__(self):
 		return ItemIterator(self)
+	
+	def index(self, item):
+		# search for the low-level email object in the payloads
+		if isinstance(item, self._hl_email.__class__): item = item._ll_email
+		return self._hl_email._ll_email._payload.index(item)
 	
 	def remove(self, item):
 		self._hl_email.size_approx = None
 		# search for the low-level email object in the payloads
 		if isinstance(item, self._hl_email.__class__): item = item._ll_email
-		return self._hl_email._ll_email._payload.remove(item)
+		self._hl_email._ll_email._payload.remove(item)
+	
+	def clear(self):
+		self._hl_email.size_approx = None
+		self._hl_email._ll_email._payload = []
 	
 	def pop(self, *args):
 		self._hl_email.size_approx = None
