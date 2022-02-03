@@ -4180,9 +4180,9 @@ gettext.textdomain(PROGNAME)
 _ = gettext.gettext
 setproctitle.setproctitle(PROGNAME)
 MSG_NO_ADDRESS_FOR_DNT = "Set a From or Reply-To address to have Disposition Notification."
-Importances = ['low','normal','high']
-Priorities = ['non-urgent','normal','urgent']
-Precedences = ['list', 'junk', 'bulk']
+Importances = ('low','normal','high')
+Priorities = ('non-urgent','normal','urgent')
+Precedences = ('list', 'junk', 'bulk')
 RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
 RE_IPADDR = r'[0-9a-f\.:]+'
 RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
@@ -4247,7 +4247,7 @@ AdvancedHeaders = [
 	'Content-Language', 'Accept-Language',
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
-	]
+]
 # sensitive headers are stripped on opening an email for edit
 # TODO: strip sensitive headers before send
 SensitiveHeaders = [
@@ -4257,14 +4257,15 @@ SensitiveHeaders = [
 	# headers Clawsmail uses in draft emails:
 	'X-Claws-*', 'S', 'SCF', 'RMID',
 ]
-TechnicalHeaders = [
-	# TODO: other technical headers
+CoreTechnicalHeaders = [
 	HDR_CT,
 	HDR_CTE,
-	HDR_CT,
 	HDR_CD,
 	'Mime-Version',
 ]
+TechnicalHeaders = [] \
+	+ CoreTechnicalHeaders
+	# TODO: other technical headers
 EditExcludedHeaders = [
 	'Auto-Submitted',
 	'Delivered-To',  # sensitive?
@@ -4276,9 +4277,10 @@ EditExcludedHeaders = [
 	'X-Originating-IP',
 	#'X-MS-*',
 	#'X-*',
-]
-EditExcludedHeaders.extend(SensitiveHeaders)
-EditExcludedHeaders.extend(TechnicalHeaders)
+	] \
+	+ SensitiveHeaders \
+	+ TechnicalHeaders
+
 AddressbookHeaders = [
 	'From',
 	'Reply-To',
@@ -4286,12 +4288,6 @@ AddressbookHeaders = [
 	'To',
 	'Cc',
 	'Bcc',
-]
-CoreTechnicalHeaders = [
-	HDR_CT,
-	HDR_CTE,
-	HDR_CD,
-	'MIME-Version',
 ]
 ValidatorHeaders = {
 	'From': VAL_ADDRESS,
