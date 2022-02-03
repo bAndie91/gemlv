@@ -1992,9 +1992,12 @@ def open_composer(reason):
 	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_all_comp_hdr.set_active(False)
 	clear_composer_headers(None)
-	add_composer_From_hidden()
+	
 	for h in SenderHeaders:
 		add_composer_header(h).cancel()
+	my_addressline = guess_my_addressline()
+	if my_addressline.email:
+		add_composer_header('From', str(my_addressline))
 	set_composer_subject('')
 	composer_text_buffer.clear()
 	
@@ -2049,17 +2052,12 @@ def add_composer_mailto(mailto):
 			else:
 				add_composer_header(header, mailto[field])
 
-def guess_my_address():
-	"guess what is the user's email address to which the currently opened email is sent"
-	if TheEmail is None: return None
-	return TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
-
 def guess_my_addressline():
-	"like guess_my_address() but with added realname"
-	addr = guess_my_address()
-	if addr is None: return AddressLine('')
+	"guess what is the user's address line to which the currently opened email is sent"
+	if TheEmail is None: return AddressLine('')
+	addr = TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
 	realname = gemlv.utils.get_gecos_name()
-	# TODO consult addressbook for a known realname part
+	# TODO: consult addressbook for a known realname part
 	return AddressLine((realname, addr))
 
 def guess_reply_addressline():
@@ -2069,13 +2067,6 @@ def guess_reply_addressline():
 				return AddressLine(TheEmail.header[hname].decoded)
 	return AddressLine('')
 
-def add_composer_From_hidden():
-	addressline = guess_my_addressline()
-	if addressline.email:
-		box = add_composer_header('From', str(addressline))
-		box.cancel()
-		return True
-	return False
 
 def act_compose():
 	if open_composer(reason=COMPOSE_NEW):
@@ -2116,7 +2107,6 @@ def act_reply(compose_type):
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_addressline = guess_my_addressline()
-		add_composer_header('From', str(my_addressline))
 		
 		if compose_type in [COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY]:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
@@ -4013,7 +4003,8 @@ def act_dispos_notif():
 		toggle_rqdn.set_sensitive(False)
 		
 		dnt_addresses = TheEmail.headers[HDR_DNT].decoded
-		my_address = guess_my_address()
+		my_addressline = guess_my_addressline()
+		
 		if dnt_addresses:
 			for al in getaddresslines(dnt_addresses):
 				add_composer_header('To', al.addressline)
@@ -4031,7 +4022,7 @@ def act_dispos_notif():
 			os.environ['LANGUAGE'] = savelang
 		prms = {
 			'date': TheEmail.header['Date'].decoded or '[somewhen]',
-			'me': my_address or '[someone]',
+			'me': my_addressline.email or '[someone]',
 			'subject': TheEmail.header[HDR_SUBJ].decoded,
 			'delivery_date': TheEmail.header['Delivery-Date'].decoded or '[somewhen]',
 		}
@@ -4042,7 +4033,7 @@ def act_dispos_notif():
 		
 		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
-		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_address}]
+		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_addressline.email}]
 		if TheEmail.header[HDR_OR].nonempty:
 			origrcpt = TheEmail.header[HDR_OR].decoded
 			dn_fields += ['%(fieldname)s: RFC822;%(recipient)s' % {'fieldname': HDR_OR, 'recipient': origrcpt}]
