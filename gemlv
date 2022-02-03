@@ -1456,7 +1456,6 @@ class compose_header_box(gtk.HBox):
 		
 		self.name = chname
 		self.value = val
-		self.validators = None
 		self.readonly = False
 		self.removable = True
 	
@@ -1590,83 +1589,6 @@ class compose_header_box(gtk.HBox):
 			ac_model.append([item, glib.markup_escape_text(item), False, 0])
 		self.wdg_value.remove_data('autocomplete-computed-for')
 	
-	def on_name_changed(self, _x=None):
-		name = self.name
-		self.showhide_pick_buttons()
-		if name in HeaderValidators.keys():
-			self.validators = HeaderValidators[name]
-		else:
-			self.validators = None
-		
-		if name in AddressbookHeaders:
-			self.set_autocomplete_list(gemlv.addressbook.get_full())
-		elif name in AutocompletionHeaders.keys():
-			self.set_autocomplete_list(AutocompletionHeaders[name])
-		self.on_changed()
-	
-	def on_value_changed(self, entry=None):
-		if entry is None: entry = self.wdg_value
-		
-		# indicate field validity
-		bg_invalid = gtk.gdk.Color('#FFA4A4')
-		bg_normal = entry.get_data('bg-normal')
-		if not bg_normal:
-			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
-			entry.set_data('bg-normal', bg_normal)
-		valid = self.validate()
-		if valid == VALIDATION_RESULT_PASS:
-			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
-		else:
-			if valid == VALIDATION_RESULT_INVALID:
-				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
-				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
-				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
-			else:
-				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_DIALOG_QUESTION)
-				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Strange input; maybe double check"))
-			self.point_out()
-		
-		self.on_changed()
-		return False
-
-	def on_changed(self):
-		update_composer_toolbar_toggle_buttons()
-		if self.name in RecipientHeaders:
-			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
-		set_unsaved()
-		update_composer_status_message()
-	
-	def validate(self, fail_on_empty=False):
-		if not self.validators:
-			return VALIDATION_RESULT_PASS
-		text = self.value
-		result = True
-		for validation_rule in self.validators:
-			if validation_rule.has_key('require'):
-				result = bool(re.search(validation_rule['require'], text))
-			elif validation_rule.has_key('require-repetative'):
-				remainder = text
-				while True:
-					m = re.search(validation_rule['require-repetative'], remainder)
-					if m is not None:
-						remainder = remainder[m.end():]
-						if remainder == '':
-							break
-					else:
-						result = False
-						break
-				if remainder != '':
-					result = False
-			if not result:
-				break
-		if result:
-			return VALIDATION_RESULT_PASS
-		else:
-			if not fail_on_empty and self.value == '':
-				return VALIDATION_RESULT_PASS
-			return validation_rule.get('fail-result', VALIDATION_RESULT_INVALID)
 	
 	def point_out(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
@@ -1787,15 +1709,27 @@ class compose_header_box(gtk.HBox):
 	
 	@name.setter
 	def name(self, newname):
-		oldname = self.name
 		newname = gemlv.email.Header(newname).name
 		self.wdg_name.set_data('name', newname)
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name.children()[0].set_text(newname)
 		else:
 			self.wdg_name.set_label(_(newname))
-		if oldname != newname:
-			self.on_name_changed()
+		self.on_name_changed()
+	
+	def on_name_changed(self, _x=None):
+		name = self.name
+		self.showhide_pick_buttons()
+		if name in HeaderValidators.keys():
+			self.validators = HeaderValidators[name]
+		else:
+			self.validators = None
+		
+		if name in AddressbookHeaders:
+			self.set_autocomplete_list(gemlv.addressbook.get_full())
+		elif name in AutocompletionHeaders.keys():
+			self.set_autocomplete_list(AutocompletionHeaders[name])
+		self.on_changed()
 	
 	@property
 	def value(self):
@@ -1804,6 +1738,71 @@ class compose_header_box(gtk.HBox):
 	@value.setter
 	def value(self, newvalue):
 		self.wdg_value.set_text(newvalue)
+	
+	def on_value_changed(self, entry=None):
+		if entry is None: entry = self.wdg_value
+		
+		# indicate field validity
+		bg_invalid = gtk.gdk.Color('#FFA4A4')
+		bg_normal = entry.get_data('bg-normal')
+		if not bg_normal:
+			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
+			entry.set_data('bg-normal', bg_normal)
+		valid = self.validate()
+		if valid == VALIDATION_RESULT_PASS:
+			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
+		else:
+			if valid == VALIDATION_RESULT_INVALID:
+				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
+			else:
+				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_DIALOG_QUESTION)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Strange input; maybe double check"))
+			self.point_out()
+		
+		self.on_changed()
+		return False
+	
+	def validate(self, fail_on_empty=False):
+		if not self.validators:
+			return VALIDATION_RESULT_PASS
+		text = self.value
+		result = True
+		for validation_rule in self.validators:
+			if validation_rule.has_key('require'):
+				result = bool(re.search(validation_rule['require'], text))
+			elif validation_rule.has_key('require-repetative'):
+				remainder = text
+				while True:
+					m = re.search(validation_rule['require-repetative'], remainder)
+					if m is not None:
+						remainder = remainder[m.end():]
+						if remainder == '':
+							break
+					else:
+						result = False
+						break
+				if remainder != '':
+					result = False
+			if not result:
+				break
+		if result:
+			return VALIDATION_RESULT_PASS
+		else:
+			if not fail_on_empty and self.value == '':
+				return VALIDATION_RESULT_PASS
+			return validation_rule.get('fail-result', VALIDATION_RESULT_INVALID)
+	
+	def on_changed(self):
+		"runs when either the name or the value has been changed"
+		update_composer_toolbar_toggle_buttons()
+		if self.name in RecipientHeaders:
+			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
+		set_unsaved()
+		update_composer_status_message()
 	
 	@property
 	def readonly(self):
@@ -1816,12 +1815,12 @@ class compose_header_box(gtk.HBox):
 	
 	@property
 	def validators(self):
-		return self.wdg_value.get_data('validators')
+		return self._validators
 	
 	@validators.setter
 	def validators(self, newvalidators):
-		self.wdg_value.set_data('validators', newvalidators)
-		self.on_value_changed()  # TODO run self.validate() only?
+		self._validators = newvalidators
+		self.on_value_changed()
 	
 	@property
 	def removable(self):
@@ -2465,7 +2464,7 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			else:
 				mimetype = eml.content_type
 			messageid = eml.header[HDR_MID].decoded
-			if not messageid:
+			if not messageid and TheEmail is not None:
 				messageid = TheEmail.header[HDR_MID].decoded
 			set_xattrs(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
