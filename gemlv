@@ -3055,9 +3055,9 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
 			origin_email_file = win_main.get_data('email-file')
-			MsgId = email_to_send[HDR_MID]
+			msgid = email_to_send.header[HDR_MID].decoded
 			for xattrname in win_comp.get_data('add-msgid-xattr-on-send'):
-				append_xattrs(origin_email_fh, {xattrname: MsgId}, origin_email_file, glue=',')
+				append_xattrs(origin_email_fh, {xattrname: msgid}, origin_email_file, glue=',')
 		# Save queue id to the composed email file's xattr.
 		emailfile = win_comp.get_data('saved-to-file')
 		if emailfile is not None:
@@ -3187,9 +3187,9 @@ def build_newemail_to_send():
 	del email_to_send.headers[HDR_XQID]
 	
 	# set the Disposition-Notification-To header if the user has not set it.
-	if toggle_rqdn.get_active() and email_to_send[HDR_DNT] == '':
+	if toggle_rqdn.get_active() and email_to_send.header[HDR_DNT].decoded == '':
 		for addr in filter(None, get_composer_headers(['From', 'Reply-To'])):
-			email_to_send[HDR_DNT] = addr
+			email_to_send.header[HDR_DNT].decoded = addr
 			break
 	
 	# crypto-sign
