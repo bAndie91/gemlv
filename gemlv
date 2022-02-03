@@ -1299,9 +1299,9 @@ def show_advanced_comp_hdr(show=True):
 def add_composer_header__direct(hname, hval=None, manual_call=True):
 	box = None
 	for thisbox in panel_comp_header.children():
-		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox['name'] == hname:
+		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox.name == hname:
 			box = thisbox
-			if hval: box['value'] = hval
+			if hval: box.value = hval
 			break
 	if box is None:
 		# TODO: revise all add_composer_header__direct/add_composer_header/compose_header_box calls, let hval always not None
@@ -1335,14 +1335,14 @@ def reset_composer_headers(hname, hvals, manual_call=True):
 
 def set_composer_header(hname, hval):
 	for hbox in panel_comp_header.children():
-		if hbox['name'] == hname:
-			hbox['value'] = hval
+		if hbox.name == hname:
+			hbox.value = hval
 			return hbox
 	return add_composer_header(hname, hval)
 
 def clear_composer_headers(hname, content=None):
 	for box in panel_comp_header.children():
-		if (hname is None or box['name'] == hname) and (content is None or content == box['value']):
+		if (hname is None or box.name == hname) and (content is None or content == box.value):
 			box.cancel(manual=False)
 
 def composer_maintain_references_headers():
@@ -1454,8 +1454,11 @@ class compose_header_box(gtk.HBox):
 			self.btn_del.connect('clicked', self.cancel)
 			self.btn_del.connect('button-press-event', self.propagate_button_press_event)
 		
-		self['name'] = chname
-		self['value'] = val
+		self.name = chname
+		self.value = val
+		self.validators = None
+		self.readonly = False
+		self.removable = True
 	
 	def autocomplete_matcher(self, completion, userinput, treeiter, column):
 		ac_model = completion.get_model()
@@ -1511,18 +1514,18 @@ class compose_header_box(gtk.HBox):
 			return ac_model.get_value(treeiter, column['order']) != -1
 	
 	def open_suggestions_panel(self, wdg):
-		assert self['name'] in SenderHeaders
+		assert self.name in SenderHeaders
 		
 		win = AddressBrowser(modal_window=True, single_select=True)
 		win.set_title(_("Contact Address Chooser"))
 		win.set_transient_for(win_comp)
 		win.button_edit.hide()
-		win.connect('items-add', lambda addressbrowser, items: self.__setitem__('value', items[0]))
+		win.connect('items-add', lambda addressbrowser, items: setattr(self, 'value', items[0]))
 		
 		# load those (self-) addresses from the participants database which are in correspondence with the current recipients
 		recipients = get_composer_all_recipients_emails()
 		participants = query_participants(recipients)
-		correspondence = dict(map(lambda x: (x['our_address'], x), participants))
+		correspondence = dict([(x['our_address'], x) for x in participants])
 		def load_one(al, correspondence):
 			emailaddr = AddressLine(MimeDecoded(al)).email
 			if emailaddr in correspondence.keys():
@@ -1560,17 +1563,17 @@ class compose_header_box(gtk.HBox):
 		prompt_datetime(self.wdg_value)
 	
 	def showhide_pick_buttons(self):
-		if self['name'] in DateTimeHeaders:
+		if self.name in DateTimeHeaders:
 			self.btn_datetime.show()
 		else:
 			self.btn_datetime.hide()
-		if self['name'] in SenderHeaders:
+		if self.name in SenderHeaders:
 			self.btn_suggestions.show()
 		else:
 			self.btn_suggestions.hide()
 	
 	def on_populate_text_context_menu(self, entry, menu):
-		if self['name'] in AddressbookHeaders:
+		if self.name in AddressbookHeaders:
 			pos = 0
 			mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
 			mi.connect('activate', self.add_value_to_addressbook)
@@ -1578,7 +1581,7 @@ class compose_header_box(gtk.HBox):
 			menu.show_all()
 	
 	def add_value_to_addressbook(self, *_x):
-		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self['value'])))
+		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self.value)))
 	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
@@ -1588,12 +1591,12 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.remove_data('autocomplete-computed-for')
 	
 	def on_name_changed(self, _x=None):
-		name = self['name']
+		name = self.name
 		self.showhide_pick_buttons()
-		if name in ValidatorHeaders.keys():
-			self['validate'] = ValidatorHeaders[name]
+		if name in HeaderValidators.keys():
+			self.validators = HeaderValidators[name]
 		else:
-			self['validate'] = None
+			self.validators = None
 		
 		if name in AddressbookHeaders:
 			self.set_autocomplete_list(gemlv.addressbook.get_full())
@@ -1611,11 +1614,11 @@ class compose_header_box(gtk.HBox):
 			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
 			entry.set_data('bg-normal', bg_normal)
 		valid = self.validate()
-		if valid == VALID_PASS:
+		if valid == VALIDATION_RESULT_PASS:
 			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
 			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
 		else:
-			if valid == VALID_INVALID:
+			if valid == VALIDATION_RESULT_INVALID:
 				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
 				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
 				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
@@ -1629,22 +1632,18 @@ class compose_header_box(gtk.HBox):
 		return False
 
 	def on_changed(self):
-		name = self['name']
-		val = self['value']
 		update_composer_toolbar_toggle_buttons()
-		if name in RecipientHeaders:
+		if self.name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
 		set_unsaved()
 		update_composer_status_message()
 	
-	def validate(self):
-		if not self['validate']:
-			return VALID_PASS
-		text = self['value']
-		if text == '':
-			return VALID_PASS
+	def validate(self, fail_on_empty=False):
+		if not self.validators:
+			return VALIDATION_RESULT_PASS
+		text = self.value
 		result = True
-		for validation_rule in self['validate']:
+		for validation_rule in self.validators:
 			if validation_rule.has_key('require'):
 				result = bool(re.search(validation_rule['require'], text))
 			elif validation_rule.has_key('require-repetative'):
@@ -1663,9 +1662,11 @@ class compose_header_box(gtk.HBox):
 			if not result:
 				break
 		if result:
-			return VALID_PASS
+			return VALIDATION_RESULT_PASS
 		else:
-			return validation_rule.get('condition', VALID_INVALID)
+			if not fail_on_empty and self.value == '':
+				return VALIDATION_RESULT_PASS
+			return validation_rule.get('fail-result', VALIDATION_RESULT_INVALID)
 	
 	def point_out(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
@@ -1689,14 +1690,15 @@ class compose_header_box(gtk.HBox):
 		return False
 	
 	def popup_rcpt_menuitem_activated(self, mi, wdg):
-		self['name'] = mi.get_data('name')
+		self.name = mi.get_data('name')
 		self.popup_rcpt_menu_disappear(mi.parent, wdg)
 	
 	def popup_rcpt_menu_disappear(self, mnu, wdg):
 		wdg.set_relief(gtk.RELIEF_NONE)
 		self.focus()
 	
-	def bottomleft(self, mnu, wdg):
+	def bottomleft(self, _mnu, wdg):
+		"returns the widget's bottom-left corner's coordinates"
 		X, Y = self.window.get_origin()
 		x, y, w, h = wdg.get_allocation()
 		mx = X + x
@@ -1710,7 +1712,7 @@ class compose_header_box(gtk.HBox):
 		self.showhide_pick_buttons()
 	
 	def duplicate(self, evtwdg=None):
-		newbox = self.__class__(self['name'], '', hntype=self.hntype)
+		newbox = self.__class__(self.name, '', hntype=self.hntype)
 		self.parent.pack_start(newbox, False, True)
 		newbox.show_all()
 		newbox.focus()
@@ -1719,13 +1721,13 @@ class compose_header_box(gtk.HBox):
 				self.parent.reorder_child(newbox, n)
 	
 	def cancel(self, evtwdg=None, manual=True):
-		if self['name'] and self['value']:
+		if self.name and self.value:
 			set_unsaved()
 		if self.hntype == self.HNTYPE_LABEL:
 			self.hide()
 			self.tick_my_menuitem(0)
 			if not manual:
-				self['value'] = ''
+				self.value = ''
 		else:
 			if manual and self.hntype == self.HNTYPE_MENU:
 				n = 0
@@ -1733,17 +1735,17 @@ class compose_header_box(gtk.HBox):
 					if x.hntype == self.HNTYPE_MENU: n += 1
 					if n > 1: break
 				if n < 2:
-					self['value'] = ''
+					self.value = ''
 					return False
 			self.parent.remove(self)
 			update_composer_toolbar_toggle_buttons()
-		if self['name'] in RecipientHeaders:
+		if self.name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
 		update_composer_status_message()
 	
 	def tick_my_menuitem(self, on):
 		for mi in menu_add_header.children():
-			if mi.get_data('chname') == self['name']:
+			if mi.get_data('chname') == self.name:
 				mi.set_active(on)
 				break
 	
@@ -1769,51 +1771,66 @@ class compose_header_box(gtk.HBox):
 				elif wbottom > bottom:
 					vadj.value = wbottom - vadj.page_size
 	
-	def __getitem__(self, key):
-		if key == 'name':
-			if self.hntype == self.HNTYPE_CUSTOM:
-				it = self.wdg_name.get_active_iter()
-				if it is not None:
-					ret = self.wdg_name.get_model().get_value(it, 0)
-				else:
-					ret = self.wdg_name.children()[0].get_text()
+	@property
+	def name(self):
+		if self.hntype == self.HNTYPE_CUSTOM:
+			it = self.wdg_name.get_active_iter()
+			if it is not None:
+				ret = self.wdg_name.get_model().get_value(it, 0)
 			else:
-				ret = self.wdg_name.get_data('name')
-			if ret is not None:
-				ret = gemlv.email.Header(ret).name
-			return ret
-		elif key == 'name_lc':
-			return self['name'].lower()
-		elif key == 'value':
-			return self.wdg_value.get_text()
-		elif key == 'readonly':
-			return not self.wdg_value.get_sensitive()
-		elif key in ['validate']:
-			return self.wdg_value.get_data(key)
+				ret = self.wdg_name.children()[0].get_text()
 		else:
-			raise KeyError()
+			ret = self.wdg_name.get_data('name')
+		if ret is not None:
+			ret = gemlv.email.Header(ret).name
+		return ret
 	
-	def __setitem__(self, key, newvalue):
-		if key == 'name':
-			newvalue = gemlv.email.Header(newvalue).name
-			old = self[key]
-			self.wdg_name.set_data('name', newvalue)
-			if self.hntype == self.HNTYPE_CUSTOM:
-				self.wdg_name.children()[0].set_text(newvalue)
-			else:
-				self.wdg_name.set_label(_(newvalue))
-			if old != newvalue:
-				self.on_name_changed()
-		elif key == 'value':
-			self.wdg_value.set_text(newvalue)
-		elif key == 'readonly':
-			self.wdg_name.set_sensitive(not newvalue)
-			self.wdg_value.set_sensitive(not newvalue)
-		elif key == 'validate':
-			self.wdg_value.set_data(key, newvalue)
-			self.on_value_changed()
+	@name.setter
+	def name(self, newname):
+		oldname = self.name
+		newname = gemlv.email.Header(newname).name
+		self.wdg_name.set_data('name', newname)
+		if self.hntype == self.HNTYPE_CUSTOM:
+			self.wdg_name.children()[0].set_text(newname)
 		else:
-			raise KeyError()
+			self.wdg_name.set_label(_(newname))
+		if oldname != newname:
+			self.on_name_changed()
+	
+	@property
+	def value(self):
+		return self.wdg_value.get_text()
+	
+	@value.setter
+	def value(self, newvalue):
+		self.wdg_value.set_text(newvalue)
+	
+	@property
+	def readonly(self):
+		return not self.wdg_value.get_sensitive()
+	
+	@readonly.setter
+	def readonly(self, newreadonly):
+		self.wdg_name.set_sensitive(not newreadonly)
+		self.wdg_value.set_sensitive(not newreadonly)
+	
+	@property
+	def validators(self):
+		return self.wdg_value.get_data('validators')
+	
+	@validators.setter
+	def validators(self, newvalidators):
+		self.wdg_value.set_data('validators', newvalidators)
+		self.on_value_changed()  # TODO run self.validate() only?
+	
+	@property
+	def removable(self):
+		return self.btn_del.get_sensitive()
+	
+	@removable.setter
+	def removable(self, newremovable):
+		self.btn_del.set_sensitive(newremovable)
+
 
 def act_add_to_addressbook_manual(address_line):
 	try:
@@ -1899,10 +1916,10 @@ def get_composer_headerboxes(search_hname):
 			search_hnames = [search_hname.lower()]
 	hlist = []
 	for hbox in panel_comp_header.children():
-		if hbox.get_visible() or hbox['name_lc'] not in [x.lower() for x in SenderHeaders]:
+		if hbox.get_visible() or hbox.name.lower() not in [x.lower() for x in SenderHeaders]:
 			if search_hname is None:
 				hlist.append(hbox)
-			elif hbox['name_lc'] in search_hnames:
+			elif hbox.name.lower() in search_hnames:
 				hlist.append(hbox)
 	return hlist
 
@@ -1910,9 +1927,9 @@ def get_composer_headers(search_hname):
 	hlist = []
 	for hbox in get_composer_headerboxes(search_hname):
 		if search_hname is None:
-			hlist.append((hbox['name'], hbox['value']))
+			hlist.append((hbox.name, hbox.value))
 		else:
-			hlist.append(hbox['value'])
+			hlist.append(hbox.value)
 	return hlist
 
 def get_composer_header_last(hname):
@@ -2843,9 +2860,9 @@ def validate_all_comp_headers():
 		box = panel_comp_header.children()[n]
 		if box.get_visible():
 			valid = box.validate()
-			if valid == VALID_INVALID:
+			if valid == VALIDATION_RESULT_INVALID:
 				box.point_out()
-				raise ComposerHeaderValidationError(box['name'])
+				raise ComposerHeaderValidationError(box.name)
 
 class CanNotPrepareEmailToSend(Exception):
 	pass
@@ -3999,7 +4016,8 @@ def act_dispos_notif():
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
 		add_composer_agent_headers()
 		pndr_box = add_composer_header(HDR_PNDR, 'yes')
-		pndr_box['readonly'] = True
+		pndr_box.readonly = True
+		pndr_box.removable = False
 		toggle_rqdn.set_sensitive(False)
 		
 		dnt_addresses = TheEmail.headers[HDR_DNT].decoded
@@ -4051,7 +4069,7 @@ def act_dispos_notif():
 def act_req_dispos_notif():
 	if toggle_rqdn.get_active():
 		box_gdr = set_composer_header(HDR_GDR, 'Yes')
-		box_gdr['readonly'] = True
+		box_gdr.readonly = True
 		
 		if not filter(None, get_composer_headers(['From', 'Reply-To'])):
 			display_error(_(MSG_NO_ADDRESS_FOR_DNT))
@@ -4183,36 +4201,30 @@ MSG_NO_ADDRESS_FOR_DNT = "Set a From or Reply-To address to have Disposition Not
 Importances = ('low','normal','high')
 Priorities = ('non-urgent','normal','urgent')
 Precedences = ('list', 'junk', 'bulk')
-RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
-RE_IPADDR = r'[0-9a-f\.:]+'
-RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
-RE_EMAIL_PERMISSIVE = r'.@' + RE_DOMAINPART
-RE_EMAIL = r'(?P<LP>\w[\w\.+-]*(?<![\.-]))@' + RE_DOMAINPART
-RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
-VALID_PASS, VALID_INVALID, VALID_NOTICE = 1, 0, 2
+VALIDATION_RESULT_PASS, VALIDATION_RESULT_INVALID, VALIDATION_RESULT_NOTICE = 1, 0, 2
 VAL_EMAIL = [{
 		'require': r'(?i)' + RE_EMAIL_PERMISSIVE  + '$',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},
 	{
 		'require': r'^(?i)' + RE_EMAIL + '$',
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_ADDRESSES = [{
 		# note: no left-anchor
 		'require-repetative': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?\s*(?:,\s*|$)',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},{
 		'require-repetative': r'^(?i)' + RE_ADDRESS,
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_ADDRESS = [{
 		# note: no left-anchor
 		'require': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?$',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},{
 		'require': r'^(?i)' + RE_ADDRESS + '$',
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_AGE = [{
 	'require': r'^\d+[smhdwy]$',
@@ -4289,7 +4301,7 @@ AddressbookHeaders = [
 	'Cc',
 	'Bcc',
 ]
-ValidatorHeaders = {
+HeaderValidators = {
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
 	HDR_DNT: VAL_ADDRESS,
@@ -4302,7 +4314,7 @@ ValidatorHeaders = {
 	'Precedence': VAL_PRECEDENCE,
 }
 for h in DateTimeHeaders:
-	ValidatorHeaders[h] = VAL_DATE
+	HeaderValidators[h] = VAL_DATE
 AutocompletionListSizeLimitOnEmptyInput = 10
 AutocompletionHeaders = {
 	'Importance': Importances,
