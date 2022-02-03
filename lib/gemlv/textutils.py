@@ -28,3 +28,7 @@ def shorturl(url, maxlength=72):
 		return url[0:maxlength-1] + '…'
 	else:
 		return None
+
+def wildcardmatch(subject, pattern):
+	from fnmatch import fnmatch
+	return fnmatch(subject.lower(), pattern.lower())

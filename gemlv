@@ -25,7 +25,7 @@ from tempfile import mkstemp
 from tempfile import mkdtemp
 from mimetypes import guess_extension
 import magic
-from fnmatch import fnmatch
+from gemlv.textutils import wildcardmatch
 import argparse
 try:
 	import xattr
@@ -1185,7 +1185,7 @@ def get_headers_markup(eml):
 def get_filters_by_mime(main, sub, all=True):
 	filters = []
 	for m, s, marks, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+([!\$]*)(\S+)\s*(.+)?', splitgroups=[5]):
-		if fnmatch(main, m) and fnmatch(sub, s):
+		if wildcardmatch(main, m) and wildcardmatch(sub, s):
 			isbin = marks.find('!')>-1
 			isshell = marks.find('$')>-1
 			e = None
@@ -2122,7 +2122,7 @@ def act_reply(compose_type):
 				email_to_forward = gemlv.email.Email(email.message_from_string(TheEmail.as_string()))
 				# remove sensitive email headers from the forwarded email
 				for fwd_header in email_to_forward.headers.keys:
-					if any(fnmatch(fwd_header.lower(), sensitive_header.lower()) for sensitive_header in SensitiveHeaders):
+					if any(wildcardmatch(fwd_header, sensitive_header) for sensitive_header in SensitiveHeaders):
 						del email_to_forward.headers[fwd_header]
 				part = gemlv.email.Email(MIMEMessage(email_to_forward._ll_email))
 				part.header[HDR_CD].value.encoded = 'attachment'
@@ -4744,7 +4744,7 @@ if cliArgs.compose:
 				supersedes.append(header.value.decoded)
 			elif header.name == HDR_SUBJ:
 				set_composer_subject(header.value.decoded)
-			if any(fnmatch(header.name.lower(), exclude_header.lower()) for exclude_header in EditExcludedHeaders):
+			if any(wildcardmatch(header.name, exclude_header) for exclude_header in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
 				warnx("Skip header '%s' in email editing." % (header.name,))
 			else:
