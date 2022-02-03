@@ -612,7 +612,7 @@ def load_parts(eml, model, parent):
 			encrypted_data = encrypted_part.as_string()
 			decrypt = gpg.decrypt(encrypted_data)
 			if decrypt.ok:
-				decrypted_eml = email.message_from_string(decrypt.data)
+				decrypted_eml = gemlv.email.Email(email.message_from_string(decrypt.data))
 				load_parts(decrypted_eml, model, iterator)
 				iconname = 'changes-allow'
 			else:
@@ -3215,7 +3215,6 @@ def build_newemail_to_send():
 		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-signature'
 		
 		# produce signature
-		signed_email = email.message_from_string(signed_email.as_string())
 		data_to_sign = signed_email.as_string()
 		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
 		if signed_email.content_type.main == 'multipart' and data_to_sign[-1] != '\n':
@@ -3235,7 +3234,7 @@ def build_newemail_to_send():
 		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
 		crypt_meta_part.payload_encoded = 'Version: 1\n'
 		crypt_email = gemlv.email.Email(MIMEBase(MIMETYPE_OCTETSTREAM.main, MIMETYPE_OCTETSTREAM.sub))
-		crypt_email.header[HDR_CD] = 'attachment'
+		crypt_email.header[HDR_CD].value.encoded = 'attachment'
 		crypt_email.header[HDR_CD].param['filename'].decoded = 'encrypted_message.pgp.asc'
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
@@ -3247,7 +3246,7 @@ def build_newemail_to_send():
 		email_to_send.attach(crypt_meta_part)
 		email_to_send.attach(crypt_email)
 		for hname in HeadersObfuscate:
-			if email_to_send.has_key(hname):
+			if hname in email_to_send.headers:
 				del email_to_send.headers[hname]
 				email_to_send.header[hname] = '...'
 	
@@ -3264,7 +3263,7 @@ def gpg_encrypt_email(eml):
 	extra_args = []
 	for r in hidden_recipients:
 		extra_args.extend(['--hidden-recipient', r])
-	email_to_encrypt = email.message_from_string(eml.as_string())
+	email_to_encrypt = gemlv.email.Email(email.message_from_string(eml.as_string()))
 	for hname in DontLeakHeaders:
 		del email_to_encrypt.headers[hname]
 	try:
@@ -3302,7 +3301,7 @@ def find_signature_author_address(email_root):
 	return author_address
 
 def generate_signature(email_root, data_to_sign):
-	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), find_signature_author_address(email_root))
+	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), '<'+find_signature_author_address(email_root)+'>')
 
 def propose_and_confirm_a_filename_to_save_edit():
 	subj = get_composer_subject()
@@ -3566,7 +3565,7 @@ def attach_blob(data, parent_iter=None, check_unique_file=True):
 	basename = 'file%s' % (get_extension_by_mime(mime),)
 	
 	part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
-	attachment_email = email.message_from_string(data)
+	attachment_email = gemlv.email.Email(email.message_from_string(data))
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
 	else:
