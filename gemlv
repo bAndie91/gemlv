@@ -3161,8 +3161,9 @@ def make_thin_mime_part(eml):
 	thin_eml.preamble = eml.preamble
 	thin_eml.epilogue = eml.epilogue
 	# record where this file was attached from, if it's known
-	if hasattr(eml, 'origin_path'):
-		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(eml.origin_path.encode('utf-8'))
+	if hasattr(eml._ll_email, 'payload_data_origin_path'):
+		origin_path = eml._ll_email.payload_data_origin_path
+		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(origin_path.encode('utf-8'))
 	# intentionally skip payload.
 	return thin_eml
 
@@ -3649,7 +3650,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 			part.payload_encoded = symlink_content.encode('quoted-printable')
 		else:
 			part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
-			part.origin_path = attachment_path
+			part._ll_email.payload_data_origin_path = attachment_path
 			
 			# Check whether this file is an email file.
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
@@ -3657,7 +3658,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 				# File being attached is an Email (according to mime type or by detected multipart)
 				# TODO: remove sensitive headers?
 				attachment_email = gemlv.email.Email(attachment_email)
-				attachment_email.origin_path = attachment_path
+				attachment_email._ll_email.payload_data_origin_path = attachment_path
 				part.attach(attachment_email)
 			else:
 				del attachment_email

@@ -316,7 +316,6 @@ class Email(object):
 			email_obj = email_obj._ll_email
 		self._ll_email = email_obj  # the low level email object
 		self.parent = parent_email_obj
-		self.origin_path = None
 		self._size_approx = None
 	
 	@property
