@@ -560,16 +560,7 @@ def load_file(filename):
 	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(TheEmail.header[HDR_SUBJ].decoded.replace('\n', '')) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
 	load_parts(TheEmail, Parts, Parts.get_iter_root())
-	panel_parts.expand_all()
-	if TheEmail.is_multipart():
-		if PartPrimary is not None:
-			selection_parts.select_iter(PartPrimary)
-		elif PartSecondary is not None:
-			selection_parts.select_iter(PartSecondary)
-		else:
-			selection_parts.select_path((0,))
-	else:
-		selection_parts.select_path((0,))
+	select_default_main_email_part()
 
 	if LeafParts > 1:
 		pos = panel_body.get_data('saved-position')
@@ -580,12 +571,23 @@ def load_file(filename):
 		panel_body.set_data('saved-position', panel_body.get_position())
 		panel_body.set_position(0)
 
+def select_default_main_email_part():
+	if TheEmail.is_multipart():
+		if PartPrimary is not None:
+			selection_parts.select_iter(PartPrimary)
+		elif PartSecondary is not None:
+			selection_parts.select_iter(PartSecondary)
+		else:
+			selection_parts.select_path((0,))
+	else:
+		selection_parts.select_path((0,))
+
 def clear_parts(model):
 	global LeafParts
 	LeafParts = 0
 	model.clear()
 
-def load_parts(eml, model, parent):
+def load_parts(eml, model, parent_it):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
@@ -595,51 +597,81 @@ def load_parts(eml, model, parent):
 	stock = gemlvtk.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
 	pixb = None
 	
-	iterator = model.append(parent, [eml, label, stock, pixb, {}])
+	iterator = model.append(parent_it, [eml, label, stock, pixb, {}])
+	
 	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is reported as text/plain by email module
 	if PartPrimary is None and eml.content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
 	if PartSecondary is None and eml.content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	if eml.content_type == 'multipart/encrypted':
-		crypto_protocol = eml.header[HDR_CT].param['protocol'].decoded
-		if crypto_protocol == 'application/pgp-encrypted':
-			# RFC3156
-			pgp_metadata_part = eml.parts[0]
-			load_parts(pgp_metadata_part, model, iterator)
-			encrypted_part_num = 1
-			encrypted_part = eml.parts[encrypted_part_num]
-			encrypted_data = encrypted_part.as_string()
-			decrypt = gpg.decrypt(encrypted_data)
-			if decrypt.ok:
-				decrypted_eml = gemlv.email.Email(email.message_from_string(decrypt.data))
-				load_parts(decrypted_eml, model, iterator)
-				iconname = 'changes-allow'
-			else:
-				iconname = 'changes-prevent'
-			
-			if decrypt.key_id is not None:
-				# it's a encrypted and signed message, store signatue info for later
-				model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_INFO]['gpg'] = {
-					'valid': decrypt.valid,
-					'stderr': decrypt.stderr,
-					'username': decrypt.username,
-				}
-			
-			for other_part in eml.parts[2:]:
-				load_parts(other_part, model, iterator)
-			
-			# Display an open/locked padlock icon
-			model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_ICONNAME] = None
-			model[model.iter_nth_child(iterator, encrypted_part_num)][COL_PARTS_ICON] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
-			if not decrypt.ok:
-				display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
-			return
+	
 	if eml.is_multipart():
-		for part in eml.parts:
-			load_parts(part, model, iterator)
+		if eml.content_type == 'multipart/encrypted':
+			crypto_protocol = eml.header[HDR_CT].param['protocol'].decoded
+		else:
+			crypto_protocol = None
+		for index, part in enumerate(eml.parts):
+			part_it = load_parts(part, model, iterator)
+			if crypto_protocol == 'application/pgp-encrypted' and index == MULTIPART_INDEX_PGP_ENCRYPTED_V1:
+				# see RFC 3156
+				replace_pgp_encrypted_part(model, part_it)
 	else:
 		LeafParts += 1
+	panel_parts.expand_to_path(model.get_path(iterator))
+	return iterator
+
+def replace_pgp_encrypted_part(model, iterator):
+	encrypted_part = model[iterator][COL_PARTS_EML]
+	encrypted_data = encrypted_part.as_string()
+	try:
+		decrypt = gpg.decrypt(encrypted_data)
+	except Exception as e:
+		traceback.print_exc()
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(e)
+		decrypt = PropertyStoreClass()
+		decrypt.ok = False
+		decrypt.key_id = False
+		decrypt.status = -1
+		decrypt.stderr = ''
+	
+	if decrypt.ok:
+		decrypted_eml = gemlv.email.Email(email.message_from_string(decrypt.data))
+		model[iterator][COL_PARTS_INFO]['gpg-encrypted-part'] = False
+		load_parts(decrypted_eml, model, iterator)
+		iconname = 'changes-allow'
+	else:
+		iconname = 'changes-prevent'
+		# place a hidden TreeViewRow under this row to have the expander show up
+		model.append(iterator, [None, '', '', None, {}])
+		panel_parts.collapse_row(model.get_path(iterator))
+		model[iterator][COL_PARTS_INFO]['gpg-encrypted-part'] = True
+	
+	if decrypt.key_id is not None:
+		# it's a encrypted and signed message, store signatue info for later
+		model[iterator][COL_PARTS_INFO]['gpg'] = {
+			'valid': decrypt.valid,
+			'stderr': decrypt.stderr,
+			'username': decrypt.username,
+		}
+	
+	# Display an open/locked padlock icon
+	model[iterator][COL_PARTS_ICONNAME] = None
+	model[iterator][COL_PARTS_ICON] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+	if decrypt.ok:
+		select_default_main_email_part()
+	else:
+		display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
+	return bool(decrypt.ok)
+
+def user_try_expand_panel_parts_row(treeview, iterator, it_path):
+	model = treeview.get_model()
+	if model[iterator][COL_PARTS_INFO].get('gpg-encrypted-part'):
+		encrypted_part = model[iterator][COL_PARTS_EML]
+		phantom_it = model.iter_nth_child(iterator, 0)
+		model.remove(phantom_it)
+		return replace_pgp_encrypted_part(model, iterator)
+	return True
 
 def clear_content(s=''):
 	bufr = panel_content.get_buffer()
@@ -851,7 +883,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_save2.set_sensitive(True)
 	
 	if eml.header['Content-Location'].nonempty:
-		uri = urllib2.unquote(eml.header['Content-Location'].decoded)
+		uri = urllib2.unquote(eml.header['Content-Location'].decoded).decode('utf-8')
 		uri_esc = glib.markup_escape_text(uri)
 		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
 		lbl_content_location.show()
@@ -2603,7 +2635,7 @@ def show_view_headers(show=True):
 		panel_view_header.set_size_request(-1, -1)
 		panel_view_header.set_line_wrap(False)
 		headers_markup = [ \
-			PMU_HEAD + glib.markup_escape_text(header.name) + PMU_HEAD_CLOSE + ': ' + \
+			PMU_HEAD + glib.markup_escape_text(header.raw_name) + PMU_HEAD_CLOSE + ': ' + \
 			glib.markup_escape_text(header.value.decoded) \
 			for header in TheEmail.headers.items \
 		]
@@ -4515,6 +4547,7 @@ panel_parts.connect('button-press-event', on_panel_parts_button_press_event)
 panel_parts.connect('drag-begin', drag_part_begin)
 panel_parts.connect('drag-data-get', drag_part_data)
 panel_parts.connect('drag-end', drag_part_end)
+panel_parts.connect('row-expanded', user_try_expand_panel_parts_row)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
 lbl_content_location.set_alignment(0, 0)

@@ -58,3 +58,5 @@ XATTR_QUEUEID = 'user.gemlv.sent.queue-id'
 ENCNAMES_UUE = ('x-uuencode', 'uuencode', 'uue', 'x-uue')
 
 SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
+
+MULTIPART_INDEX_PGP_ENCRYPTED_V1 = 1  # see RFC 3156
