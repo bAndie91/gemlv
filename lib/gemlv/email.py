@@ -214,9 +214,26 @@ class HeaderParameterPluralAccessor(object):
 				# Must have been a bare attribute
 				name = p.strip()
 				val = ''
-			# TODO: are param names case insensitive?
-			params.append((name, unquote_header_parameter(val)))
-		params = email.utils.decode_params(params)
+			if name:
+				# TODO: are param names case insensitive?
+				# name = name.lower()
+				# unquote the value here, because email.utils.unquote does it wrong,
+				val = unquote_header_parameter(val)
+				# however if the unquoted value also enclosed in double-quotes or angle brackets,
+				# it will be stripped again.
+				if (val.startswith('"') and val.endswith('"')) or (val.startswith('<') and val.endswith('>')):
+					# it's safe to MIME-encode it in utf-8 because it is most likely ascii text, otherwise it
+					# would be starting with "=?" sequence.
+					val = email.Header.make_header([(val, 'utf-8')])
+				params.append((name, val))
+		if params:
+			# it handles RFC 2231 headers for us
+			params = email.utils.decode_params(params)
+			# but quotes all parameter values (despite nobody asked) except the 1st one
+			# so reverse it:
+			for index, (name, value_quoted) in enumerate(params):
+				if index == 0: continue
+				params[index] = (name, unquote_header_parameter(value_quoted))
 		return params
 
 class HeaderParameterValue(MimeTextValue):
