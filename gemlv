@@ -3163,7 +3163,7 @@ def build_newemail(with_attachment_data=True):
 			if depth == 0: continue  # this is the main email object
 			if depth == 1 and index == 0: continue  # this is the email body part
 			if part.content_type == MIMETYPE_DN:
-				# attach disposition notification part directly, it is not come from a file.
+				# attach disposition notification part directly, it is not from a file.
 				latest_parts[depth-1].attach(part)
 				continue
 			# TODO: what to do with forwarded envelopes here?
@@ -3189,11 +3189,16 @@ def make_thin_mime_part(eml):
 		thin_eml.headers.append(header)
 	thin_eml.preamble = eml.preamble
 	thin_eml.epilogue = eml.epilogue
-	# record where this file was attached from, if it's known
 	if hasattr(eml._ll_email, 'payload_data_origin_path'):
+		# record where this file was attached from, if it's known
 		origin_path = eml._ll_email.payload_data_origin_path
 		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(origin_path.encode('utf-8'))
-	# intentionally skip payload.
+		# intentionally skip payload here.
+	else:
+		# copy the payload if the file where the data come from is not known
+		# and if it's a leaf MIME part (ie. not multipart)
+		if not eml.is_multipart():
+			thin_eml.payload_encoded = eml.payload_encoded
 	return thin_eml
 
 def make_protected_headers_part(eml):
