@@ -2311,6 +2311,9 @@ def get_mime_by_data(data):
 def act_open():
 	eml = get_part_by_itpath()
 	if eml is None: return
+	open_payload_as_temp_file(eml)
+
+def open_payload_as_temp_file(eml):
 	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(eml.content_type))
 	try:
 		save_to_filedescriptor(eml, fd)
@@ -2461,7 +2464,7 @@ def set_xattrs(fh, attrs, filename='-'):
 			try:
 				if attrval is None:
 					xattr.removexattr(fh, attrname)
-				else:
+				elif attrval:
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError as e:
 				if e.errno == os.errno.ENODATA and attrval is None:
@@ -3583,7 +3586,7 @@ def act_composer_attachment_menu_item_activated(mi, func):
 	func(opts)
 
 def act_composer_attachment_menu_open_from_memory(opts):
-	raise NotImplementedError
+	open_payload_as_temp_file(opts.part)
 
 def act_composer_attachment_menu_open_from_disk(opts):
 	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
