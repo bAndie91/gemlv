@@ -232,3 +232,16 @@ def get_stock_icon_by_mime(main, sub):
 		return main + '-x-generic'
 	
 	return gtk.STOCK_FILE
+
+def coordinates(widget, corner):
+	assert isinstance(corner, gtk.CornerType)
+	X, Y = widget.window.get_origin()
+	x, y, w, h = widget.get_allocation()
+	if corner == gtk.CORNER_TOP_LEFT:
+		return (X + x, Y + y, True)
+	elif corner == gtk.CORNER_TOP_RIGHT:
+		return (X + x + w, Y + y, True)
+	elif corner == gtk.CORNER_BOTTOM_LEFT:
+		return (X + x, Y + y + h, True)
+	elif corner == gtk.CORNER_BOTTOM_RIGHT:
+		return (X + x + w, Y + y + h, True)

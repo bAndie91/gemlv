@@ -76,6 +76,7 @@ from gemlv.utils import AddressLine
 from gemlv.utils import getaddresslines
 from gemlv.utils import decode_mimetext
 from gemlv.utils import get_gecos_name
+from gemlv.utils import analyze_for_optimal_encoding
 from gemlv.mimetext import MimeDecoded
 from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
@@ -1296,6 +1297,13 @@ def open_comp_hdr_menu(widget, event):
 	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
 		menu_add_header.popup(None, None, None, event.button, event.time)
 		return True
+	return False
+
+def on_composer_attachments_clicked(widget, event):
+	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+		menu_composer_attachments.popup(None, None, None, event.button, event.time)
+		return True
+	return False
 
 def act_comp_hdr_menuitem(mi, hname=None):
 	if hname is None:
@@ -1636,7 +1644,7 @@ class compose_header_box(gtk.HBox):
 				mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
 				mnu.append(mi)
 			mnu.show_all()
-			mnu.popup(None, None, self.bottomleft, evt.button, evt.time, wdg)
+			mnu.popup(None, None, lambda _menu, wdg: gemlvtk.coordinates(widget, gtk.CORNER_BOTTOM_LEFT), evt.button, evt.time, wdg)
 			return True
 		return False
 	
@@ -1647,14 +1655,6 @@ class compose_header_box(gtk.HBox):
 	def popup_rcpt_menu_disappear(self, mnu, wdg):
 		wdg.set_relief(gtk.RELIEF_NONE)
 		self.focus()
-	
-	def bottomleft(self, _mnu, wdg):
-		"returns the widget's bottom-left corner's coordinates"
-		X, Y = self.window.get_origin()
-		x, y, w, h = wdg.get_allocation()
-		mx = X + x
-		my = Y + y + h
-		return (mx, my, True)
 	
 	def show_all(self):
 		super(self.__class__, self).show_all()
@@ -2873,6 +2873,8 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 	if label_edit_cb is not None:
 		cr_txt.set_property('editable', True)
 		cr_txt.connect('edited', label_edit_cb, colnum_txt)
+		tv.set_data('edit-treeviewcolumn', tvc)
+		tv.set_data('edit-cellrenderer', cr_txt)
 	tvc.pack_start(cr_pix, False)
 	tvc.pack_start(cr_txt, True)
 	tvc.add_attribute(cr_txt, 'markup', COL_ATTACHMENTS_LABEL_MARKUP)
@@ -3567,26 +3569,33 @@ def act_attach():
 			attach_path(filename, filename)
 		update_composer_status_message()
 
-def byte_is_identical_qp(b):
-	if b == '\r' or b == '\n':
-		return True
-	if ord(b) < ord(' ') or ord(b) > ord('~') or b == '=':
-		return False
-	return True
 
-def analyze_for_optimal_encoding(buf):
-	"Choose the transfer encoding from Base64 and Quoted-Printable, which produces smaller encoded data for a given clear data."
-	# TODO: support yEnc
-	
-	approx_encoded_size_b64 = len(buf) * 1.37
-	approx_encoded_size_qp = sum(map(lambda b: 1 if byte_is_identical_qp(b) else 3, buf))
-	# add an extra equal mark and a linefeed for each 76th output byte
-	approx_encoded_size_qp += 2 * (approx_encoded_size_qp / 76)
-	
-	if approx_encoded_size_b64 < approx_encoded_size_qp:
-		return 'base64'
-	else:
-		return 'quoted-printable'
+def act_composer_attachment_menu_item_activated(mi, func):
+	itpath, _col = panel_attachments.get_cursor()
+	if itpath is None: raise ValueError
+	it = Attachments.get_iter(itpath)
+	part = Attachments[it][COL_ATTACHMENTS_EML]
+	opts = PropertyStoreClass()
+	opts.treeview_iterator = it
+	opts.treeview_iterator_path = itpath
+	opts.part = part
+	opts.original_path = part._ll_email.payload_data_origin_path
+	func(opts)
+
+def act_composer_attachment_menu_open_from_memory(opts):
+	raise NotImplementedError
+
+def act_composer_attachment_menu_open_from_disk(opts):
+	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
+
+def act_composer_attachment_menu_rename(opts):
+	tvc = panel_attachments.get_data('edit-treeviewcolumn')
+	cr = panel_attachments.get_data('edit-cellrenderer')
+	panel_attachments.set_cursor_on_cell(opts.treeview_iterator_path, focus_column=tvc, focus_cell=cr, start_editing=True)
+
+def act_composer_attachment_menu_detach(opts):
+	remove_attachments([opts.treeview_iterator_path])
+
 
 def on_composer_attachments_row_changed(model, itpath, iterator):
 	hid = model.get_data('row-changed-signal-handler-id')
@@ -3918,10 +3927,20 @@ def rename_attachment(cellrenderer, iterator, new_text, colnum):
 	Attachments[iterator][colnum] = glib.markup_escape_text(new_text)
 	return True
 
-def on_keypress_attachments(tv, evt):
-	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
+def on_keypress_attachments(tv, event):
+	if event.keyval == gtk.gdk.keyval_from_name('Delete'):
 		sel = panel_attachments.get_selection()
-		for itpath in reversed(sel.get_selected_rows()[1]):
+		selected_itpaths = sel.get_selected_rows()[1]
+		remove_attachments(reversed(selected_itpaths))
+		update_composer_status_message()
+		return True
+	if event.keyval == gtk.gdk.keyval_from_name('Menu'):
+		menu_composer_attachments.popup(None, None, lambda _menu: gemlvtk.coordinates(panel_attachments, gtk.CORNER_TOP_LEFT), 3, event.time)
+		return True
+	return False
+
+def remove_attachments(treeview_iterator_paths):
+	for itpath in treeview_iterator_paths:
 			try:
 				iterator = Attachments.get_iter(itpath)
 			except ValueError:
@@ -3933,6 +3952,8 @@ def on_keypress_attachments(tv, evt):
 				continue
 			part = Attachments[iterator][COL_ATTACHMENTS_EML]
 			if part.content_type == MIMETYPE_EMAIL:
+				# remove the Message-ID from the main edited email's References headers
+				# TODO: what if the message was attached multiple times
 				composer_substract_from_list_header(HDR_REF, [part.header[HDR_MID].decoded])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
@@ -3941,9 +3962,6 @@ def on_keypress_attachments(tv, evt):
 				parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 			parent_part.parts.remove(part)
 			del Attachments[iterator]
-		update_composer_status_message()
-		return True
-	return False
 
 def on_panel_parts_button_press_event(wdg, event):
 	# https://stackoverflow.com/a/57470492/1676943
@@ -4639,6 +4657,7 @@ panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
 spanel_comp_header = gtk.ScrolledWindow()
 menu_add_header = gtk.Menu()
+menu_composer_attachments = gtk.Menu()
 panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
@@ -4691,6 +4710,7 @@ panel_attachments.connect('drag-data-received', drop_attachment_reorder_data)
 panel_attachments.connect('drag-drop', drop_attachment_reorder_drop)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
+panel_attachments.connect('button-release-event', on_composer_attachments_clicked)
 panel_upper.set_position(int(Props['ui/composer/headers/width'] or (win_comp.get_default_size()[0] - 242)))
 panel_upper.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/headers/width', paned.get_position())))
 panel_compose.set_position(int(Props['ui/composer/headers/height'] or 125))
@@ -4707,6 +4727,7 @@ frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 
+# context menu on headers panel (composer mode)
 for name in SenderHeaders:
 	mi = gtk.CheckMenuItem(_("Specify %s") % (_(name)))
 	mi.set_data('chname', name)
@@ -4723,6 +4744,21 @@ menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
 menuitem_all_comp_hdr.connect('toggled', act_all_comp_hdr)
 menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
+
+# context menu on attachments panel (composer mode)
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
+mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_memory)
+menu_composer_attachments.append(mi)
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
+mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
+menu_composer_attachments.append(mi)
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
+mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
+menu_composer_attachments.append(mi)
+mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
+mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_detach)
+menu_composer_attachments.append(mi)
+menu_composer_attachments.show_all()
 
 toolbuttons = [
 	(_("Send"), 'mail-send', _("Send")+'\n'+_("Right click:")+' '+_("Save As in ready-to-send format"), act_send, act_send_to_file),

@@ -87,3 +87,24 @@ def decode_mimetext(encoded_text):
 def get_gecos_name():
 	return re.sub(',.*,.*,.*', '', pwd.getpwuid(os.getuid()).pw_gecos)
 
+
+def byte_is_identical_qp(b):
+	if b == '\r' or b == '\n':
+		return True
+	if ord(b) < ord(' ') or ord(b) > ord('~') or b == '=':
+		return False
+	return True
+
+def analyze_for_optimal_encoding(buf):
+	"Choose the transfer encoding from Base64 and Quoted-Printable, which produces smaller encoded data for a given clear data."
+	# TODO: support yEnc
+	
+	approx_encoded_size_b64 = len(buf) * 1.37
+	approx_encoded_size_qp = sum(map(lambda b: 1 if byte_is_identical_qp(b) else 3, buf))
+	# add an extra equal mark and a linefeed for each 76th output byte
+	approx_encoded_size_qp += 2 * (approx_encoded_size_qp / 76)
+	
+	if approx_encoded_size_b64 < approx_encoded_size_qp:
+		return 'base64'
+	else:
+		return 'quoted-printable'
