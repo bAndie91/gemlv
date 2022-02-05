@@ -1448,11 +1448,12 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.wdg_value.connect('key-press-event', self.on_keypress)
 		self.wdg_value.connect('populate-popup', self.on_populate_text_context_menu)
+		
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
+		col_text, col_markup, col_ismatch, col_order = 0, 1, 2, 3
 		self.completer.set_model(gtk.ListStore(str, str, bool, int))
 		self.completer.set_minimum_key_length(0)
-		col_text, col_markup, col_ismatch, col_order = 0, 1, 2, 3
 		self.completer.set_match_func(self.autocomplete_matcher, {'text': col_text, 'markup': col_markup, 'is_match': col_ismatch, 'order': col_order})
 		self.completer.set_text_column(col_text)
 		self.completer.set_attributes(self.completer.get_cells()[0], markup=col_markup)
@@ -1577,14 +1578,10 @@ class compose_header_box(gtk.HBox):
 		return True
 	
 	def on_keypress(self, wdg, evt):
-		if evt.keyval == gtk.gdk.keyval_from_name('Down'):
-			try:
-				if wdg.get_text() == '' and len(wdg.get_completion().get_model()) <= AutocompletionListSizeLimitOnEmptyInput:
-					# Trigger auto completion popup. [hack]
-					wdg.emit('changed')
-					return True
-			except AttributeError:
-				pass
+		if evt.keyval == gtk.gdk.keyval_from_name('Down') and evt.state & gtk.gdk.SHIFT_MASK:
+			# Trigger auto completion popup. [hack]
+			wdg.emit('changed')
+			return True
 		return False
 	
 	def propagate_button_press_event(self, w, evt):

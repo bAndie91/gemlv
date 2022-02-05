@@ -37,14 +37,14 @@ Email viewer and composer for local emails in GTK
 		- single files
 		- more files at once in a folder
 		- preserving multipart structure (ie. save in directory tree)
-	- preverse modification time, permissions if specified in attachment
+	- preverse modification time, permissions if specified in attachment (Content-Disposition header `modification_date` and `posix_mode` parameters respectively)
 	- preserve symlinks
 	- save Message-ID, Content-Type in Extended Attributes
 - Encryption
 	- decrypt encrypted Email when open (MIME/PGP format is supported)
 	- verify GPG signatures, warn if mismatch
 		- both attached signature and signature which is embedded in the pgp message
-	- encrypt message and attachments before send
+	- encrypt message and attachments before send (MIME/PGP format)
 		- hide Bcc recipients in the encrypted message
 		- obfuscate headers
 	- sign email message and attachments (MIME/PGP)
@@ -74,8 +74,8 @@ Email viewer and composer for local emails in GTK
 		- pick date and time from calendar when adding date-time headers
 	- can edit message by external program ([mimeopen-gui](https://github.com/bAndie91/mimeopen-gui))
 	- options
-		- set Importance and Priority by tool buttons
-		- ask Disposition Notification by tool button
+		- set Importance and Priority by a toolbar toggle
+		- ask Disposition Notification by a toolbar toggle
 	- addressbook
 		- read plain email addresses from files line by line (`~/Mail/.addressbook` and `~/Mail/.addressbook.d/*`)
 		- automatically save addresses to which you send emails (`~/Mail/.addressbook.d/gemlv.auto`)
@@ -131,6 +131,7 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-H``` Show/Hide uncommon headers
 	- ```F4``` Edit draft message with external program
 	- ```Ctrl-A``` Open built-in addressbook browser
+	- ```Shift-Down``` Pop up auto completion (on header input boxes in composer mode)
 
 
 ## Autocrypt implementation status
@@ -149,8 +150,8 @@ Email viewer and composer for local emails in GTK
 - [ ] setup message: proper generation and processing of Autocrypt Setup Message
 - [ ] setup process: follows guidance with respect to Autocrypt account setup
 - [ ] gossip
-	- send Autocrypt-Gossip headers
-	- process incoming Autocrypt and Autocrypt-Gossip headers
+	- [ ] send Autocrypt-Gossip headers
+	- [ ] process incoming Autocrypt and Autocrypt-Gossip headers
 - [ ] uid decorative: UID in key data is only used for decorative purposes, and in particular not for looking up keys for an e-mail address.
 
 
