@@ -316,10 +316,10 @@ def display_error(e, suppl_text=''):
 	dlg.run()
 	dlg.destroy()
 
-def display_info_box_async(text, suppl_text=None):
+def display_info_box_async(text, suppl_text=None, title=None):
 	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
 	dlg.set_transient_for(gemlvtk.get_current_window())
-	dlg.set_title(_("Info"))
+	dlg.set_title(title or _("Info"))
 	if suppl_text is not None:
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
@@ -4809,6 +4809,7 @@ if cliArgs.compose:
 		reset_composer_headers('Supersedes', [', '.join(supersedes)])
 		
 		Global.body_found = False
+		Global.external_attachments = []
 		def detect_body_part(part):
 			if not Global.body_found and part.content_type == MIMETYPE_TEXT:
 				set_composer_text(decode_readably(part.payload_decoded, part))
@@ -4821,6 +4822,7 @@ if cliArgs.compose:
 			if part.header['Content-Location'].nonempty and part.payload_encoded == '':
 				cloc_uri = part.header['Content-Location'].decoded
 				if cloc_uri.startswith('file:'):
+					Global.external_attachments.append(part)
 					try:
 						cloc_path = file_uri_to_path(str(cloc_uri))
 					except Exception as e:
@@ -4839,6 +4841,12 @@ if cliArgs.compose:
 		if edit_eml.is_multipart():
 			for part in edit_eml.parts:
 				add_already_attached_parts(None, part, detect_body_part)
+			if Global.external_attachments:
+				external_attachments_str = list2text(["- %s [%s] %s" % (part.filename, part.content_type, part._ll_email.payload_data_origin_path) for part in Global.external_attachments])
+				display_info_box_async(_("The following attachments' data is not embedded in the email, but references to files on the disk are present.") + '\n' +\
+					_("You may re-attach those files from disk and remove these empty ones.") + '\n' +\
+					_("Double check what do you attach, especially if the email file comes from a party not fully trusted."), \
+					external_attachments_str, title=_("External Attachments"))
 		else:
 			# Not a multipart email, set body to payload.
 			set_composer_text(decode_readably(edit_eml.payload_decoded, edit_eml))
