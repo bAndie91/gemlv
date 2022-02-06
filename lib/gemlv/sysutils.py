@@ -7,6 +7,7 @@ import ctypes
 from ctypes.util import find_library
 import fcntl
 import re
+import urllib2
 
 
 def warnx(string):

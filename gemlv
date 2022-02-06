@@ -1198,7 +1198,7 @@ def get_headers_markup(eml):
 					stck_imp.show()
 				elif hval_lc == 'non-urgent' or hval_lc.find('low')>-1 or re.search('^[45]', hval):
 					stck_unimp.show()
-				if not UserConfig.show_importance_headers:
+				if not Global.show_importance_headers:
 					hval_mu = None
 			
 			if hname == 'X-Spam':
@@ -1299,6 +1299,14 @@ def open_comp_hdr_menu(widget, event):
 
 def on_composer_attachments_clicked(widget, event):
 	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+		
+		itpath, _col = panel_attachments.get_cursor()
+		if itpath is not None:
+			it = Attachments.get_iter(itpath)
+			part = Attachments[it][COL_ATTACHMENTS_EML]
+			menuitem_comp_att_open_mem.set_sensitive(part.payload_encoded != '')
+			menuitem_comp_att_open_disk.set_sensitive(hasattr(part._ll_email, 'payload_data_origin_path'))
+		
 		menu_composer_attachments.popup(None, None, None, event.button, event.time)
 		return True
 	return False
@@ -3544,13 +3552,19 @@ def act_composer_attachment_menu_item_activated(mi, func):
 	opts.treeview_iterator = it
 	opts.treeview_iterator_path = itpath
 	opts.part = part
-	opts.original_path = part._ll_email.payload_data_origin_path
+	try:
+		opts.original_path = part._ll_email.payload_data_origin_path
+	except AttributeError as e:
+		opts.original_path = None
 	func(opts)
 
 def act_composer_attachment_menu_open_from_memory(opts):
 	open_payload_as_temp_file(opts.part)
 
 def act_composer_attachment_menu_open_from_disk(opts):
+	if not opts.original_path:
+		display_error(_("Source file not known."))
+		return
 	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
 
 def act_composer_attachment_menu_rename(opts):
@@ -3771,11 +3785,11 @@ def check_unique_attachment(mimepart):
 	Attachments.foreach(compare_checksums, result)
 	return result['unique']
 
-def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
+def add_already_attached_parts(parent_iter, eml, callback = lambda x: True):
 	if callback(eml):
-		name = eml.filename or '[%s]' % eml.content_type
+		label = eml.filename or '[%s]' % eml.content_type
 		icon = gemlvtk.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
-		iterator = Attachments.append(root_iter, [eml, glib.markup_escape_text(name), icon, None, '', calc_attachment_checksum(eml)])
+		iterator = Attachments.append(parent_iter, [eml, glib.markup_escape_text(label), icon, None, '', calc_attachment_checksum(eml)])
 		for subpart in eml.parts:
 			add_already_attached_parts(iterator, subpart, callback=callback)
 
@@ -4351,8 +4365,8 @@ AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', '
 NewEmail = None
 
 class PropertyStoreClass(object): pass
-UserConfig = PropertyStoreClass()
-UserConfig.show_importance_headers = False
+Global = PropertyStoreClass()
+Global.show_importance_headers = False
 
 
 Timers = {}
@@ -4709,18 +4723,18 @@ menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
 # context menu on attachments panel (composer mode)
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
-mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_memory)
-menu_composer_attachments.append(mi)
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
-mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
-menu_composer_attachments.append(mi)
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
-mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
-menu_composer_attachments.append(mi)
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
-mi.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_detach)
-menu_composer_attachments.append(mi)
+menuitem_comp_att_open_mem = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
+menuitem_comp_att_open_mem.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_memory)
+menu_composer_attachments.append(menuitem_comp_att_open_mem)
+menuitem_comp_att_open_disk = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
+menuitem_comp_att_open_disk.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
+menu_composer_attachments.append(menuitem_comp_att_open_disk)
+menuitem_comp_att_rename = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
+menuitem_comp_att_rename.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
+menu_composer_attachments.append(menuitem_comp_att_rename)
+menuitem_comp_att_detach = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
+menuitem_comp_att_detach.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_detach)
+menu_composer_attachments.append(menuitem_comp_att_detach)
 menu_composer_attachments.show_all()
 
 toolbuttons = [
@@ -4796,12 +4810,28 @@ if cliArgs.compose:
 				add_composer_header(header.name, header.value.decoded)
 		reset_composer_headers('Supersedes', [', '.join(supersedes)])
 		
-		body_found = False
+		Global.body_found = False
 		def detect_body_part(part):
-			if not body_found and part.content_type == MIMETYPE_TEXT:
+			if not Global.body_found and part.content_type == MIMETYPE_TEXT:
 				set_composer_text(decode_readably(part.payload_decoded, part))
+				Global.body_found = True
 				# Prevent this part to be treated as attachment. This is the body part.
 				return False
+			# for those attachments, of which payload data is not there, but a link to a local file is noted
+			# in the headers, remove the header and mark the local file the source of this attachment data.
+			# gemlv makes email files like this when saving draft in the background while editing emails.
+			if part.header['Content-Location'].nonempty and part.payload_encoded == '':
+				cloc_uri = part.header['Content-Location'].decoded
+				if cloc_uri.startswith('file:'):
+					try:
+						cloc_path = file_uri_to_path(str(cloc_uri))
+					except Exception as e:
+						traceback.print_exc()
+						save_exception_traceback(e, traceback.format_exc())
+						display_error(e)
+					else:
+						part._ll_email.payload_data_origin_path = cloc_path
+						del part.headers['Content-Location']
 			# Attach this part.
 			NewEmail.attach(part)
 			# Allow this part to be appeared in attachments panel.

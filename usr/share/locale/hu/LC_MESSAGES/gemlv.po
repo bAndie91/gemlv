@@ -505,3 +505,18 @@ msgstr "Időzített feladatok lefuttatása."
 
 msgid "Contact Address Chooser"
 msgstr "Kapcsolattartási Cím Választó"
+
+msgid "Open attachment"
+msgstr "Csatolmány megnyitása"
+
+msgid "Open original file"
+msgstr "Eredeti fájl megnyitása"
+
+msgid "Rename"
+msgstr "Átnevezés"
+
+msgid "Detach"
+msgstr "Lecsatolás"
+
+msgid "Source file not known."
+msgstr "Forrásfájl nem ismert."
