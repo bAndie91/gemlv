@@ -533,3 +533,5 @@ msgstr "Újracsatolhatod azokat a fájlokat, ezen üreseket pedig lecsatolhatod.
 msgid "Double check what do you attach, especially if the email file comes from a party not fully trusted."
 msgstr "Ellenőrizd mit csatolsz be, kiváltképp ha az email fájl olyan féltől származik ami nem teljesen megbízható."
 
+msgid "There are empty attachments."
+msgstr "Vannak üres csatolmányok."

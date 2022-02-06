@@ -245,3 +245,33 @@ def coordinates(widget, corner):
 		return (X + x, Y + y + h, True)
 	elif corner == gtk.CORNER_BOTTOM_RIGHT:
 		return (X + x + w, Y + y + h, True)
+
+class TreeStore(gtk.TreeStore):
+	@property
+	def iter_recursive(self):
+		return TreeStoreIterator(self)
+
+class TreeStoreIterator(object):
+	def __init__(self, treestore):
+		self.treestore = treestore
+		self.path = (0,)
+	
+	def __iter__(self):
+		return self
+	
+	def next(self):
+		try:
+			row = self.treestore[self.path]
+		except IndexError:
+			if len(self.path) > 1:
+				self.path = self.path[:-2] + (self.path[-2] + 1,)
+				return next(self)
+			else:
+				raise StopIteration
+		else:
+			self.path = self.path + (0,)
+			return row.iter
+	
+	def __del__(self):
+		pass
+

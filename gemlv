@@ -2875,16 +2875,20 @@ class EmailPreparationCanceled(Exception):
 
 def prepare_to_send():
 	validate_all_comp_headers()
-	err_msg = ''
+	err_msgs = []
 	if not get_composer_subject():
-		err_msg += _("No Subject.") + '\n'
+		err_msgs.append(CHAR_BULLET + ' ' + _("No Subject."))
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		err_msg += _("No any Recipient.") + '\n'
+		err_msgs.append(CHAR_BULLET + ' ' + _("No any Recipient."))
 	if toggle_rqdn.get_active() and not filter(None, get_composer_headers([HDR_DNT, 'From', 'Reply-To'])):
-		err_msg += _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT) + '\n'
-	if err_msg != '':
-		err_msg += _("Send anyway?")
-		if not question(err_msg, (_("Send"), 'mail-send')):
+		err_msgs.append(CHAR_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
+	for it in Attachments.iter_recursive:
+		if not Attachments[it][COL_ATTACHMENTS_EML].is_multipart() and Attachments[it][COL_ATTACHMENTS_EML].payload_encoded == '':
+			err_msgs.append(CHAR_BULLET + ' ' + _("There are empty attachments."))
+			break
+	if err_msgs:
+		err_msgs.append(_("Send anyway?"))
+		if not question(list2text(err_msgs), (_("Send"), 'mail-send')):
 			raise EmailPreparationCanceled()
 	try:
 		email_to_send = build_newemail_to_send()
@@ -4464,7 +4468,7 @@ panel_view_subject = gtk.Label(' ')
 spanel_view_subject = gemlvtk.Scrollable(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)  # update COL_PARTS_* constants if changed
+Parts = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)  # update COL_PARTS_* constants if changed
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
@@ -4636,7 +4640,7 @@ menu_composer_attachments = gtk.Menu()
 panel_comp_header = gtk.VBox(False, 0)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
+Attachments = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
 Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
