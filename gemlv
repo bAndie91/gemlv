@@ -572,7 +572,7 @@ def load_file(filename):
 
 def select_default_main_email_part():
 	if TheEmail.is_multipart():
-		if PartPrimary is not None:
+		if PartPrimary is not None and Parts[PartPrimary][COL_PARTS_EML].payload_decoded.strip() != '':
 			selection_parts.select_iter(PartPrimary)
 		elif PartSecondary is not None:
 			selection_parts.select_iter(PartSecondary)
