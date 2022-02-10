@@ -91,6 +91,7 @@ from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
 from gemlv.sysutils import basenameify
 from gemlv.sysutils import file_uri_to_path
+from gemlv.sysutils import new_pipe_handles
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
@@ -198,7 +199,7 @@ class pipereader(object):
 		self.exitdict = exitdict
 		args = args[:]
 		args.insert(0, os.path.basename(cmd))
-		child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
+		child_read, parent_write, parent_read, child_write = new_pipe_handles(2)
 		pid = os.fork()
 		if pid == 0:
 			parent_read.close()
@@ -403,13 +404,6 @@ def choose_open_file(custom_accept_button_stock=None):
 def choose_open_files(custom_accept_button_stock=None):
 	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock)
 
-def get_pipe_handlers(npairs):
-	pipes = []
-	for n in range(0, npairs):
-		r, w = os.pipe()
-		pipes.append(os.fdopen(r, 'r'))
-		pipes.append(os.fdopen(w, 'w'))
-	return pipes
 
 
 def run_async(cmd, args, postrun):
@@ -910,7 +904,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				panel_content_image.set_data('pixbuf', pxb)
 				panel_content_image.show()
 #			elif eml.content_type.main == 'audio':
-#				TODO
+#				TODO: add embedded audio player
 			else:
 				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
 				if eml.filename: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(eml.filename), PMU_NAME_CLOSE)) + '\n' + label
@@ -2268,7 +2262,7 @@ def act_report_spam(considered_as_spam = True):
 	run_async('gemlv-report-%s' % ('spam' if considered_as_spam else 'ham'), [emailfile], None)
 
 def runcmd_thread(args, input_fd, out_buffer, vb):
-	reader, writer = get_pipe_handlers(1)
+	reader, writer = new_pipe_handles(1)
 	pid = os.fork()
 	if pid == 0:
 		reader.close()
@@ -2979,7 +2973,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		'RCPT': ','.join(map(lambda al: al.email, recipients_addr)),
 	}
 	
-	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
+	child_read, parent_write, parent_read, child_write = new_pipe_handles(2)
 	pid = os.fork()
 	if pid == 0:
 		parent_read.close()

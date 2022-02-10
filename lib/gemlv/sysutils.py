@@ -108,3 +108,11 @@ def file_uri_to_path(uri):
 	elif uri.startswith('file:/'):
 		return urllib2.unquote(uri[5:])
 	return None
+
+def new_pipe_handles(npairs):
+	pipes = []
+	for n in range(0, npairs):
+		r, w = os.pipe()
+		pipes.append(os.fdopen(r, 'r'))
+		pipes.append(os.fdopen(w, 'w'))
+	return pipes
