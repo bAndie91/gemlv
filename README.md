@@ -130,7 +130,7 @@ Email viewer and composer for local emails in GTK
 	- ```Ctrl-U``` Filter/Unfilter rich text (non-plain text, eg: html, pdf, ...)
 	- ```Ctrl-H``` Show/Hide uncommon headers
 	- ```F4``` Edit draft message with external program
-	- ```Ctrl-A``` Open built-in addressbook browser
+	- ```Alt-A``` Open built-in addressbook browser
 	- ```Shift-Down``` Pop up auto completion (on header input boxes in composer mode)
 
 

@@ -4464,7 +4464,7 @@ gemlvtk.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOS
 gemlvtk.add_key_binding(win_main, '<Control><Shift>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_BODY))
 gemlvtk.add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
 gemlvtk.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
-gemlvtk.add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
+gemlvtk.add_key_binding(win_main, '<Alt>a', lambda *_x: act_addressbook())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
@@ -4638,7 +4638,7 @@ gemlvtk.add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
 gemlvtk.add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
 gemlvtk.add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
 gemlvtk.add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
-gemlvtk.add_key_binding(win_comp, '<Control>a', lambda *_x: act_addressbook())
+gemlvtk.add_key_binding(win_comp, '<Alt>a', lambda *_x: act_addressbook())
 
 box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()
