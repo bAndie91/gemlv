@@ -2650,10 +2650,11 @@ def populate_filters_menu(eml):
 		menu_filters.append(mi)
 		rmi_group = mi
 	menu_filters.show_all()
-	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
+	disable_filters_menu(len(menu_filters.children()) == 0)
 
 def filters_menu_filter_selected(mi_selected, eml, filt):
-	load_part(eml, filt)
+	if mi_selected.get_active():
+		load_part(eml, filt)
 
 class TextBuffer(gtk.TextBuffer):
 	class TextBufferNamedRangeError(Exception):
