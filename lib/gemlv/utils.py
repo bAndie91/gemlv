@@ -14,9 +14,11 @@ import gemlv.mime as mime
 
 
 def _fix_unquoted_comma(s):
-	"""Many MUA do not enclose real names which contain comma in double quotes.
+	"""
+	Many MUA do not enclose real names which contain comma in double quotes.
 	This causes issues in splitting address lines into individual addesses.
-	Try to work around this."""
+	Try to work around this.
+	"""
 	def repl(m):
 		probably_realname = m.group(2)
 		probably_realname_norm = probably_realname.strip()
@@ -33,7 +35,7 @@ def getaddresslines(array):
 	"""
 	Arguments
 	
-		array: list of MIME-decoded strings
+		array: list of MIME-encoded strings
 	"""
 	return map(lambda t: AddressLine(t), _getaddresses(array))
 
@@ -41,7 +43,7 @@ class AddressLine(object):
 	"""
 	EXAMPLES
 	
-	# realname has NOT to be MIME-encoded here, but MIME-decoded
+	# realname is assumed MIME-encoded here, unless it's MimeDecoded().
 	AddressLine((realname, email))
 	
 	# NOT recommended, parseaddr may need some augmentation
@@ -56,13 +58,18 @@ class AddressLine(object):
 	def __init__(self, p, eml=None):
 		assert isinstance(p, (tuple, MimeEncoded, MimeDecoded)) or p == ''
 		if isinstance(p, tuple):
-			self.realname, self.email = MimeDecoded(p[0]), p[1]
-		else:
-			realname_raw, self.email = email.utils.parseaddr(_fix_unquoted_comma(p))
-			if isinstance(p, MimeDecoded):
-				self.realname = realname_raw
+			if isinstance(p[0], MimeDecoded):
+				self.realname = p[0]
 			else:
-				self.realname = MimeDecoded(mime.decode_header(realname_raw, eml=eml))
+				self.realname = MimeDecoded(mime.decode_header(p[0], eml=eml))
+			self.email = p[1]
+		else:
+			realname_asis, self.email = email.utils.parseaddr(_fix_unquoted_comma(p))
+			if isinstance(p, MimeDecoded):
+				self.realname = realname_asis
+			else:
+				self.realname = MimeDecoded(mime.decode_header(realname_asis, eml=eml))
+		
 		self.addressline = email.utils.formataddr((self.realname, self.email))
 		# in the full address line, always put email address in angle brackets,
 		# even if there is no realname part:
