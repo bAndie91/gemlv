@@ -1408,20 +1408,21 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 				else:
 					box.hide()
 	
-	def _add(self, name, value = None, is_manual_call = True):
+	def _add(self, name, value, is_manual_call = True):
 		box = None
+		# find if a singleton header with this name is already there
+		# and if so, set value on it rather than creating a new header.
+		# HNTYPE_LABEL considered singleton.
 		for thisbox in self.items:
 			if thisbox.hntype == GemlvComposerHeader.HNTYPE_LABEL and thisbox.name == name:
 				box = thisbox
 				if value: box.value = value
 				break
 		if box is None:
-			# TODO: revise all add_composer_header__direct/add_composer_header/compose_header_box calls, let hval always not None
-			if value is None: value = ''
 			box = GemlvComposerHeader(name, value)
 			self.pack_start(box, False, True)
 			if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
-				# TODO: what is this?
+				# place all HNTYPE_MENU headers always above all HNTYPE_CUSTOM ones
 				for n in range(len(self.items)):
 					if self.items[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
 						self.reorder_child(box, n)
@@ -1432,7 +1433,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		box.show_all()
 		return box
 	
-	def add(self, name, value = None, is_manual_call = True):
+	def add(self, name, value, is_manual_call = True):
 		box = self._add(name, value, is_manual_call)
 		box.tick_my_menuitem(1)
 		return box
@@ -2044,7 +2045,7 @@ def open_composer(reason):
 	composer_headers.remove_all()
 	
 	for h in SenderHeaders:
-		composer_headers.add(h).cancel()
+		composer_headers.add(h, '').cancel()
 	my_addressline = guess_my_addressline()
 	if my_addressline.email:
 		composer_headers.add('From', str(my_addressline))
