@@ -99,6 +99,7 @@ from gemlv.pythonutils import SubstractableList
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
 import gemlv.mime as mime
+from gemlv.profilepicture import load_gravatar
 
 
 ### helper classes, functions ###
@@ -532,7 +533,7 @@ def load_file(filename):
 		if addr:
 			senderaddr = addr
 			break
-	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
+	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar, Props)).start()
 	
 	if TheEmail.header[HDR_DNT].nonempty:
 		if xattr.get(filename, XATTR_MDNSENT) is None:
@@ -1080,27 +1081,6 @@ def parse_mailto(s):
 	warnx(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
-def load_gravatar(addr, container):
-	if not isinstance(addr, str): return
-	url_templ = Props['avatar/url_template'] or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G'
-	url = url_templ.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
-	try:
-		web = urllib2.urlopen(url)
-	except urllib2.HTTPError:
-		pass
-	else:
-		loader = gtk.gdk.PixbufLoader()
-		try:
-			loader.write(web.read())
-			loader.close()
-		except glib.GError as e:
-			if e.code != 3:   # 'Unrecognized image file format'
-				raise
-		else:
-			pxb = loader.get_pixbuf()
-			img = container.children()[0]
-			img.set_from_pixbuf(pxb)
-			container.show_all()
 
 def get_listaddressline_main():
 	try:
@@ -1615,11 +1595,11 @@ class compose_header_box(gtk.HBox):
 		if self.name in AddressbookHeaders:
 			pos = 0
 			mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
-			mi.connect('activate', self.add_value_to_addressbook)
+			mi.connect('activate', self.add_to_addressbook)
 			menu.insert(mi, pos)
 			menu.show_all()
 	
-	def add_value_to_addressbook(self, *_x):
+	def add_to_addressbook(self, *_x):
 		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self.value)))
 	
 	def set_autocomplete_list(self, autocomplete_list):
