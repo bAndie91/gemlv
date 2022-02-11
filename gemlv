@@ -1309,64 +1309,6 @@ def act_tgl_comp_hdr():
 	menuitem_all_comp_hdr.set_active(not on)
 	show_advanced_comp_hdr(not on)
 
-def show_advanced_comp_hdr(show=True):
-	clear_composer_headers('', '')
-	for n in range(0, len(panel_comp_header.children())):
-		box = panel_comp_header.children()[n]
-		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
-			if show:
-				box.show()
-			else:
-				box.hide()
-
-def add_composer_header__direct(hname, hval=None, manual_call=True):
-	box = None
-	for thisbox in panel_comp_header.children():
-		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox.name == hname:
-			box = thisbox
-			if hval: box.value = hval
-			break
-	if box is None:
-		# TODO: revise all add_composer_header__direct/add_composer_header/compose_header_box calls, let hval always not None
-		if hval is None: hval = ''
-		box = compose_header_box(hname, hval)
-		panel_comp_header.pack_start(box, False, True)
-		if box.hntype == compose_header_box.HNTYPE_MENU:
-			for n in range(len(panel_comp_header.children())):
-				if panel_comp_header.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
-					panel_comp_header.reorder_child(box, n)
-					break
-				# Ignore every 2nd child.
-				n += 1
-	if manual_call: box.focus()
-	box.show_all()
-	return box
-
-def add_composer_header(hname, hval=None, manual_call=True):
-	box = add_composer_header__direct(hname, hval, manual_call)
-	box.tick_my_menuitem(1)
-	return box
-
-def add_composer_headers(hname, hvals, manual_call=True):
-	for hval in hvals:
-		add_composer_header(hname, hval, manual_call)
-
-def reset_composer_headers(hname, hvals, manual_call=True):
-	clear_composer_headers(hname)
-	for hval in hvals:
-		add_composer_header(hname, hval, manual_call)
-
-def set_composer_header(hname, hval):
-	for hbox in panel_comp_header.children():
-		if hbox.name == hname:
-			hbox.value = hval
-			return hbox
-	return add_composer_header(hname, hval)
-
-def clear_composer_headers(hname, content=None):
-	for box in panel_comp_header.children():
-		if (hname is None or box.name == hname) and (content is None or content == box.value):
-			box.cancel(manual=False)
 
 def composer_maintain_references_headers():
 	references = TheEmail.header[HDR_REF].decoded
@@ -1377,30 +1319,153 @@ def composer_maintain_references_headers():
 		else:
 			references = messageid
 	if references:
-		add_composer_header(HDR_REF, references, manual_call=False)
+		composer_headers.add(HDR_REF, references, is_manual_call=False)
 
 def composer_append_to_list_header(hname, hvals, delimiter=' '):
 	hval = delimiter.join(filter(lambda x: x is not None, hvals))
 	headers = get_composer_headers(hname)
 	if len(headers) == 0:
-		reset_composer_headers(hname, [hval])
+		composer_headers.set_multi(hname, [hval])
 	else:
 		headers[-1] = delimiter.join([headers[-1], hval])
-		reset_composer_headers(HDR_REF, headers, manual_call=False)
+		composer_headers.set_multi(HDR_REF, headers, is_manual_call=False)
 
 def composer_substract_from_list_header(hname, hvals, delimiter=' '):
 	headers = get_composer_headers(hname)
 	for idx in reversed(range(len(headers))):
-		newvalue = []
+		newvalues = []
 		for word in headers[idx].split(delimiter):
 			if word in hvals:
 				hvals.remove(word)  # FIXME: is it needed??
 			else:
-				newvalue.append(word)
-		headers[idx] = delimiter.join(newvalue)
-	reset_composer_headers(hname, headers, manual_call=False)
+				newvalues.append(word)
+		headers[idx] = delimiter.join(newvalues)
+	composer_headers.set_multi(hname, headers, is_manual_call=False)
 
-class compose_header_box(gtk.HBox):
+class GemlvComposerHeadersContainer(gtk.VBox):
+	def __init__(self):
+		super(self.__class__, self).__init__(False, 0)
+		self.set_border_width(4)
+	
+	@property
+	def items(self):
+		# all children are GemlvComposerHeader
+		return self.children()
+	
+	def get_composer_headerboxes(search_hname):
+		"""
+		get_composer_headerboxes(search_hname)
+		
+			finds those compose_header_box objects of which name 
+			- is in search_hname (if search_hname is list)
+			- is search_hname (if search_hname is str)
+			- is anything (if search_hname is None)
+			
+			do not count hidden compose_header_box objects which represent sender (From, Organization, Reply-To, …)
+		"""
+		search_hnames = None
+		if search_hname is not None:
+			if type(search_hname) == list:
+				search_hnames = list([x.lower() for x in search_hname])
+			else:
+				search_hnames = [search_hname.lower()]
+		hlist = []
+		for hbox in composer_headers.children():
+			if hbox.get_visible() or hbox.name.lower() not in [x.lower() for x in SenderHeaders]:
+				if search_hname is None:
+					hlist.append(hbox)
+				elif hbox.name.lower() in search_hnames:
+					hlist.append(hbox)
+		return hlist
+	
+	def get_composer_headers(search_hname):
+		hlist = []
+		for hbox in get_composer_headerboxes(search_hname):
+			if search_hname is None:
+				hlist.append((hbox.name, hbox.value))
+			else:
+				hlist.append(hbox.value)
+		return hlist
+	
+	def get_composer_header_last(hname):
+		hdrs = get_composer_headers(hname)
+		if hdrs:
+			return hdrs[-1]
+		return None
+	
+	def get_composer_headerbox_last(hname):
+		hdrs = get_composer_headerboxes(hname)
+		if hdrs:
+			return hdrs[-1]
+		return None
+		
+	def show_advanced_headers(self, show=True):
+		self.remove_all_empty()
+		for box in self.items:
+			if box.hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+				if show:
+					box.show()
+				else:
+					box.hide()
+	
+	def _add(self, name, value = None, is_manual_call = True):
+		box = None
+		for thisbox in self.items:
+			if thisbox.hntype == GemlvComposerHeader.HNTYPE_LABEL and thisbox.name == name:
+				box = thisbox
+				if value: box.value = value
+				break
+		if box is None:
+			# TODO: revise all add_composer_header__direct/add_composer_header/compose_header_box calls, let hval always not None
+			if value is None: value = ''
+			box = GemlvComposerHeader(name, value)
+			self.pack_start(box, False, True)
+			if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
+				# TODO: what is this?
+				for n in range(len(self.items)):
+					if self.items[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+						self.reorder_child(box, n)
+						break
+					# Ignore every 2nd child.
+					n += 1
+		if is_manual_call: box.focus()
+		box.show_all()
+		return box
+	
+	def add(self, name, value = None, is_manual_call = True):
+		box = self._add(name, value, is_manual_call)
+		box.tick_my_menuitem(1)
+		return box
+
+	def add_multi(self, name, values, is_manual_call = True):
+		assert isinstance(values, (list, tuple))
+		for value in values:
+			self.add(name, value, is_manual_call)
+	
+	def set_multi(self, name, values, is_manual_call = True):
+		self.remove_multi(name)
+		self.add_multi(name, values, is_manual_call)
+	
+	def set_single(self, name, value):
+		for box in self.items:
+			if box.name == name:
+				box.value = value
+				return box
+		return self.add(name, value)
+	
+	def remove_multi(self, name, value = None):
+		for box in self.items:
+			if box.name == name and (value is None or value == box.value):
+				box.cancel(manual=False)
+	
+	def remove_all(self):
+		for box in self.items:
+			box.cancel(manual=False)
+	
+	def remove_all_empty(self):
+		self.remove_multi('', '')
+
+class GemlvComposerHeader(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	ICON_POS_VALIDATION = 1
 	
@@ -1908,52 +1973,6 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headerboxes(search_hname):
-	"""
-	get_composer_headerboxes(search_hname)
-	
-		finds those compose_header_box objects of which name 
-		- is in search_hname (if search_hname is list)
-		- is search_hname (if search_hname is str)
-		- is anything (if search_hname is None)
-		
-		do not count hidden compose_header_box objects which represent sender (From, Organization, Reply-To, …)
-	"""
-	search_hnames = None
-	if search_hname is not None:
-		if type(search_hname) == list:
-			search_hnames = list([x.lower() for x in search_hname])
-		else:
-			search_hnames = [search_hname.lower()]
-	hlist = []
-	for hbox in panel_comp_header.children():
-		if hbox.get_visible() or hbox.name.lower() not in [x.lower() for x in SenderHeaders]:
-			if search_hname is None:
-				hlist.append(hbox)
-			elif hbox.name.lower() in search_hnames:
-				hlist.append(hbox)
-	return hlist
-
-def get_composer_headers(search_hname):
-	hlist = []
-	for hbox in get_composer_headerboxes(search_hname):
-		if search_hname is None:
-			hlist.append((hbox.name, hbox.value))
-		else:
-			hlist.append(hbox.value)
-	return hlist
-
-def get_composer_header_last(hname):
-	hdrs = get_composer_headers(hname)
-	if hdrs:
-		return hdrs[-1]
-	return None
-
-def get_composer_headerbox_last(hname):
-	hdrs = get_composer_headerboxes(hname)
-	if hdrs:
-		return hdrs[-1]
-	return None
 
 def get_composer_all_recipients_emails():
 	# Note: getaddresslines() expects MIME-encoded strings, but get_composer_headers()
@@ -2022,13 +2041,13 @@ def open_composer(reason):
 	win_comp.show_all()
 	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_all_comp_hdr.set_active(False)
-	clear_composer_headers(None)
+	composer_headers.remove_all()
 	
 	for h in SenderHeaders:
-		add_composer_header(h).cancel()
+		composer_headers.add(h).cancel()
 	my_addressline = guess_my_addressline()
 	if my_addressline.email:
-		add_composer_header('From', str(my_addressline))
+		composer_headers.add('From', str(my_addressline))
 	set_composer_subject('')
 	composer_text_buffer.clear()
 	
@@ -2067,21 +2086,21 @@ def auto_save_draft():
 	return True
 
 def add_composer_agent_headers():
-	add_composer_header('User-Agent', USERAGENT)
-	add_composer_header('X-Mailer', USERAGENT)
+	composer_headers.add('User-Agent', USERAGENT)
+	composer_headers.add('X-Mailer', USERAGENT)
 
 def add_composer_mailto(mailto):
 	for field in AcceptableMailtoFields:
 		if field in mailto:
 			header = gemlv.email.Header(field).name
 			if field in MultiRecipientsMailtoFields:
-				add_composer_headers(header, mailto[field])
+				composer_headers.add_multi(header, mailto[field])
 			elif field == 'subject':
 				set_composer_subject(mailto[field])
 			elif field == 'body':
 				set_composer_text(mailto[field])
 			else:
-				add_composer_header(header, mailto[field])
+				composer_headers.add(header, mailto[field])
 
 def guess_my_addressline():
 	"guess what is the user's address line to which the currently opened email is sent"
@@ -2102,7 +2121,7 @@ def guess_reply_addressline():
 def act_compose():
 	if open_composer(reason=COMPOSE_NEW):
 		add_composer_agent_headers()
-		add_composer_header('To', '')
+		composer_headers.add('To', '')
 		set_composer_subject('')
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
@@ -2145,7 +2164,7 @@ def act_reply(compose_type):
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_FWD)
 			set_composer_subject(subj)
 			# TODO: maintain Thread-Topic header here in forwards too?
-			add_composer_header('To', '')
+			composer_headers.add('To', '')
 			composer_maintain_references_headers()
 			
 			if compose_type == COMPOSE_FORWARD_MSG:
@@ -2167,21 +2186,21 @@ def act_reply(compose_type):
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
-			add_composer_header('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
+			composer_headers.add('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_RE)
 			set_composer_subject(subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 			
 			messageid = TheEmail.header[HDR_MID].decoded
-			add_composer_header('In-Reply-To', messageid)
+			composer_headers.add('In-Reply-To', messageid)
 			composer_maintain_references_headers()
 			
 			reply_addressline = guess_reply_addressline()
 			listaddress = get_listaddressline_main()
 			
 			if compose_type == COMPOSE_REPLY:
-				add_composer_header('To', str(reply_addressline))
+				composer_headers.add('To', str(reply_addressline))
 			elif compose_type == COMPOSE_REPLY_ALL:
 				# gather all email addresses in the message
 				# but do not duplicate any
@@ -2189,16 +2208,16 @@ def act_reply(compose_type):
 				rcpt_addresses = []
 				
 				if reply_addressline.email and reply_addressline.email != my_addressline.email:
-					add_composer_header('To', str(reply_addressline))
+					composer_headers.add('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
-				for h in RecipientHeaders:
-					for addressline in [al.email for al in getaddresslines(TheEmail.headers[h].encoded)] - SubstractableList(skip_addresses):
-						add_composer_header(h, str(addressline))
+				for rh in RecipientHeaders:
+					for addressline in [al.email for al in getaddresslines(TheEmail.headers[rh].encoded)] - SubstractableList(skip_addresses):
+						composer_headers.add(rh, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
-					add_composer_header('To', str(listaddress))
+					composer_headers.add('To', str(listaddress))
 			elif compose_type == COMPOSE_REPLY_LIST:
-				add_composer_header('To', str(listaddress))
+				composer_headers.add('To', str(listaddress))
 		
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
@@ -2840,8 +2859,8 @@ class ComposerHeaderValidationError(Exception):
 	pass
 
 def validate_all_comp_headers():
-	for n in range(0, len(panel_comp_header.children())):
-		box = panel_comp_header.children()[n]
+	for n in range(0, len(composer_headers.children())):
+		box = composer_headers.children()[n]
 		if box.get_visible():
 			valid = box.validate()
 			if valid == VALIDATION_RESULT_INVALID:
@@ -3036,8 +3055,8 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
 		sendmail_queue_id = resp.strip().split('\n')[-1]
-		add_composer_header(HDR_XQID, sendmail_queue_id)
-		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
+		composer_headers.add(HDR_XQID, sendmail_queue_id)
+		composer_headers.add(HDR_XSD, email.utils.formatdate(time.time(), True))
 		win_comp.set_data('email-sent', True)
 		composer_text_buffer.set_modified(False)
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
@@ -3096,7 +3115,7 @@ def build_newemail(with_attachment_data=True):
 	# if there is not Message-ID yet but we want to add it to xattrs on successful sending:
 	msgid = get_composer_header_last(HDR_MID)
 	if msgid is None and win_comp.get_data('add-msgid-xattr-on-send'):
-		add_composer_header(HDR_MID, make_msgid())
+		composer_headers.add(HDR_MID, make_msgid())
 	
 	result_eml = make_new_blank_email()
 	
@@ -3488,8 +3507,8 @@ def act_addressbook():
 		return True
 	
 	def on_items_add(addressbrowser, items):
-		clear_composer_headers('To', '')
-		add_composer_headers('To', items)
+		composer_headers.remove_multi(name='To', value='')
+		composer_headers.add_multi('To', items)
 	
 	def on_edit(addressbrowser, _items):
 		addressbrowser.close()
@@ -4034,7 +4053,7 @@ def act_dispos_notif():
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
 		add_composer_agent_headers()
-		pndr_box = add_composer_header(HDR_PNDR, 'yes')
+		pndr_box = composer_headers.add(HDR_PNDR, 'yes')
 		pndr_box.readonly = True
 		pndr_box.removable = False
 		toggle_rqdn.set_sensitive(False)
@@ -4044,9 +4063,9 @@ def act_dispos_notif():
 		
 		if dnt_addresses:
 			for al in getaddresslines(dnt_addresses):
-				add_composer_header('To', al.addressline)
+				composer_headers.add('To', al.addressline)
 		else:
-			add_composer_header('To', str(guess_reply_addressline()))
+			composer_headers.add('To', str(guess_reply_addressline()))
 		lang = TheEmail.header['Accept-Language'].decoded
 		if lang:
 			savelang = os.environ['LANGUAGE']
@@ -4087,15 +4106,15 @@ def act_dispos_notif():
 
 def act_req_dispos_notif():
 	if toggle_rqdn.get_active():
-		box_gdr = set_composer_header(HDR_GDR, 'Yes')
+		box_gdr = composer_headers.set_single(HDR_GDR, 'Yes')
 		box_gdr.readonly = True
 		
 		if not filter(None, get_composer_headers(['From', 'Reply-To'])):
 			display_error(_(MSG_NO_ADDRESS_FOR_DNT))
-		box_dnt = set_composer_header(HDR_DNT, '')
+		box_dnt = composer_headers.set_single(HDR_DNT, '')
 	else:
-		clear_composer_headers(HDR_GDR)
-		clear_composer_headers(HDR_DNT)
+		composer_headers.remove_multi(name=HDR_GDR)
+		composer_headers.remove_multi(name=HDR_DNT)
 
 def turn_clicked_signal(ti, on):
 	hid = ti.get_data('clicked-handler')
@@ -4126,8 +4145,8 @@ def act_importance():
 	n = 1
 	if toggle_important.get_active(): n = 2
 	elif toggle_unimportant.get_active(): n = 0
-	reset_composer_headers('Importance', [] if n == 1 else [Importances[n]])
-	reset_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
+	composer_headers.set_multi('Importance', [] if n == 1 else [Importances[n]])
+	composer_headers.set_multi('Priority',   [] if n == 1 else [Priorities[n]])
 
 def act_edit_external():
 	menubutton_send.set_sensitive(False)
@@ -4622,7 +4641,7 @@ panel_upper = gtk.HPaned()
 spanel_comp_header = gtk.ScrolledWindow()
 menu_add_header = gtk.Menu()
 menu_composer_attachments = gtk.Menu()
-panel_comp_header = gtk.VBox(False, 0)
+composer_headers = GemlvComposerHeadersContainer()
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
@@ -4643,7 +4662,7 @@ box_compose.pack_start(tb_compose, False, True)
 box_compose.pack_start(panel_compose, True, True)
 panel_compose.pack1(panel_upper, True, True)
 panel_upper.pack1(spanel_comp_header, True, True)
-spanel_comp_header.add_with_viewport(panel_comp_header)
+spanel_comp_header.add_with_viewport(composer_headers)
 panel_upper.pack2(spanel_attachments, False, True)
 spanel_attachments.add_with_viewport(panel_attachments)
 panel_attachments.set_headers_visible(False)
@@ -4661,7 +4680,6 @@ win_comp.set_geometry_hints(min_width=132, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
-panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_attachments.drag_dest_set(0, [], 0)
 #spanel_attachments.drag_dest_set(gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT, [('text/uri-list', 0, 0), ('GTK_TEXT_BUFFER_CONTENTS', 0, 0)], gtk.gdk.ACTION_COPY)
@@ -4794,8 +4812,8 @@ if cliArgs.compose:
 				# Do not include these headers in an incompleted email.
 				warnx("Skip header '%s' in email editing." % (header.name,))
 			else:
-				add_composer_header(header.name, header.value.decoded)
-		reset_composer_headers('Supersedes', [', '.join(supersedes)])
+				composer_headers.add(header.name, header.value.decoded)
+		composer_headers.set_multi('Supersedes', [', '.join(supersedes)])
 		
 		Global.body_found = False
 		Global.external_attachments = []
@@ -4851,23 +4869,23 @@ if cliArgs.compose:
 		mailto = parse_mailto(cliArgs.mailto)
 		add_composer_mailto(mailto)
 	if getattr(cliArgs, 'from'):
-		reset_composer_headers('From', [getattr(cliArgs, 'from')])
+		composer_headers.set_multi('From', [getattr(cliArgs, 'from')])
 	if cliArgs.to:
-		add_composer_headers('To', cliArgs.to)
+		composer_headers.add_multi('To', cliArgs.to)
 	if cliArgs.cc:
-		add_composer_headers('Cc', cliArgs.cc)
+		composer_headers.add_multi('Cc', cliArgs.cc)
 	if cliArgs.bcc:
-		add_composer_headers('Bcc', cliArgs.bcc)
+		composer_headers.add_multi('Bcc', cliArgs.bcc)
 	if len(get_composer_headers(RecipientHeaders)) < 1:
 		# Add an empty To header unless any recipient was given.
-		add_composer_header('To')
+		composer_headers.add('To', '')
 	if cliArgs.subject:
 		set_composer_subject(cliArgs.subject)
 	if cliArgs.header:
 		for header in cliArgs.header:
 			if header.find(':') == -1: header += ':'
 			hname, hval = re.split(': ?', header, 1)
-			add_composer_headers(gemlv.email.Header(hname).name, [hval])
+			composer_headers.add(gemlv.email.Header(hname).name, hval)
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
