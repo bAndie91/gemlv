@@ -1342,15 +1342,38 @@ def composer_substract_from_list_header(hname, hvals, delimiter=' '):
 		headers[idx] = delimiter.join(newvalues)
 	composer_headers.set_multi(hname, headers, is_manual_call=False)
 
+class GemlvComposerBaseHeaderAccessor(list):
+	def __init__(self, headers_container):
+		super(self.__class__, self).__init__()
+		self.headers_container = headers_container
+
+class GemlvComposerSingleHeaderAccessor(GemlvComposerBaseHeaderAccessor):
+	def __getitem__(self, name):
+		if name == HDR_SUBJ:
+			return self.headers_container.subject_field.get_text()
+		...
+
+class GemlvComposerMultiHeaderAccessor(GemlvComposerBaseHeaderAccessor):
+
 class GemlvComposerHeadersContainer(gtk.VBox):
-	def __init__(self):
+	def __init__(self, subject_field):
 		super(self.__class__, self).__init__(False, 0)
 		self.set_border_width(4)
+		# subject_field is an unmanaged gtk.Entry for the Subject header
+		self.subject_field = subject_field
 	
 	@property
 	def items(self):
 		# all children are GemlvComposerHeader
 		return self.children()
+	
+	@property
+	def value(self):
+		return GemlvComposerSingleHeaderAccessor(self)
+	
+	@property
+	def multi_value(self):
+		return GemlvComposerMultiHeaderAccessor(self)
 	
 	def get_composer_headerboxes(search_hname):
 		"""
@@ -1444,10 +1467,13 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 			self.add(name, value, is_manual_call)
 	
 	def set_multi(self, name, values, is_manual_call = True):
+		# TODO: assert SingletonHeader
 		self.remove_multi(name)
 		self.add_multi(name, values, is_manual_call)
 	
 	def set_single(self, name, value):
+		if name == HDR_SUBJ:
+			self.subject_field.set_text(value)
 		for box in self.items:
 			if box.name == name:
 				box.value = value
@@ -1982,12 +2008,6 @@ def get_composer_all_recipients_emails():
 	return [al.email for al in getaddresslines(get_composer_headers(RecipientHeaders))]
 
 
-def set_composer_subject(s):
-	entry_subject.set_text(s)
-
-def get_composer_subject():
-	return entry_subject.get_text()
-
 def on_edit_subject(_wdg):
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), entry_subject.get_text())
 	set_unsaved()
@@ -2049,7 +2069,7 @@ def open_composer(reason):
 	my_addressline = guess_my_addressline()
 	if my_addressline.email:
 		composer_headers.add('From', str(my_addressline))
-	set_composer_subject('')
+	composer_headers.set_single(HDR_SUBJ, '')
 	composer_text_buffer.clear()
 	
 	win_comp.set_data('is-an-mdn', False)
@@ -2097,7 +2117,7 @@ def add_composer_mailto(mailto):
 			if field in MultiRecipientsMailtoFields:
 				composer_headers.add_multi(header, mailto[field])
 			elif field == 'subject':
-				set_composer_subject(mailto[field])
+				composer_headers.set_single(HDR_SUBJ, mailto[field])
 			elif field == 'body':
 				set_composer_text(mailto[field])
 			else:
@@ -2123,7 +2143,7 @@ def act_compose():
 	if open_composer(reason=COMPOSE_NEW):
 		add_composer_agent_headers()
 		composer_headers.add('To', '')
-		set_composer_subject('')
+		composer_headers.set_single(HDR_SUBJ, '')
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
@@ -2163,7 +2183,7 @@ def act_reply(compose_type):
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (orig_subj or _("Email")) + '.eml'
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_FWD)
-			set_composer_subject(subj)
+			composer_headers.set_single(HDR_SUBJ, subj)
 			# TODO: maintain Thread-Topic header here in forwards too?
 			composer_headers.add('To', '')
 			composer_maintain_references_headers()
@@ -2189,7 +2209,7 @@ def act_reply(compose_type):
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			composer_headers.add('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_RE)
-			set_composer_subject(subj)
+			composer_headers.set_single(HDR_SUBJ, subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 			
@@ -2877,7 +2897,7 @@ class EmailPreparationCanceled(Exception):
 def prepare_to_send():
 	validate_all_comp_headers()
 	err_msgs = []
-	if not get_composer_subject():
+	if not composer_headers.get_single(HDR_SUBJ):
 		err_msgs.append(CHAR_BULLET + ' ' + _("No Subject."))
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
 		err_msgs.append(CHAR_BULLET + ' ' + _("No any Recipient."))
@@ -3102,7 +3122,7 @@ def sending_cancel(btn, pid, writer_fh):
 	os.kill(pid, signal.SIGINT)
 
 def iterate_composer_headers():
-	for hname, hval in get_composer_headers(None) + [(HDR_SUBJ, get_composer_subject())]:
+	for hname, hval in get_composer_headers(None) + [(HDR_SUBJ, composer_headers.get_single(HDR_SUBJ))]:
 		if len(hname) > 0 and len(hval) > 0:
 			yield (hname, hval)
 
@@ -3319,7 +3339,7 @@ def generate_signature(email_root, data_to_sign):
 	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), '<'+find_signature_author_address(email_root)+'>')
 
 def propose_and_confirm_a_filename_to_save_edit():
-	subj = get_composer_subject()
+	subj = composer_headers.get_single(HDR_SUBJ)
 	proposed_filename = ''
 	if not win_comp.get_data('email-sent') or not subj:
 		proposed_filename += _("Draft")
@@ -3359,7 +3379,7 @@ def on_save_sent(*X):
 def on_after_save_draft():
 	set_unsaved(False)
 	composer_text_buffer.set_modified(False)
-	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
+	update_window_title(win_comp, win_comp.get_data('saved-to-file'), composer_headers.get_single(HDR_SUBJ))
 	update_composer_status_message()
 
 def update_composer_status_message():
@@ -4085,7 +4105,7 @@ def act_dispos_notif():
 		}
 		subject_text = Ltxt_subj.format(**prms)
 		message_text = list2text(textwrap.wrap(Ltxt_body.format(**prms), 79))
-		set_composer_subject(subject_text)
+		composer_headers.set_single(HDR_SUBJ, subject_text)
 		set_composer_text(message_text)
 		
 		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
@@ -4642,7 +4662,7 @@ panel_upper = gtk.HPaned()
 spanel_comp_header = gtk.ScrolledWindow()
 menu_add_header = gtk.Menu()
 menu_composer_attachments = gtk.Menu()
-composer_headers = GemlvComposerHeadersContainer()
+composer_headers = GemlvComposerHeadersContainer(subject_field = entry_subject)
 UnionHeadersStore = gtk.ListStore(str)
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
@@ -4808,7 +4828,7 @@ if cliArgs.compose:
 			if header.name == HDR_MID:
 				supersedes.append(header.value.decoded)
 			elif header.name == HDR_SUBJ:
-				set_composer_subject(header.value.decoded)
+				composer_headers.set_single(HDR_SUBJ, header.value.decoded)
 			if any(wildcardmatch(header.name, exclude_header) for exclude_header in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
 				warnx("Skip header '%s' in email editing." % (header.name,))
@@ -4881,7 +4901,7 @@ if cliArgs.compose:
 		# Add an empty To header unless any recipient was given.
 		composer_headers.add('To', '')
 	if cliArgs.subject:
-		set_composer_subject(cliArgs.subject)
+		composer_headers.set_single(HDR_SUBJ, cliArgs.subject)
 	if cliArgs.header:
 		for header in cliArgs.header:
 			if header.find(':') == -1: header += ':'
