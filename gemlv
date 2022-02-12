@@ -96,6 +96,8 @@ import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
 from gemlv.pythonutils import SubstractableList
+from gemlv.pythonutils import DefaultingDict
+from gemlv.pythonutils import MultikeyUnionlistDict
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
 import gemlv.mime as mime
@@ -1321,39 +1323,26 @@ def composer_maintain_references_headers():
 	if references:
 		composer_headers.add(HDR_REF, references, is_manual_call=False)
 
-def composer_append_to_list_header(hname, hvals, delimiter=' '):
-	hval = delimiter.join(filter(lambda x: x is not None, hvals))
-	headers = get_composer_headers(hname)
-	if len(headers) == 0:
-		composer_headers.set_multi(hname, [hval])
+def composer_append_to_list_header(name, values, delimiter=' '):
+	for header in reversed(composer_headers.items):
+		if header.name == name:
+			header.value += delimiter + delimiter.join(values)
+			break
 	else:
-		headers[-1] = delimiter.join([headers[-1], hval])
-		composer_headers.set_multi(HDR_REF, headers, is_manual_call=False)
+		composer_headers.set_single(name, delimiter.join(values))
 
-def composer_substract_from_list_header(hname, hvals, delimiter=' '):
-	headers = get_composer_headers(hname)
-	for idx in reversed(range(len(headers))):
-		newvalues = []
-		for word in headers[idx].split(delimiter):
-			if word in hvals:
-				hvals.remove(word)  # FIXME: is it needed??
+def composer_substract_once_from_list_header(name, values, delimiter=' '):
+	reductor = values[:]
+	for header in reversed(composer_headers.items):
+		newwords = []
+		for word in header.value.split(delimiter):
+			if word in reductor:
+				# each value in values is removed at most once
+				reductor.remove(word)
 			else:
-				newvalues.append(word)
-		headers[idx] = delimiter.join(newvalues)
-	composer_headers.set_multi(hname, headers, is_manual_call=False)
+				newwords.append(word)
+		header.value = delimiter.join(newwords)
 
-class GemlvComposerBaseHeaderAccessor(list):
-	def __init__(self, headers_container):
-		super(self.__class__, self).__init__()
-		self.headers_container = headers_container
-
-class GemlvComposerSingleHeaderAccessor(GemlvComposerBaseHeaderAccessor):
-	def __getitem__(self, name):
-		if name == HDR_SUBJ:
-			return self.headers_container.subject_field.get_text()
-		...
-
-class GemlvComposerMultiHeaderAccessor(GemlvComposerBaseHeaderAccessor):
 
 class GemlvComposerHeadersContainer(gtk.VBox):
 	def __init__(self, subject_field):
@@ -1363,68 +1352,41 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		self.subject_field = subject_field
 	
 	@property
-	def items(self):
+	def _headerboxes(self):
 		# all children are GemlvComposerHeader
 		return self.children()
 	
 	@property
+	def items(self):
+		for headerbox in self._headerboxes:
+			if headerbox.get_visible() or headerbox.name not in SenderHeaders:
+				yield headerbox
+	
+	@property
+	def _dict(self):
+		d = DefaultingDict()
+		d.set_default_value([])
+		d = MultikeyUnionlistDict(d)
+		d[HDR_SUBJ] = [ self.subject_field.get_text() ]
+		for headerbox in self.items:
+			if headerbox.name:
+				if headerbox.name not in d:
+					d[headerbox.name] = []
+				d[headerbox.name].append(headerbox.value)
+		return d
+	
+	@property
 	def value(self):
-		return GemlvComposerSingleHeaderAccessor(self)
+		d = DefaultingDict( dict([(k, v[-1]) for k, v in self._dict.iteritems()]) )
+		d.set_default_value(None)
 	
 	@property
 	def multi_value(self):
-		return GemlvComposerMultiHeaderAccessor(self)
+		return self._dict
 	
-	def get_composer_headerboxes(search_hname):
-		"""
-		get_composer_headerboxes(search_hname)
-		
-			finds those compose_header_box objects of which name 
-			- is in search_hname (if search_hname is list)
-			- is search_hname (if search_hname is str)
-			- is anything (if search_hname is None)
-			
-			do not count hidden compose_header_box objects which represent sender (From, Organization, Reply-To, …)
-		"""
-		search_hnames = None
-		if search_hname is not None:
-			if type(search_hname) == list:
-				search_hnames = list([x.lower() for x in search_hname])
-			else:
-				search_hnames = [search_hname.lower()]
-		hlist = []
-		for hbox in composer_headers.children():
-			if hbox.get_visible() or hbox.name.lower() not in [x.lower() for x in SenderHeaders]:
-				if search_hname is None:
-					hlist.append(hbox)
-				elif hbox.name.lower() in search_hnames:
-					hlist.append(hbox)
-		return hlist
-	
-	def get_composer_headers(search_hname):
-		hlist = []
-		for hbox in get_composer_headerboxes(search_hname):
-			if search_hname is None:
-				hlist.append((hbox.name, hbox.value))
-			else:
-				hlist.append(hbox.value)
-		return hlist
-	
-	def get_composer_header_last(hname):
-		hdrs = get_composer_headers(hname)
-		if hdrs:
-			return hdrs[-1]
-		return None
-	
-	def get_composer_headerbox_last(hname):
-		hdrs = get_composer_headerboxes(hname)
-		if hdrs:
-			return hdrs[-1]
-		return None
-		
 	def show_advanced_headers(self, show=True):
 		self.remove_all_empty()
-		for box in self.items:
+		for box in self._headerboxes:
 			if box.hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
 				if show:
 					box.show()
@@ -1436,7 +1398,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		# find if a singleton header with this name is already there
 		# and if so, set value on it rather than creating a new header.
 		# HNTYPE_LABEL considered singleton.
-		for thisbox in self.items:
+		for thisbox in self._headerboxes:
 			if thisbox.hntype == GemlvComposerHeader.HNTYPE_LABEL and thisbox.name == name:
 				box = thisbox
 				if value: box.value = value
@@ -1446,8 +1408,8 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 			self.pack_start(box, False, True)
 			if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
 				# place all HNTYPE_MENU headers always above all HNTYPE_CUSTOM ones
-				for n in range(len(self.items)):
-					if self.items[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+				for n in range(len(self._headerboxes)):
+					if self._headerboxes[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
 						self.reorder_child(box, n)
 						break
 					# Ignore every 2nd child.
@@ -1474,19 +1436,19 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	def set_single(self, name, value):
 		if name == HDR_SUBJ:
 			self.subject_field.set_text(value)
-		for box in self.items:
+		for box in self._headerboxes:
 			if box.name == name:
 				box.value = value
 				return box
 		return self.add(name, value)
 	
 	def remove_multi(self, name, value = None):
-		for box in self.items:
+		for box in self._headerboxes:
 			if box.name == name and (value is None or value == box.value):
 				box.cancel(manual=False)
 	
 	def remove_all(self):
-		for box in self.items:
+		for box in self._headerboxes:
 			box.cancel(manual=False)
 	
 	def remove_all_empty(self):
@@ -2002,10 +1964,10 @@ def prompt_datetime(entry):
 
 
 def get_composer_all_recipients_emails():
-	# Note: getaddresslines() expects MIME-encoded strings, but get_composer_headers()
+	# Note: getaddresslines() expects MIME-encoded strings, but composer_headers
 	# gives MIME-decoded ones, however it should not matter since we take only al.email,
 	# which is indifferent to MIME-coding.
-	return [al.email for al in getaddresslines(get_composer_headers(RecipientHeaders))]
+	return [al.email for al in getaddresslines(composer_headers.multi_value[RecipientHeaders])]
 
 
 def on_edit_subject(_wdg):
@@ -2897,7 +2859,7 @@ class EmailPreparationCanceled(Exception):
 def prepare_to_send():
 	validate_all_comp_headers()
 	err_msgs = []
-	if not composer_headers.get_single(HDR_SUBJ):
+	if not composer_headers.value[HDR_SUBJ]:
 		err_msgs.append(CHAR_BULLET + ' ' + _("No Subject."))
 	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
 		err_msgs.append(CHAR_BULLET + ' ' + _("No any Recipient."))
@@ -3122,7 +3084,7 @@ def sending_cancel(btn, pid, writer_fh):
 	os.kill(pid, signal.SIGINT)
 
 def iterate_composer_headers():
-	for hname, hval in get_composer_headers(None) + [(HDR_SUBJ, composer_headers.get_single(HDR_SUBJ))]:
+	for hname, hval in get_composer_headers(None) + [(HDR_SUBJ, composer_headers.value[HDR_SUBJ])]:
 		if len(hname) > 0 and len(hval) > 0:
 			yield (hname, hval)
 
@@ -3339,7 +3301,7 @@ def generate_signature(email_root, data_to_sign):
 	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), '<'+find_signature_author_address(email_root)+'>')
 
 def propose_and_confirm_a_filename_to_save_edit():
-	subj = composer_headers.get_single(HDR_SUBJ)
+	subj = composer_headers.value[HDR_SUBJ]
 	proposed_filename = ''
 	if not win_comp.get_data('email-sent') or not subj:
 		proposed_filename += _("Draft")
@@ -3379,7 +3341,7 @@ def on_save_sent(*X):
 def on_after_save_draft():
 	set_unsaved(False)
 	composer_text_buffer.set_modified(False)
-	update_window_title(win_comp, win_comp.get_data('saved-to-file'), composer_headers.get_single(HDR_SUBJ))
+	update_window_title(win_comp, win_comp.get_data('saved-to-file'), composer_headers.value[HDR_SUBJ])
 	update_composer_status_message()
 
 def update_composer_status_message():
@@ -3962,7 +3924,7 @@ def remove_attachments(treeview_iterator_paths):
 			if part.content_type == MIMETYPE_EMAIL:
 				# remove the Message-ID from the main edited email's References headers
 				# TODO: what if the message was attached multiple times
-				composer_substract_from_list_header(HDR_REF, [part.header[HDR_MID].decoded])
+				composer_substract_once_from_list_header(HDR_REF, [part.header[HDR_MID].decoded])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
 				parent_part = NewEmail

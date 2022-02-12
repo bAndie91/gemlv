@@ -62,3 +62,17 @@ class SubstractableList(list):
 	
 	def __rsub__(self, reductand):
 		return SubstractableList([item for item in reductand if item not in self])
+
+class DefaultingDict(dict):
+	def set_default_value(self, v):
+		self._default_value = v
+	
+	def __getitem__(self, key):
+		return self.get(key, self._default_value)
+
+class MultikeyUnionlistDict(dict):
+	def __getitem__(self, key):
+		if isinstance(key, (list, tuple)):
+			return reduce(lambda a, b: (a.extend(self[b], a)[1], key, [])
+		else:
+			return dict.__getitem__(self, key)
