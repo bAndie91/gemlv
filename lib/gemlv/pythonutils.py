@@ -54,9 +54,6 @@ class ItemIterator(object):
 		pass
 
 class SubstractableList(list):
-	def __init__(self, init):
-		super(self.__class__, self).__init__(init)
-	
 	def __sub__(self, reductor):
 		return SubstractableList([item for item in self if item not in reductor])
 	
@@ -70,9 +67,53 @@ class DefaultingDict(dict):
 	def __getitem__(self, key):
 		return self.get(key, self._default_value)
 
+class CaseInsensitiveDict(dict):
+	def _to_canonical_key(self, userkey):
+		key_lc = userkey.lower()
+		for ckey in self.keys():
+			if ckey.lower() == key_lc:
+				return ckey
+		return userkey
+	
+	def __getitem__(self, key):
+		return dict.__getitem__(self, self._to_canonical_key(key))
+	
+	def get(self, key, fallback):
+		return dict.get(self, self._to_canonical_key(key), fallback)
+	
+	def __delitem__(self, key):
+		return dict.__delitem__(self, self._to_canonical_key(key))
+	
+	def has_key(self, key):
+		return dict.has_key(self, self._to_canonical_key(key))
+	
+	def __contains__(self, key):
+		return dict.__contains__(self, self._to_canonical_key(key))
+	
+	def __setitem__(self, key, value):
+		return dict.__setitem__(self, self._to_canonical_key(key), value)
+	
+	def setdefault(self, *p, **kw):
+		raise NotImplementedError
+	
+	def update(self, *p, **kw):
+		raise NotImplementedError
+
 class MultikeyUnionlistDict(dict):
+	"""
+	Example:
+	
+		d = MultikeyUnionlistDict(a=[1,2], b=[3,4], c=[5,6])
+		d[('a','c')] --> [1,2,5,6]
+	"""
 	def __getitem__(self, key):
 		if isinstance(key, (list, tuple)):
-			return reduce(lambda a, b: (a.extend(self[b], a)[1], key, [])
+			keys = key
+			assert all([ hasattr(self[key], '__iter__') for key in keys ])
+			result = []
+			return reduce(lambda result, key: (result.extend(self[key]), result)[1], keys, result)
 		else:
 			return dict.__getitem__(self, key)
+
+def compact(alist):
+	return filter(None, alist)

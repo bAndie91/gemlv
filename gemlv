@@ -98,6 +98,8 @@ from gemlv.pythonutils import Cyclelist
 from gemlv.pythonutils import SubstractableList
 from gemlv.pythonutils import DefaultingDict
 from gemlv.pythonutils import MultikeyUnionlistDict
+from gemlv.pythonutils import CaseInsensitiveDict
+from gemlv.pythonutils import compact
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
 import gemlv.mime as mime
@@ -1364,7 +1366,8 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	@property
 	def _dict(self):
-		d = DefaultingDict()
+		d = CaseInsensitiveDict()
+		d = DefaultingDict(d)
 		d.set_default_value([])
 		d = MultikeyUnionlistDict(d)
 		d[HDR_SUBJ] = [ self.subject_field.get_text() ]
@@ -1377,12 +1380,54 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	@property
 	def value(self):
+		"""
+		dict, for each item:
+			key is header name,
+			value is the content of one header with the given name.
+		useful for sinleton headers (like Subject, but not for Received)
+		
+		Examples:
+			GemlvComposerHeadersContainer.value['Subject'] --> 'Dear friend'
+			GemlvComposerHeadersContainer.value['X-Spam'] --> None
+		"""
 		d = DefaultingDict( dict([(k, v[-1]) for k, v in self._dict.iteritems()]) )
 		d.set_default_value(None)
+		return CaseInsensitiveDict(d)
 	
 	@property
 	def multi_value(self):
+		"""
+		dict, for each item:
+			key is header name
+			value is a list of strings representing all headers' contents with the given name.
+		
+		Examples:
+			GemlvComposerHeadersContainer.multi_value['Received'] --> ['from helo=...', 'from helo=...']
+			GemlvComposerHeadersContainer.multi_value['DKIM-Signature'] --> []
+			GemlvComposerHeadersContainer.value[('To', 'Cc')] --> ['Joe <joe@example.net>', 'Jane <jane@example.net>', 'Jim <jim@example.net>']
+		"""
 		return self._dict
+	
+	@property
+	def headers(self):
+		"""
+		Returns list of tuples: (header_name, header_value)
+		header_value is scalar.
+		certain header_name may occur multiple times.
+		empty header names and values are ignored.
+		"""
+		for key, vlist in self._dict.iteritems():
+			for value in vlist:
+				if key != '' and value != '':
+					yield (key, value)
+	
+	@property
+	def header_names(self):
+		names = {}
+		for headerbox in self.items
+			if headerbox.name not in names:
+				yield headerbox.name
+				names[headerbox.name] = True
 	
 	def show_advanced_headers(self, show=True):
 		self.remove_all_empty()
@@ -1436,6 +1481,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	def set_single(self, name, value):
 		if name == HDR_SUBJ:
 			self.subject_field.set_text(value)
+			return None
 		for box in self._headerboxes:
 			if box.name == name:
 				box.value = value
@@ -2861,9 +2907,9 @@ def prepare_to_send():
 	err_msgs = []
 	if not composer_headers.value[HDR_SUBJ]:
 		err_msgs.append(CHAR_BULLET + ' ' + _("No Subject."))
-	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
+	if len(filter(lambda x: len(x.strip()), composer_headers.multi_value[RecipientHeaders])) < 1:
 		err_msgs.append(CHAR_BULLET + ' ' + _("No any Recipient."))
-	if toggle_rqdn.get_active() and not filter(None, get_composer_headers([HDR_DNT, 'From', 'Reply-To'])):
+	if toggle_rqdn.get_active() and not compact(composer_headers.multi_value[(HDR_DNT, 'From', 'Reply-To')]):
 		err_msgs.append(CHAR_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
 	for it in Attachments.iter_recursive:
 		if not Attachments[it][COL_ATTACHMENTS_EML].is_multipart() and Attachments[it][COL_ATTACHMENTS_EML].payload_encoded == '':
@@ -3083,10 +3129,6 @@ def sending_cancel(btn, pid, writer_fh):
 	StopSending = True
 	os.kill(pid, signal.SIGINT)
 
-def iterate_composer_headers():
-	for hname, hval in get_composer_headers(None) + [(HDR_SUBJ, composer_headers.value[HDR_SUBJ])]:
-		if len(hname) > 0 and len(hval) > 0:
-			yield (hname, hval)
 
 def make_msgid():
 	# Don't leak hostname, IP, or time in generated Message-ID.
@@ -3096,13 +3138,13 @@ def make_msgid():
 def build_newemail(with_attachment_data=True):
 	
 	# if there is not Message-ID yet but we want to add it to xattrs on successful sending:
-	msgid = get_composer_header_last(HDR_MID)
+	msgid = composer_headers.value[HDR_MID]
 	if msgid is None and win_comp.get_data('add-msgid-xattr-on-send'):
 		composer_headers.add(HDR_MID, make_msgid())
 	
 	result_eml = make_new_blank_email()
 	
-	for hname, _hval in iterate_composer_headers():
+	for hname in composer_headers.header_names:
 		del result_eml.headers[hname]
 	
 	for hname, hval in iterate_composer_headers():
@@ -3185,7 +3227,7 @@ def build_newemail_to_send():
 	
 	# set the Disposition-Notification-To header if the user has not set it.
 	if toggle_rqdn.get_active() and email_to_send.header[HDR_DNT].decoded == '':
-		for addr in filter(None, get_composer_headers(['From', 'Reply-To'])):
+		for addr in compact(composer_headers.multi_value[('From', 'Reply-To')]):
 			email_to_send.header[HDR_DNT].decoded = addr
 			break
 	
@@ -3347,7 +3389,7 @@ def on_after_save_draft():
 def update_composer_status_message():
 	if NewEmail is None: return
 	status_msgs = [_("Size: %s") % (human_size(NewEmail.size_approx),)]
-	x_sent_date_last = get_composer_header_last(HDR_XSD)
+	x_sent_date_last = composer_headers.value[HDR_XSD]
 	if x_sent_date_last:
 		try:
 			dt = email.utils.parsedate_tz(x_sent_date_last)
@@ -4092,7 +4134,7 @@ def act_req_dispos_notif():
 		box_gdr = composer_headers.set_single(HDR_GDR, 'Yes')
 		box_gdr.readonly = True
 		
-		if not filter(None, get_composer_headers(['From', 'Reply-To'])):
+		if not compact(composer_headers.multi_value[('From', 'Reply-To')]):
 			display_error(_(MSG_NO_ADDRESS_FOR_DNT))
 		box_dnt = composer_headers.set_single(HDR_DNT, '')
 	else:
@@ -4859,7 +4901,7 @@ if cliArgs.compose:
 		composer_headers.add_multi('Cc', cliArgs.cc)
 	if cliArgs.bcc:
 		composer_headers.add_multi('Bcc', cliArgs.bcc)
-	if len(get_composer_headers(RecipientHeaders)) < 1:
+	if len(composer_headers.multi_value[RecipientHeaders]) < 1:
 		# Add an empty To header unless any recipient was given.
 		composer_headers.add('To', '')
 	if cliArgs.subject:
@@ -4876,7 +4918,7 @@ if cliArgs.compose:
 			attach_path(path, path)
 		del path
 	on_after_save_draft()
-	if any(bool(x) for x in get_composer_headers(HDR_XSD)):
+	if compact(composer_headers.multi_value[HDR_XSD]):
 		win_comp.set_data('email-sent', True)
 	panel_edit_message.grab_focus()
 else:
