@@ -13,6 +13,12 @@ import pango
 import locale
 import gettext
 from gemlv.sysutils import warnx
+try:
+	import better_exchook
+except ImportError:
+	pass
+else:
+	better_exchook.install()
 import email
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -80,6 +86,7 @@ from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
 from gemlv.textutils import human_size
 from gemlv.textutils import shorturl
+from gemlv.textutils import truish
 import gemlv.addressbook
 from gemlv.sysutils import futimes
 from gemlv.sysutils import recursive_rm
@@ -99,6 +106,7 @@ from gemlv.pythonutils import SubstractableList
 from gemlv.pythonutils import DefaultingDict
 from gemlv.pythonutils import MultikeyUnionlistDict
 from gemlv.pythonutils import CaseInsensitiveDict
+from gemlv.pythonutils import CaseInsensitiveString
 from gemlv.pythonutils import compact
 import gemlv.gemlvtk as gemlvtk
 from gemlv.constants import *
@@ -480,8 +488,6 @@ def main_thread_alive():
 	return alive
 
 
-def truish(x):
-	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
 
 def get_iterator_from_pos(treeview, x, y):
@@ -1347,6 +1353,12 @@ def composer_substract_once_from_list_header(name, values, delimiter=' '):
 
 
 class GemlvComposerHeadersContainer(gtk.VBox):
+	"""
+	Manages Email's header fields on the UI.
+	Creates GemlvComposerHeader objects for individual headers of various types.
+	The UI field for the Subject header is not meant to be created by this, rather it 
+	takes an external obbject (eg. gtk.Entry) to account for the Subject header.
+	"""
 	def __init__(self, subject_field):
 		super(self.__class__, self).__init__(False, 0)
 		self.set_border_width(4)
@@ -1355,14 +1367,22 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	@property
 	def _headerboxes(self):
-		# all children are GemlvComposerHeader
+		# assumeing all children to be GemlvComposerHeader
 		return self.children()
 	
 	@property
 	def items(self):
+		"""
+		Yields all subordinated GemlvComposerHeader objects which counts in the user's point of view,
+		ie. filled (visible) OriginatorHeaders and RecipientHeaders, and all custom headers (even if hidden).
+		"""
 		for headerbox in self._headerboxes:
 			if headerbox.get_visible() or headerbox.name not in SenderHeaders:
 				yield headerbox
+	
+	def __del__(self, item):
+		# assumeing all children to be GemlvComposerHeader
+		self.remove(item)
 	
 	@property
 	def _dict(self):
@@ -1390,9 +1410,11 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 			GemlvComposerHeadersContainer.value['Subject'] --> 'Dear friend'
 			GemlvComposerHeadersContainer.value['X-Spam'] --> None
 		"""
-		d = DefaultingDict( dict([(k, v[-1]) for k, v in self._dict.iteritems()]) )
+		d = dict([(k, v[-1]) for k, v in self._dict.iteritems()])
+		d = CaseInsensitiveDict(d)
+		d = DefaultingDict(d)
 		d.set_default_value(None)
-		return CaseInsensitiveDict(d)
+		return d
 	
 	@property
 	def multi_value(self):
@@ -1423,8 +1445,11 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	@property
 	def header_names(self):
+		"""
+		Yields each distinct header names once.
+		"""
 		names = {}
-		for headerbox in self.items
+		for headerbox in self.items:
 			if headerbox.name not in names:
 				yield headerbox.name
 				names[headerbox.name] = True
@@ -1438,7 +1463,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 				else:
 					box.hide()
 	
-	def _add(self, name, value, is_manual_call = True):
+	def _add(self, name, value, is_manual_call = True, below_to = None):
 		box = None
 		# find if a singleton header with this name is already there
 		# and if so, set value on it rather than creating a new header.
@@ -1449,31 +1474,38 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 				if value: box.value = value
 				break
 		if box is None:
-			box = GemlvComposerHeader(name, value)
+			box = GemlvComposerHeader(name, value, container=self)
 			self.pack_start(box, False, True)
-			if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
-				# place all HNTYPE_MENU headers always above all HNTYPE_CUSTOM ones
+			if below_to is not None:
+				# place the new headerbox below to the noted one
 				for n in range(len(self._headerboxes)):
-					if self._headerboxes[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+					if self._headerboxes[n] == below_to:
 						self.reorder_child(box, n)
-						break
-					# Ignore every 2nd child.
-					n += 1
+			else:
+				if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
+					# place all HNTYPE_MENU headers always above all HNTYPE_CUSTOM ones
+					for n in range(len(self._headerboxes)):
+						if self._headerboxes[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+							self.reorder_child(box, n)
+							break
+						# Ignore every 2nd child.
+						n += 1
 		if is_manual_call: box.focus()
 		box.show_all()
 		return box
 	
-	def add(self, name, value, is_manual_call = True):
-		box = self._add(name, value, is_manual_call)
+	def add(self, name, value, is_manual_call = True, below_to = None):
+		box = self._add(name, value, is_manual_call, below_to)
 		box.tick_my_menuitem(1)
 		return box
-
+	
 	def add_multi(self, name, values, is_manual_call = True):
 		assert isinstance(values, (list, tuple))
 		for value in values:
 			self.add(name, value, is_manual_call)
 	
 	def set_multi(self, name, values, is_manual_call = True):
+		assert isinstance(values, (list, tuple))
 		# TODO: assert SingletonHeader
 		self.remove_multi(name)
 		self.add_multi(name, values, is_manual_call)
@@ -1489,6 +1521,10 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		return self.add(name, value)
 	
 	def remove_multi(self, name, value = None):
+		"""
+		Remove all headers of which name matches to name and value matches to value.
+		If value is None, then header name matching is sufficient to remove the header.
+		"""
 		for box in self._headerboxes:
 			if box.name == name and (value is None or value == box.value):
 				box.cancel(manual=False)
@@ -1504,7 +1540,7 @@ class GemlvComposerHeader(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	ICON_POS_VALIDATION = 1
 	
-	def __init__(self, chname, val, hntype=None):
+	def __init__(self, chname, val, container):
 		if isinstance(val, AddressLine): val = str(val)
 		assert isinstance(chname, str), 'chname is %s not str.'%(repr(type(chname)),)
 		assert isinstance(val, str) or isinstance(val, unicode), 'val is %s not str nor unicode.'%(repr(type(val)),)
@@ -1512,15 +1548,16 @@ class GemlvComposerHeader(gtk.HBox):
 		minus = True
 		
 		super(self.__class__, self).__init__(False, 2)
-		if hntype is None:
-			if chname in SenderHeaders:
-				hntype = self.HNTYPE_LABEL
-			elif chname in RecipientHeaders:
-				hntype = self.HNTYPE_MENU
-			else:
-				hntype = self.HNTYPE_CUSTOM
 		
-		self.hntype = hntype
+		self.container = container
+		
+		if chname in SenderHeaders:
+			self.hntype = self.HNTYPE_LABEL
+		elif chname in RecipientHeaders:
+			self.hntype = self.HNTYPE_MENU
+		else:
+			self.hntype = self.HNTYPE_CUSTOM
+		
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
 			self.wdg_name.connect('changed', self.on_name_changed)
@@ -1676,6 +1713,9 @@ class GemlvComposerHeader(gtk.HBox):
 		return False
 	
 	def propagate_button_press_event(self, w, evt):
+		print self.parent.parent.parent
+		print self.parent.parent
+		print self.parent
 		self.parent.parent.parent.emit('button-press-event', evt)
 	
 	def pick_datetime(self, w):
@@ -1745,16 +1785,10 @@ class GemlvComposerHeader(gtk.HBox):
 			self.hide()
 		self.showhide_pick_buttons()
 	
-	def duplicate(self, evtwdg=None):
-		newbox = self.__class__(self.name, '', hntype=self.hntype)
-		self.parent.pack_start(newbox, False, True)
-		newbox.show_all()
-		newbox.focus()
-		for n in range(0, len(self.parent.children())):
-			if self.parent.children()[n] == self:
-				self.parent.reorder_child(newbox, n)
+	def duplicate(self, _evtwdg=None):
+		self.container.add(self.name, '', below_to=self)
 	
-	def cancel(self, evtwdg=None, manual=True):
+	def cancel(self, _evtwdg=None, manual=True):
 		if self.name and self.value:
 			set_unsaved()
 		if self.hntype == self.HNTYPE_LABEL:
@@ -1763,15 +1797,11 @@ class GemlvComposerHeader(gtk.HBox):
 			if not manual:
 				self.value = ''
 		else:
+			del self.container[self]
 			if manual and self.hntype == self.HNTYPE_MENU:
-				n = 0
-				for x in self.parent.children():
-					if x.hntype == self.HNTYPE_MENU: n += 1
-					if n > 1: break
-				if n < 2:
-					self.value = ''
-					return False
-			self.parent.remove(self)
+				# don't allow zero Recipient field
+				if not compact(self.container.multi_value[RecipientHeaders]):
+					self.container.add(self.name, '')
 			update_composer_toolbar_toggle_buttons()
 		if self.name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
@@ -1790,20 +1820,7 @@ class GemlvComposerHeader(gtk.HBox):
 	
 	def scrollfocus(self):
 		if self.get_visible():
-			scrwin = self.parent.parent
-			cntnr = scrwin.child
-			vadj = scrwin.get_vadjustment()
-			wdg = win_comp.get_focus()
-			
-			if wdg is not None:
-				wleft, wtop = wdg.translate_coordinates(cntnr, 0, 0)
-				wbottom = wtop + wdg.get_allocation().height
-				top = vadj.value
-				bottom = top + vadj.page_size
-				if wtop < top:
-					vadj.value = wtop
-				elif wbottom > bottom:
-					vadj.value = wbottom - vadj.page_size
+			spanel_comp_header.scroll_to_focused_widget()
 	
 	@property
 	def name(self):
@@ -1813,10 +1830,11 @@ class GemlvComposerHeader(gtk.HBox):
 				ret = self.wdg_name.get_model().get_value(it, 0)
 			else:
 				ret = self.wdg_name.children()[0].get_text()
+				ret = gemlv.email.Header(ret).name
 		else:
 			ret = self.wdg_name.get_data('name')
 		if ret is not None:
-			ret = gemlv.email.Header(ret).name
+			ret = CaseInsensitiveString(ret)
 		return ret
 	
 	@name.setter
@@ -3147,7 +3165,7 @@ def build_newemail(with_attachment_data=True):
 	for hname in composer_headers.header_names:
 		del result_eml.headers[hname]
 	
-	for hname, hval in iterate_composer_headers():
+	for hname, hval in composer_headers.headers:
 		result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
 	
 	text = composer_text_buffer.get_text_all()
@@ -3403,7 +3421,7 @@ def update_composer_toolbar_toggle_buttons():
 	ninja_toggle(toggle_unimportant, False)
 	ninja_toggle(toggle_rqdn, False)
 	
-	for hname, hval in iterate_composer_headers():
+	for hname, hval in composer_headers.headers:
 		if hname == 'Importance':
 			if hval.lower().find('low')>-1:
 				ninja_toggle(toggle_unimportant, True)
@@ -4663,11 +4681,12 @@ box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()
 panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
-spanel_comp_header = gtk.ScrolledWindow()
-menu_add_header = gtk.Menu()
-menu_composer_attachments = gtk.Menu()
+entry_subject = gtk.Entry()
 composer_headers = GemlvComposerHeadersContainer(subject_field = entry_subject)
+spanel_comp_header = gemlvtk.Scrollable(composer_headers)
+menu_add_header = gtk.Menu()
 UnionHeadersStore = gtk.ListStore(str)
+menu_composer_attachments = gtk.Menu()
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
 Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
@@ -4675,7 +4694,6 @@ panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
 panel_subject = gtk.HBox(False, 5)
 panel_subject.set_border_width(4)
-entry_subject = gtk.Entry()
 frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
 composer_text_buffer = TextBuffer()
@@ -4687,7 +4705,6 @@ box_compose.pack_start(tb_compose, False, True)
 box_compose.pack_start(panel_compose, True, True)
 panel_compose.pack1(panel_upper, True, True)
 panel_upper.pack1(spanel_comp_header, True, True)
-spanel_comp_header.add_with_viewport(composer_headers)
 panel_upper.pack2(spanel_attachments, False, True)
 spanel_attachments.add_with_viewport(panel_attachments)
 panel_attachments.set_headers_visible(False)

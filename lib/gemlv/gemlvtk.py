@@ -133,6 +133,7 @@ class Scrollable(gtk.ScrolledWindow):
 		viewport = self.get_child()
 		viewport.set_shadow_type(gtk.SHADOW_NONE)
 		viewport.connect('scroll-event', self.scroll_viewport)
+	
 	def scroll_viewport(self, viewport, event):
 		hadj = self.get_hadjustment()
 		delta = +10 if event.direction in [gtk.gdk.SCROLL_DOWN, gtk.gdk.SCROLL_LEFT] else -10
@@ -141,6 +142,20 @@ class Scrollable(gtk.ScrolledWindow):
 		if newvalue + width > hadj.upper:
 			newvalue = hadj.upper - width
 		hadj.set_value(newvalue)
+	
+	def scroll_to_focused_widget(self):
+		adjust = self.get_vadjustment()
+		focused = self.get_toplevel().get_focus()
+		
+		if focused is not None:
+			foc_left, foc_top = focused.translate_coordinates(self.child, 0, 0)
+			foc_bottom = foc_top + focused.get_allocation().height
+			top = adjust.value
+			bottom = top + adjust.page_size
+			if foc_top < top:
+				adjust.value = foc_top
+			elif foc_bottom > bottom:
+				adjust.value = foc_bottom - adjust.page_size
 
 class Clock(gtk.HBox):
 	def __init__(self):
