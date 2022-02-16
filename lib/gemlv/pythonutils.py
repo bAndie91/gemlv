@@ -65,7 +65,7 @@ class DefaultingDict(dict):
 		self._default_value = v
 	
 	def __getitem__(self, key):
-		return self.get(key, self._default_value)
+		return super(DefaultingDict, self).get(key, self._default_value)
 
 class CaseInsensitiveDict(dict):
 	def _to_canonical_key(self, userkey):
@@ -76,22 +76,22 @@ class CaseInsensitiveDict(dict):
 		return userkey
 	
 	def __getitem__(self, key):
-		return super(self.__class__, self).__getitem__(self._to_canonical_key(key))
+		return super(CaseInsensitiveDict, self).__getitem__(self._to_canonical_key(key))
 	
 	def get(self, key, *fallback):
-		return super(self.__class__, self).get(self._to_canonical_key(key), *fallback)
+		return super(CaseInsensitiveDict, self).get(self._to_canonical_key(key), *fallback)
 	
 	def __delitem__(self, key):
-		return super(self.__class__, self).__delitem__(self._to_canonical_key(key))
+		return super(CaseInsensitiveDict, self).__delitem__(self._to_canonical_key(key))
 	
 	def has_key(self, key):
-		return super(self.__class__, self).has_key(self._to_canonical_key(key))
+		return super(CaseInsensitiveDict, self).has_key(self._to_canonical_key(key))
 	
 	def __contains__(self, key):
-		return super(self.__class__, self).__contains__(self._to_canonical_key(key))
+		return super(CaseInsensitiveDict, self).__contains__(self._to_canonical_key(key))
 	
 	def __setitem__(self, key, value):
-		return super(self.__class__, self).__setitem__(self._to_canonical_key(key), value)
+		return super(CaseInsensitiveDict, self).__setitem__(self._to_canonical_key(key), value)
 	
 	def setdefault(self, *p, **kw):
 		raise NotImplementedError
@@ -113,7 +113,7 @@ class MultikeyUnionlistDict(dict):
 			result = []
 			return reduce(lambda result, key: (result.extend(self[key]), result)[1], keys, result)
 		else:
-			return super(self.__class__, self).__getitem__(key)
+			return super(MultikeyUnionlistDict, self).__getitem__(key)
 
 def compact(alist):
 	return filter(None, alist)

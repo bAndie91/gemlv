@@ -1352,6 +1352,12 @@ def composer_substract_once_from_list_header(name, values, delimiter=' '):
 		header.value = delimiter.join(newwords)
 
 
+class GemlvComposerMultiHeader(MultikeyUnionlistDict, DefaultingDict, CaseInsensitiveDict):
+	pass
+
+class GemlvComposerSingleHeader(DefaultingDict, CaseInsensitiveDict):
+	pass
+
 class GemlvComposerHeadersContainer(gtk.VBox):
 	"""
 	Manages Email's header fields on the UI.
@@ -1386,10 +1392,8 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	@property
 	def _dict(self):
-		d = CaseInsensitiveDict()
-		d = DefaultingDict(d)
+		d = GemlvComposerMultiHeader()
 		d.set_default_value([])
-		d = MultikeyUnionlistDict(d)
 		d[HDR_SUBJ] = [ self.subject_field.get_text() ]
 		for headerbox in self.items:
 			if headerbox.name:
@@ -1411,8 +1415,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 			GemlvComposerHeadersContainer.value['X-Spam'] --> None
 		"""
 		d = dict([(k, v[-1]) for k, v in self._dict.iteritems()])
-		d = CaseInsensitiveDict(d)
-		d = DefaultingDict(d)
+		d = GemlvComposerSingleHeader(d)
 		d.set_default_value(None)
 		return d
 	
