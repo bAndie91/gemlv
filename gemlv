@@ -1370,11 +1370,10 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		self.set_border_width(4)
 		# subject_field is an unmanaged gtk.Entry for the Subject header
 		self.subject_field = subject_field
-		
+	
 	@property
 	def _headerboxes(self):
-		# assumeing all children to be GemlvComposerHeader
-		return self.children()
+		return [c for c in self.children() if isinstance(c, GemlvComposerHeader)]
 	
 	@property
 	def items(self):
@@ -1773,7 +1772,7 @@ class GemlvComposerHeader(gtk.HBox):
 				mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
 				mnu.append(mi)
 			mnu.show_all()
-			mnu.popup(None, None, lambda _menu, wdg: gemlvtk.coordinates(widget, gtk.CORNER_BOTTOM_LEFT), evt.button, evt.time, wdg)
+			mnu.popup(None, None, lambda _menu, widget: gemlvtk.coordinates(widget, gtk.CORNER_BOTTOM_LEFT), evt.button, evt.time, wdg)
 			return True
 		return False
 	
@@ -1791,6 +1790,9 @@ class GemlvComposerHeader(gtk.HBox):
 			self.hide()
 		self.showhide_pick_buttons()
 	
+	def __repr__(self):
+		return '<%s object at 0x%x name=%s value=%s>' % (self.__class__.__name__, id(self), self.name, self.value)
+	
 	def duplicate(self, _evtwdg=None):
 		self.container.add(self.name, '', below_to=self)
 	
@@ -1803,11 +1805,14 @@ class GemlvComposerHeader(gtk.HBox):
 			if not manual:
 				self.value = ''
 		else:
-			del self.container[self]
-			if manual and self.hntype == self.HNTYPE_MENU:
+			do_remove = True
+			if manual and self.name in RecipientHeaders:
 				# don't allow zero Recipient field
-				if not compact(self.container.multi_value[RecipientHeaders]):
-					self.container.add(self.name, '')
+				if len(self.container.multi_value[RecipientHeaders]) <= 1:
+					self.value = ''
+					do_remove = False
+			if do_remove:
+				del self.container[self]
 			update_composer_toolbar_toggle_buttons()
 		if self.name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
