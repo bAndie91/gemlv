@@ -290,3 +290,24 @@ class TreeStoreIterator(object):
 	def __del__(self):
 		pass
 
+def call_loopless_handler(*args):
+	args = list(args)
+	data = args.pop()
+	func = args.pop()
+	target_widget = args[0]
+	user_data = data['user_data']
+	args.extend(user_data)
+	handler = data['handler-id']
+	target_widget.handler_block(handler)
+	result = func(*args)
+	target_widget.handler_unblock(handler)
+	return result
+
+def connect_loopless_signal(gobject, signal_name, func, *user_data):
+	"""
+	This function together with call_loopless_handler() manages to call
+	a signal handler function without recursion into itself.
+	"""
+	data = {'user_data': user_data}
+	handler = gobject.connect(signal_name, call_loopless_handler, func, data)
+	data['handler-id'] = handler

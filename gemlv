@@ -1303,12 +1303,12 @@ def act_composer_header_menuitem_clicked(mi, hname=None):
 		hname = mi.get_data('chname')
 	if hname == '':
 		menuitem_all_comp_hdr.set_active(True)
-	on = mi.active if isinstance(mi, gtk.CheckMenuItem) else None
+	if isinstance(mi, gtk.CheckMenuItem):
+		if not mi.active:
+			composer_headers.remove_multi(hname)
+			return True
 	hbox = composer_headers.add(hname, '')
-	if on == False:
-		hbox.cancel()
-	else:
-		glib.idle_add(hbox.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
+	glib.idle_add(hbox.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
 	return True
 
 def act_composer_header_menuitem_all_clicked(mi):
@@ -1370,7 +1370,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		self.set_border_width(4)
 		# subject_field is an unmanaged gtk.Entry for the Subject header
 		self.subject_field = subject_field
-	
+		
 	@property
 	def _headerboxes(self):
 		# assumeing all children to be GemlvComposerHeader
@@ -1466,7 +1466,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 				else:
 					box.hide()
 	
-	def _add(self, name, value, is_manual_call = True, below_to = None):
+	def add(self, name, value, is_manual_call = True, below_to = None):
 		box = None
 		# find if a singleton header with this name is already there
 		# and if so, set value on it rather than creating a new header.
@@ -1495,10 +1495,6 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 						n += 1
 		if is_manual_call: box.focus()
 		box.show_all()
-		return box
-	
-	def add(self, name, value, is_manual_call = True, below_to = None):
-		box = self._add(name, value, is_manual_call, below_to)
 		box.tick_my_menuitem(True)
 		return box
 	
@@ -1540,6 +1536,11 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		self.remove_multi('', '')
 
 class GemlvComposerHeader(gtk.HBox):
+	"""
+	Has to be placed somewhere under a GtkScrolledWindow widget to make
+	right clicks work.
+	"""
+	
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	ICON_POS_VALIDATION = 1
 	
@@ -1716,10 +1717,12 @@ class GemlvComposerHeader(gtk.HBox):
 		return False
 	
 	def propagate_button_press_event(self, w, evt):
-		print self.parent.parent.parent  # scrollable
-		print self.parent.parent  # viewport
-		print self.parent  # container
-		self.parent.parent.parent.emit('button-press-event', evt)
+		# find the nearest GtkScrolledWindow ancestor
+		# and pass the click event to it to handle (open context menu)
+		ancestor = self.parent
+		while not isinstance(ancestor, gtk.ScrolledWindow) or ancestor is None:
+			ancestor = ancestor.parent
+		ancestor.emit('button-press-event', evt)
 	
 	def pick_datetime(self, w):
 		prompt_datetime(self.wdg_value)
@@ -4171,6 +4174,7 @@ def turn_clicked_signal(ti, on):
 		ti.handler_block(hid)
 
 def ninja_toggle(ti, on):
+	# TODO: replace which connect_loopless_signal()
 	turn_clicked_signal(ti, False)
 	ti.set_active(on)
 	turn_clicked_signal(ti, True)
@@ -4387,8 +4391,7 @@ AddressbookHeaders = [
 	'Cc',
 	'Bcc',
 ]
-#HeaderValidators = CaseInsensitiveDict({
-HeaderValidators = dict({
+HeaderValidators = CaseInsensitiveDict({
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
 	HDR_DNT: VAL_ADDRESS,
@@ -4760,17 +4763,17 @@ tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 for name in SenderHeaders:
 	mi = gtk.CheckMenuItem(_("Specify %s") % (_(name)))
 	mi.set_data('chname', name)
-	mi.connect('toggled', act_composer_header_menuitem_clicked)
+	gemlvtk.connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked)
 	menu_add_header.append(mi)
 mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
-mi.connect('activate', act_composer_header_menuitem_clicked, 'To')
+gemlvtk.connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
-mi.connect('activate', act_composer_header_menuitem_clicked, '')
+gemlvtk.connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, '')
 menu_add_header.append(mi)
 menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
-menuitem_all_comp_hdr.connect('toggled', act_composer_header_menuitem_all_clicked)
+gemlvtk.connect_loopless_signal(menuitem_all_comp_hdr, 'toggled', act_composer_header_menuitem_all_clicked)
 menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
