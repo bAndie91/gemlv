@@ -130,9 +130,13 @@ class Scrollable(gtk.ScrolledWindow):
 		super(self.__class__, self).__init__()
 		self.set_policy(gtk.POLICY_NEVER, gtk.POLICY_NEVER)
 		self.add_with_viewport(child)
+		self.set_shadow_type(gtk.SHADOW_NONE)
 		viewport = self.get_child()
-		viewport.set_shadow_type(gtk.SHADOW_NONE)
 		viewport.connect('scroll-event', self.scroll_viewport)
+	
+	def set_shadow_type(self, shadow_type):
+		viewport = self.get_child()
+		viewport.set_shadow_type(shadow_type)
 	
 	def scroll_viewport(self, viewport, event):
 		hadj = self.get_hadjustment()
@@ -156,6 +160,18 @@ class Scrollable(gtk.ScrolledWindow):
 				adjust.value = foc_top
 			elif foc_bottom > bottom:
 				adjust.value = foc_bottom - adjust.page_size
+
+class ComboBoxEntry(gtk.ComboBoxEntry):
+	def get_value(self):
+		"return the selected entry if any, otherwise the typed text"
+		it = self.get_active_iter()
+		if it is not None:
+			return self.get_model().get_value(it, self.get_text_column())
+		else:
+			return self.child.get_text()
+	def set_text(self, newtext):
+		"set the user-input text (regardless of that equivalent text is in the drop-down list or not)"
+		self.child.set_text(newtext)
 
 class Clock(gtk.HBox):
 	def __init__(self):

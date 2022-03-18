@@ -1568,7 +1568,7 @@ class GemlvComposerHeader(gtk.HBox):
 			self.hntype = self.HNTYPE_CUSTOM
 		
 		if self.hntype == self.HNTYPE_CUSTOM:
-			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
+			self.wdg_name = gui_toolkits.ComboBoxEntry(UnionHeadersStore, 0)
 			self.wdg_name.connect('changed', self.on_name_changed)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
@@ -1842,12 +1842,8 @@ class GemlvComposerHeader(gtk.HBox):
 	@property
 	def name(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
-			it = self.wdg_name.get_active_iter()
-			if it is not None:
-				ret = self.wdg_name.get_model().get_value(it, 0)
-			else:
-				ret = self.wdg_name.children()[0].get_text()
-				ret = gemlv.email.Header(ret).name
+			ret = self.wdg_name.get_value()
+			ret = gemlv.email.Header(ret).name
 		else:
 			ret = self.wdg_name.get_data('name')
 		if ret is not None:
@@ -1857,11 +1853,11 @@ class GemlvComposerHeader(gtk.HBox):
 	@name.setter
 	def name(self, newname):
 		newname = gemlv.email.Header(newname).name
-		self.wdg_name.set_data('name', newname)
 		if self.hntype == self.HNTYPE_CUSTOM:
-			self.wdg_name.children()[0].set_text(newname)
+			self.wdg_name.set_text(newname)
 		else:
 			self.wdg_name.set_label(_(newname))
+			self.wdg_name.set_data('name', newname)
 		self.on_name_changed()
 	
 	def on_name_changed(self, _x=None):
@@ -2809,8 +2805,8 @@ def populate_composer_textview_menu(textview, menu):
 	pos +=1 
 	menu.show_all()
 
-def disable_filters_menu(b=True):
-	menubutton_filters.children()[0].children()[1].set_sensitive(not b)
+def disable_filters_menu(disable=True):
+	menubutton_filters.children()[0].children()[1].set_sensitive(not disable)
 
 def get_part_by_itpath(itpath = None):
 	if itpath is None:
@@ -3435,19 +3431,24 @@ def update_composer_status_message():
 	tb_comp_label.set_labels(status_msgs)
 
 def update_composer_toolbar_toggle_buttons():
-	encountered_gdr = False
+	encountered_headers = {}
 	for hname, hval in composer_headers.headers:
 		if hname == 'Importance':
 			if hval.lower().find('low')>-1:
 				toggle_unimportant.set_active(True)
 				toggle_important.set_active(False)
-			if hval.lower().find('high')>-1:
+				encountered_headers[hname] = True
+			elif hval.lower().find('high')>-1:
 				toggle_important.set_active(True)
 				toggle_unimportant.set_active(False)
+				encountered_headers[hname] = True
 		if hname == HDR_GDR:
 			toggle_rqdn.set_active(True)
-			encountered_gdr = True
-	if not encountered_gdr:
+			encountered_headers[hname] = True
+	if 'Importance' not in encountered_headers:
+		toggle_important.set_active(False)
+		toggle_unimportant.set_active(False)
+	if HDR_GDR not in encountered_headers:
 		toggle_rqdn.set_active(False)
 
 def update_window_title(window, filename, subject_text):
@@ -4723,6 +4724,7 @@ win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=132, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
+spanel_comp_header.set_shadow_type(gtk.SHADOW_IN)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_attachments.drag_dest_set(0, [], 0)
