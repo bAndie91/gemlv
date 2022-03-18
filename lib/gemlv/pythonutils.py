@@ -119,123 +119,72 @@ class MultikeyUnionlistDict(dict):
 def compact(alist):
 	return filter(None, alist)
 
-#from UserString import UserString
-#class CaseInsensitiveString(object):
-#class CaseInsensitiveString(UserString):
 class CaseInsensitiveString(str):
-	def __new__(cls, i):
-		s = super(CaseInsensitiveString, cls).__new__(cls, i)
-#		s.lc = ''
-		s.lc = i.lower()
-		return s
-#	def __init__(self, i):
-#		self.value = i
-##		self.lc = i.lower()
-#	def __str__(self):
-#		return self.value
-#	def __repr__(self):
-#		return self.value.__repr__()
+	def __repr__(self):
+		return '%s(%s)' % (self.__class__.__name__, str.__repr__(self))
 	def __eq__(self, p):
-		if not hasattr(self, 'lc'): return NotImplemented
 		try: p = p.lower()
 		except: return NotImplemented
-#		return self.lower().__eq__(p)
-#		if p is None: return False
-		return self.lc.__eq__(p)
-#		p = str.lower(p)
-#		p = p.lower()
-#		x = bytearray(p)
-#		for i in range(len(p)):
-#			o = ord(p[i])
-#			x += chr(o+32) if o >= ord('A') and o <= ord('Z') else p[i]
-##			#x += chr(o)
-#		p = x
-#		return True
-#		return p.__eq__(self.lc)
-#		b = bytes(self)
-#		lc = b.lower()
-#		lc = self.replace('O', 'o')
-#		return p.__eq__(lc)
-#		return self.lc.__eq__(p)
-#		return self.lower() == p
-#	def __ne__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return not self.__eq__(p)
-#	def __lt__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return self.lower().__lt__(p)
-#	def __le__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return self.lower().__le__(p)
-#	def __gt__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return self.lower().__gt__(p)
-#	def __ge__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return self.lower().__ge__(p)
-#	def __contains__(self, p):
-#		try: p = p.lower()
-#		except: return NotImplemented
-#		return self.lower().__contains__(p)
-#	def endswith(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().endswith(*p)
-#	def find(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().find(*p)
-#	def index(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().index(*p)
-#	def lstrip(self, *p, **kw):
-#		raise NotImplementedError
-#	def replace(self, *p, **kw):
-#		raise NotImplementedError
-#	def rfind(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().rfind(*p)
-#	def rindex(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().rindex(*p)
-#	def rsplit(self, *p, **kw):
-#		raise NotImplementedError
-#	def rstrip(self, *p, **kw):
-#		raise NotImplementedError
-#	def split(self, *p, **kw):
-#		raise NotImplementedError
-#	def startswith(self, *p):
-#		try: p[0] = p[0].lower()
-#		except (IndexError, AttributeError): pass
-#		return self.lower().startswith(*p)
-#	def strip(self, *p, **kw):
-#		raise NotImplementedError
-#	def translate(self, *p, **kw):
-#		raise NotImplementedError
-
-#class CaseInsensitiveString(str):
-#    """Case insensitive string.
-#    """
-#
-#    def __new__(cls, str_):
-#        s = str.__new__(cls, str_)
-#        s.str_lower = str_.lower()
-#        s.str_lower_hash = hash(s.str_lower)
-#        return s
-#
-#    def __hash__(self):
-#        return self.str_lower_hash
-#
-#    def __eq__(self, other):
-#        return self.str_lower == other.lower()
-#
-#    def lower(self):
-#        return self.str_lower
+		return self.lower().__eq__(p)
+	def __ne__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return not self.__eq__(p)
+	def __lt__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return self.lower().__lt__(p)
+	def __le__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return self.lower().__le__(p)
+	def __gt__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return self.lower().__gt__(p)
+	def __ge__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return self.lower().__ge__(p)
+	def __contains__(self, p):
+		try: p = p.lower()
+		except: return NotImplemented
+		return self.lower().__contains__(p)
+	def endswith(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().endswith(p0, *p[1:])
+	def find(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().find(p0, *p[1:])
+	def index(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().index(p0, *p[1:])
+	def lstrip(self, *p, **kw):
+		raise NotImplementedError
+	def replace(self, *p, **kw):
+		raise NotImplementedError
+	def rfind(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().rfind(p0, *p[1:])
+	def rindex(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().rindex(p0, *p[1:])
+	def rsplit(self, *p, **kw):
+		raise NotImplementedError
+	def rstrip(self, *p, **kw):
+		raise NotImplementedError
+	def split(self, *p, **kw):
+		raise NotImplementedError
+	def startswith(self, *p):
+		try: p0 = p[0].lower()
+		except (IndexError, AttributeError): pass
+		return self.lower().startswith(p, *p[1:])
+	def strip(self, *p, **kw):
+		raise NotImplementedError
+	def translate(self, *p, **kw):
+		raise NotImplementedError

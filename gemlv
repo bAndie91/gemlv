@@ -14,7 +14,7 @@ import locale
 import gettext
 from gemlv.sysutils import warnx
 try:
-	import better_exchook_
+	import better_exchook
 except ImportError:
 	pass
 else:
@@ -109,6 +109,7 @@ from gemlv.pythonutils import CaseInsensitiveDict
 from gemlv.pythonutils import CaseInsensitiveString
 from gemlv.pythonutils import compact
 import gemlv.gemlvtk as gemlvtk
+from gemlv.gemlvtk import connect_loopless_signal
 from gemlv.constants import *
 import gemlv.mime as mime
 from gemlv.profilepicture import load_gravatar
@@ -1436,7 +1437,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	def headers(self):
 		"""
 		Returns list of tuples: (header_name, header_value)
-		header_value is scalar.
+		header_value being string.
 		certain header_name may occur multiple times.
 		empty header names and values are ignored.
 		"""
@@ -1492,7 +1493,8 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 							break
 						# Ignore every 2nd child.
 						n += 1
-		if is_manual_call: box.focus()
+		if is_manual_call:
+			box.focus()
 		box.show_all()
 		box.tick_my_menuitem(True)
 		return box
@@ -1537,7 +1539,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 class GemlvComposerHeader(gtk.HBox):
 	"""
 	Has to be placed somewhere under a GtkScrolledWindow widget to make
-	right clicks work.
+	right-clicks work.
 	"""
 	
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
@@ -1841,12 +1843,11 @@ class GemlvComposerHeader(gtk.HBox):
 				ret = self.wdg_name.get_model().get_value(it, 0)
 			else:
 				ret = self.wdg_name.children()[0].get_text()
-#				ret = gemlv.email.Header(ret).name
+				ret = gemlv.email.Header(ret).name
 		else:
 			ret = self.wdg_name.get_data('name')
 		if ret is not None:
-#			ret = CaseInsensitiveString(ret)
-			pass
+			ret = CaseInsensitiveString(ret)
 		return ret
 	
 	@name.setter
@@ -2835,7 +2836,6 @@ def get_all_parent_parts(part_asked):
 def load_toolitems(toolbar, toolitems):
 	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
-		hid = None
 		if type(fnc_left) == str:
 			tbi = gtk.SeparatorToolItem()
 			if fnc_left == 'space':
@@ -2853,18 +2853,20 @@ def load_toolitems(toolbar, toolitems):
 					tbi.set_label(tip)
 				else:
 					tbi.set_label(label)
-				hid = tbi.connect('clicked', on_click_button, fnc_left)
+				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
 		else:
 			Lstocklabel = None
 			st = gtk.stock_lookup(stock)
 			if st:
 				Lstocklabel = re.sub('_', '', st[1])  # remove shortcut key from button
+			
 			if label is not None:
 				Llabel = label
 			elif Lstocklabel is not None:
 				Llabel = Lstocklabel
 			else:
 				Llabel = None
+			
 			if tip is not None:
 				Ltip = tip
 				if Llabel is None:
@@ -2874,6 +2876,7 @@ def load_toolitems(toolbar, toolitems):
 					Ltip = Llabel
 				else:
 					Ltip = Lstocklabel
+			
 			if fnc_left is None and fnc_right is None:
 				tbi = gtk.ToolItem()
 				tbi.set_border_width(3)
@@ -2883,9 +2886,8 @@ def load_toolitems(toolbar, toolitems):
 				tbi = gemlvtk.StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
 				tbi.set_data('stock', stock)
 				tbi.set_data('label', label)
-				hid = tbi.connect('clicked', on_click_button, fnc_left)
-				tbi.child.connect('button-press-event', on_press_button, fnc_right)
-		tbi.set_data('clicked-handler', hid)
+				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
+				connect_loopless_signal(tbi.child, 'button-press-event', on_press_button, fnc_right)
 		toolbar.insert(tbi, -1)
 		items.append(tbi)
 	return items
@@ -3429,18 +3431,20 @@ def update_composer_status_message():
 	tb_comp_label.set_labels(status_msgs)
 
 def update_composer_toolbar_toggle_buttons():
-	ninja_toggle(toggle_unimportant, False)
-	ninja_toggle(toggle_unimportant, False)
-	ninja_toggle(toggle_rqdn, False)
-	
+	encountered_gdr = False
 	for hname, hval in composer_headers.headers:
 		if hname == 'Importance':
 			if hval.lower().find('low')>-1:
-				ninja_toggle(toggle_unimportant, True)
+				toggle_unimportant.set_active(True)
+				toggle_important.set_active(False)
 			if hval.lower().find('high')>-1:
-				ninja_toggle(toggle_important, True)
+				toggle_important.set_active(True)
+				toggle_unimportant.set_active(False)
 		if hname == HDR_GDR:
-			ninja_toggle(toggle_rqdn, True)
+			toggle_rqdn.set_active(True)
+			encountered_gdr = True
+	if not encountered_gdr:
+		toggle_rqdn.set_active(False)
 
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
@@ -3640,11 +3644,8 @@ def act_composer_attachment_menu_detach(opts):
 
 
 def on_composer_attachments_row_changed(model, itpath, iterator):
-	hid = model.get_data('row-changed-signal-handler-id')
-	model.handler_block(hid)
 	part = model[iterator][COL_ATTACHMENTS_EML]
 	model[iterator][COL_ATTACHMENTS_SIZE_LABEL] = human_size(part.size_decoded_approx)
-	model.handler_unblock(hid)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
 	mime = get_mime_by_data(data)
@@ -4171,38 +4172,22 @@ def act_req_dispos_notif():
 		composer_headers.remove_multi(name=HDR_GDR)
 		composer_headers.remove_multi(name=HDR_DNT)
 
-def turn_clicked_signal(ti, on):
-	hid = ti.get_data('clicked-handler')
-	if on:
-		ti.handler_unblock(hid)
-	else:
-		ti.handler_block(hid)
-
-def ninja_toggle(ti, on):
-	# TODO: replace which connect_loopless_signal()
-	turn_clicked_signal(ti, False)
-	ti.set_active(on)
-	turn_clicked_signal(ti, True)
+def act_importance():
+	importance = 1
+	if toggle_important.get_active(): importance = 2
+	elif toggle_unimportant.get_active(): importance = 0
+	composer_headers.set_multi('Importance', [] if importance == 1 else [Importances[importance]])
+	composer_headers.set_multi('Priority',   [] if importance == 1 else [Priorities[importance]])
 
 def on_toggled(wdg):
 	if wdg in [toggle_unimportant, toggle_important]:
-		return on_toggled_importance(wdg)
-
-def on_toggled_importance(wdg):
-	if wdg.get_active():
-		if wdg == toggle_important:
-			toggle_unimportant.set_active(False)
-		elif wdg == toggle_unimportant:
-			toggle_important.set_active(False)
-		return True
+		if wdg.get_active():
+			if wdg == toggle_important:
+				toggle_unimportant.set_active(False)
+			elif wdg == toggle_unimportant:
+				toggle_important.set_active(False)
+			return True
 	return False
-
-def act_importance():
-	n = 1
-	if toggle_important.get_active(): n = 2
-	elif toggle_unimportant.get_active(): n = 0
-	composer_headers.set_multi('Importance', [] if n == 1 else [Importances[n]])
-	composer_headers.set_multi('Priority',   [] if n == 1 else [Priorities[n]])
 
 def act_edit_external():
 	menubutton_send.set_sensitive(False)
@@ -4702,7 +4687,7 @@ UnionHeadersStore = gtk.ListStore(str)
 menu_composer_attachments = gtk.Menu()
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gemlvtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
-Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
+connect_loopless_signal(Attachments, 'row-changed', on_composer_attachments_row_changed)
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
 panel_subject = gtk.HBox(False, 5)
@@ -4768,17 +4753,17 @@ tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 for name in SenderHeaders:
 	mi = gtk.CheckMenuItem(_("Specify %s") % (_(name)))
 	mi.set_data('chname', name)
-	gemlvtk.connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked)
+	connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked)
 	menu_add_header.append(mi)
 mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
-gemlvtk.connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To')
+connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
 mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
-gemlvtk.connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, '')
+connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, '')
 menu_add_header.append(mi)
 menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
-gemlvtk.connect_loopless_signal(menuitem_all_comp_hdr, 'toggled', act_composer_header_menuitem_all_clicked)
+connect_loopless_signal(menuitem_all_comp_hdr, 'toggled', act_composer_header_menuitem_all_clicked)
 menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
 
@@ -4837,9 +4822,9 @@ toolbuttons = [
 ]
 tb_comp_label, x_, toggle_encrypt, toggle_sign, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
 = load_toolitems(tb_comp_controls, toolbuttons)
-toggle_rqdn.connect('toggled', on_toggled)
-toggle_unimportant.connect('toggled', on_toggled)
-toggle_important.connect('toggled', on_toggled)
+connect_loopless_signal(toggle_rqdn, 'toggled', on_toggled)
+connect_loopless_signal(toggle_unimportant, 'toggled', on_toggled)
+connect_loopless_signal(toggle_important, 'toggled', on_toggled)
 btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, None)
 
 
