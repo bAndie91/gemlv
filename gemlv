@@ -364,19 +364,23 @@ def set_dialog_icon_name(dlg, icon):
 	img = dlg.get_content_area().children()[0].children()[0]
 	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
-def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, custom_accept_button_stock=None):
+def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, custom_accept_button_stock=None, title=None):
 	global FileChooserLastFolder
 	selected = None
 	
 	assert (multifile and not ask_overwrite) or not multifile
 	assert (ask_overwrite and action == gtk.FILE_CHOOSER_ACTION_SAVE) or not ask_overwrite
+	if title is None:
+		title = PROGNAME
+	else:
+		title += ' - ' + PROGNAME
 	
 	btn_accept_stock = gtk.STOCK_SAVE
 	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
 		btn_accept_stock = gtk.STOCK_OPEN
 	if custom_accept_button_stock is not None:
 		btn_accept_stock = custom_accept_button_stock
-	dlg = gtk.FileChooserDialog(parent=gemlvtk.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
+	dlg = gtk.FileChooserDialog(parent=gemlvtk.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT), title=title)
 	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
@@ -407,16 +411,16 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 	return selected
 
 def choose_save_file(filename=None, ask_overwrite=False):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename, ask_overwrite=ask_overwrite)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename, ask_overwrite=ask_overwrite, title=_("Choose a file to save to"))
 
 def choose_save_folder():
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER, title=_("Choose a folder to save to"))
 
 def choose_open_file(custom_accept_button_stock=None):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, custom_accept_button_stock=custom_accept_button_stock)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, custom_accept_button_stock=custom_accept_button_stock, title=_("Select a file"))
 
 def choose_open_files(custom_accept_button_stock=None):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock, title=_("Select files"))
 
 
 

@@ -535,3 +535,16 @@ msgstr "Ellenőrizd mit csatolsz be, kiváltképp ha az email fájl olyan félt�
 
 msgid "There are empty attachments."
 msgstr "Vannak üres csatolmányok."
+
+msgid "Choose a file to save to"
+msgstr "Válassz egy fájlt amibe mentsünk"
+
+msgid "Choose a folder to save to"
+msgstr "Válassz egy könyvtárat amibe mentsünk"
+
+msgid "Select a file"
+msgstr "Fájl kiválasztása"
+
+msgid "Select files"
+msgstr "Fájlok kiválasztása"
+
