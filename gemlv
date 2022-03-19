@@ -3442,13 +3442,13 @@ def update_composer_toolbar_toggle_buttons():
 				toggle_important.set_active(True)
 				toggle_unimportant.set_active(False)
 				encountered_headers[hname] = True
-		if hname == HDR_GDR:
+		if hname in [HDR_GDR, HDR_DNT]:
 			toggle_rqdn.set_active(True)
 			encountered_headers[hname] = True
 	if 'Importance' not in encountered_headers:
 		toggle_important.set_active(False)
 		toggle_unimportant.set_active(False)
-	if HDR_GDR not in encountered_headers:
+	if HDR_GDR not in encountered_headers and HDR_DNT not in encountered_headers:
 		toggle_rqdn.set_active(False)
 
 def update_window_title(window, filename, subject_text):
