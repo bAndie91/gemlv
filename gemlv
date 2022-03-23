@@ -2295,19 +2295,23 @@ def act_unsubscribe():
 		for link in links:
 			uri = link['uri']
 			if link['scheme'] == 'mailto' and link.get('to') and len(link['to'])>0:
+				pretext = SYMBOL_EMAIL
 				linktext = str(link['to'][0])
 			else:
+				pretext = SYMBOL_WEB
 				linktext = uri
 			short = shorturl(linktext, 80)
-			if short is not None: linktext = short
-			text += '\n\n<a href=\'%s\'>%s</a> <i>%s</i>' % (
+			if short is not None:
+				linktext = short
+			text += '\n%s <a href=\'%s\'>%s</a> <i>%s</i>' % (
+				glib.markup_escape_text(pretext),
 				glib.markup_escape_text(uri), 
 				glib.markup_escape_text(linktext), 
 				glib.markup_escape_text(link['comment']),
 			)
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe"))
-		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + text)
+		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + '\n' + text)
 		dlg.get_action_area().children()[0].grab_focus()
 		dlg.run()
 		dlg.destroy()
@@ -2938,14 +2942,14 @@ def prepare_to_send():
 	validate_all_comp_headers()
 	err_msgs = []
 	if not composer_headers.value[HDR_SUBJ]:
-		err_msgs.append(CHAR_BULLET + ' ' + _("No Subject."))
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("No Subject."))
 	if len(filter(lambda x: len(x.strip()), composer_headers.multi_value[RecipientHeaders])) < 1:
-		err_msgs.append(CHAR_BULLET + ' ' + _("No any Recipient."))
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("No any Recipient."))
 	if toggle_rqdn.get_active() and not compact(composer_headers.multi_value[(HDR_DNT, 'From', 'Reply-To')]):
-		err_msgs.append(CHAR_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
 	for it in Attachments.iter_recursive:
 		if not Attachments[it][COL_ATTACHMENTS_EML].is_multipart() and Attachments[it][COL_ATTACHMENTS_EML].payload_encoded == '':
-			err_msgs.append(CHAR_BULLET + ' ' + _("There are empty attachments."))
+			err_msgs.append(SYMBOL_BULLET + ' ' + _("There are empty attachments."))
 			break
 	if err_msgs:
 		err_msgs.append(_("Send anyway?"))
