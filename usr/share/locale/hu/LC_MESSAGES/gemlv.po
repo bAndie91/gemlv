@@ -19,11 +19,11 @@ msgstr "Munkakönyvtár"
 msgid "Loading failed"
 msgstr "Betöltés meghiúsult"
 
-msgid "Content type: %s%s%s"
-msgstr "Tartalom típusa: %s%s%s"
+msgid "Content type, allegedly:"
+msgstr "Tartalom típusa, állítólagosan:"
 
-msgid "Filename: %s%s%s"
-msgstr "Fájlnév: %s%s%s"
+msgid "Filename"
+msgstr "Fájlnév"
 
 msgid "X-X-Sender"
 msgstr "X-X-Küldő"
@@ -395,11 +395,11 @@ msgstr "Részletek"
 msgid "Hide Details"
 msgstr "Részletek elrejtése"
 
-msgid "Size: %s"
-msgstr "Méret: %s"
+msgid "Size"
+msgstr "Méret"
 
-msgid "Content Description by sender: %s%s%s"
-msgstr "Tartalom leírása a küldő szerint: %s%s%s"
+msgid "Content Description by sender"
+msgstr "Tartalom leírása a küldő szerint"
 
 msgid "Sent on %s"
 msgstr "Elküldve %s"

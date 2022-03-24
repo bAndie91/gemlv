@@ -922,12 +922,13 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 #			elif eml.content_type.main == 'audio':
 #				TODO: add embedded audio player
 			else:
-				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
-				if eml.filename: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(eml.filename), PMU_NAME_CLOSE)) + '\n' + label
+				label = _("Content type, allegedly:") + " %s%s%s" % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
+				if eml.filename:
+					label = _("Filename") + ": %s%s%s" % (PMU_NAME, glib.markup_escape_text(eml.filename), PMU_NAME_CLOSE) + '\n' + label
 				content_description = eml.header['Content-Description'].decoded
 				if content_description:
-					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
-				label += '\n' + _("Size: %s") % (human_size(eml.size_decoded_approx),)
+					label += '\n' + _("Content Description by sender") + ": %s%s%s" % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
+				label += '\n' + _("Size") + ": %s" % human_size(eml.size_decoded_approx)
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -3424,7 +3425,7 @@ def on_after_save_draft():
 
 def update_composer_status_message():
 	if NewEmail is None: return
-	status_msgs = [_("Size: %s") % (human_size(NewEmail.size_approx),)]
+	status_msgs = [_("Size") + ": %s" % human_size(NewEmail.size_approx)]
 	x_sent_date_last = composer_headers.value[HDR_XSD]
 	if x_sent_date_last:
 		try:
