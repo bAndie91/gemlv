@@ -50,3 +50,16 @@ uninstall:
 	[ ! -e /usr/share/doc/gemlv/ ] || rmdir -v /usr/share/doc/gemlv/
 	
 	rm -v /usr/share/locale/*/LC_MESSAGES/gemlv.mo
+
+install-for-user:
+	cp usr/share/applications/gemlv.desktop ~/.local/share/applications/
+	cp usr/share/applications/gemlv-compose.desktop ~/.local/share/applications/
+	update-desktop-database ~/.local/share/applications/
+	mkdir -p ~/.config/gemlv/
+	cp filters.conf ~/.config/gemlv/
+
+uninstall-for-user:
+	[ ! -e ~/.local/share/applications/gemlv-compose.desktop ] || rm ~/.local/share/applications/gemlv-compose.desktop
+	[ ! -e ~/.local/share/applications/gemlv.desktop ] || rm ~/.local/share/applications/gemlv.desktop
+	update-desktop-database ~/.local/share/applications/
+	[ ! -e ~/.config/gemlv/filters.conf ] || rm ~/.config/gemlv/filters.conf

@@ -4280,7 +4280,7 @@ def on_edit_message(tb):
 ### Main ###
 
 PROGNAME = 'gemlv'
-VERSION = '0.4'
+VERSION = '0.5'
 USERAGENT = PROGNAME + '/' + VERSION
 locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)
