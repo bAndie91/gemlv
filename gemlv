@@ -2925,13 +2925,11 @@ class ComposerHeaderValidationError(Exception):
 	pass
 
 def validate_all_comp_headers():
-	for n in range(0, len(composer_headers.children())):
-		box = composer_headers.children()[n]
-		if box.get_visible():
-			valid = box.validate()
-			if valid == VALIDATION_RESULT_INVALID:
-				box.point_out()
-				raise ComposerHeaderValidationError(box.name)
+	for headerbox in composer_headers.items:
+		valid = headerbox.validate()
+		if valid == VALIDATION_RESULT_INVALID:
+			headerbox.point_out()
+			raise ComposerHeaderValidationError(headerbox.name)
 
 class CanNotPrepareEmailToSend(Exception):
 	pass
