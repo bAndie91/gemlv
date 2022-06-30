@@ -24,6 +24,8 @@ install:
 	do echo /"$${f%.*}".mo;\
 	  msgfmt -o /"$${f%.*}".mo "$$f"; \
 	done
+	
+	git describe --tags > /usr/share/doc/gemlv/VERSION
 
 locales:
 	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
@@ -47,6 +49,7 @@ uninstall:
 	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
 	
 	[ ! -e /usr/share/doc/gemlv/LICENSE ] || rm -v /usr/share/doc/gemlv/LICENSE
+	[ ! -e /usr/share/doc/gemlv/VERSION ] || rm -v /usr/share/doc/gemlv/VERSION
 	[ ! -e /usr/share/doc/gemlv/ ] || rmdir -v /usr/share/doc/gemlv/
 	
 	rm -v /usr/share/locale/*/LC_MESSAGES/gemlv.mo
