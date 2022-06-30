@@ -4417,6 +4417,9 @@ HeadersObfuscate = [
 DontLeakHeaders = [
 	'Bcc',
 ]
+SingletonHeaders = [
+
+]
 MultiRecipientsMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
 AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
 
