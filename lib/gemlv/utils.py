@@ -22,7 +22,7 @@ def _fix_unquoted_comma(s):
 	def repl(m):
 		probably_realname = m.group(2)
 		probably_realname_norm = probably_realname.strip()
-		if probably_realname_norm == '' or probably_realname_norm.startswith('"') or probably_realname.find(',')==-1:
+		if probably_realname_norm == '' or probably_realname_norm.startswith(('"', '<')) or probably_realname.find(',')==-1:
 			return m.group(0)
 		else:
 			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
@@ -37,6 +37,7 @@ def getaddresslines(array):
 	
 		array: list of MIME-encoded strings
 	"""
+	assert isinstance(array, (list, tuple))
 	return map(lambda t: AddressLine(t), _getaddresses(array))
 
 class AddressLine(object):

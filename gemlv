@@ -4903,12 +4903,16 @@ if cliArgs.compose:
 				supersedes.append(header.value.decoded)
 			elif header.name == HDR_SUBJ:
 				composer_headers.set_single(HDR_SUBJ, header.value.decoded)
-			if any(wildcardmatch(header.name, exclude_header) for exclude_header in EditExcludedHeaders):
+			elif any(wildcardmatch(header.name, exclude_header) for exclude_header in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
 				warnx("Skip header '%s' in email editing." % (header.name,))
 			else:
-				composer_headers.add(header.name, header.value.decoded)
-		composer_headers.set_multi('Supersedes', [', '.join(supersedes)])
+				if header.name in SemiSingletonHeaders:
+					composer_headers.add_multi(header.name, getaddresslines([header.value.encoded]))
+				else:
+					composer_headers.add(header.name, header.value.decoded)
+		if supersedes:
+			composer_headers.set('Supersedes', ', '.join(supersedes))
 		del header
 		del supersedes
 		
