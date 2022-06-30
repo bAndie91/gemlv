@@ -1414,7 +1414,8 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		dict, for each item:
 			key is header name,
 			value is the content of one header with the given name.
-		useful for sinleton headers (like Subject, but not for Received)
+		
+		useful for singleton headers (like Subject, but not for Received)
 		
 		Examples:
 			GemlvComposerHeadersContainer.value['Subject'] --> 'Dear friend'
@@ -1435,7 +1436,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		Examples:
 			GemlvComposerHeadersContainer.multi_value['Received'] --> ['from helo=...', 'from helo=...']
 			GemlvComposerHeadersContainer.multi_value['DKIM-Signature'] --> []
-			GemlvComposerHeadersContainer.value[('To', 'Cc')] --> ['Joe <joe@example.net>', 'Jane <jane@example.net>', 'Jim <jim@example.net>']
+			GemlvComposerHeadersContainer.multi_value[('To', 'Cc')] --> ['Joe <joe@example.net>', 'Jane <jane@example.net>', 'Jim <jim@example.net>']
 		"""
 		return self._dict
 	
@@ -1475,13 +1476,13 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	def add(self, name, value, is_manual_call = True, below_to = None):
 		box = None
 		# find if a singleton header with this name is already there
-		# and if so, set value on it rather than creating a new header.
-		# HNTYPE_LABEL considered singleton.
-		for thisbox in self._headerboxes:
-			if thisbox.hntype == GemlvComposerHeader.HNTYPE_LABEL and thisbox.name == name:
-				box = thisbox
-				if value: box.value = value
-				break
+		# and if so, set value to it rather than creating a new header.
+		if (name in SingletonHeaders and name not in SemiSingletonHeaders) or GemlvComposerHeader.get_hntype(name) == GemlvComposerHeader.HNTYPE_LABEL:
+			for thisbox in self._headerboxes:
+				if thisbox.name == name:
+					box = thisbox
+					if value: box.value = value
+					break
 		if box is None:
 			box = GemlvComposerHeader(name, value, container=self)
 			self.pack_start(box, False, True)
@@ -1507,12 +1508,13 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 	
 	def add_multi(self, name, values, is_manual_call = True):
 		assert isinstance(values, (list, tuple))
+		assert name not in SingletonHeaders or name in SemiSingletonHeaders
 		for value in values:
 			self.add(name, value, is_manual_call)
 	
 	def set_multi(self, name, values, is_manual_call = True):
 		assert isinstance(values, (list, tuple))
-		# TODO: assert SingletonHeader
+		assert name not in SingletonHeaders or name in SemiSingletonHeaders
 		self.remove_multi(name)
 		self.add_multi(name, values, is_manual_call)
 	
@@ -1551,6 +1553,15 @@ class GemlvComposerHeader(gtk.HBox):
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	ICON_POS_VALIDATION = 1
 	
+	@classmethod
+	def get_hntype(klass, hname):
+		if hname in SenderHeaders:
+			return klass.HNTYPE_LABEL
+		elif hname in RecipientHeaders:
+			return klass.HNTYPE_MENU
+		else:
+			return klass.HNTYPE_CUSTOM
+	
 	def __init__(self, chname, val, container):
 		if isinstance(val, AddressLine): val = str(val)
 		assert isinstance(chname, str), 'chname is %s not str.'%(repr(type(chname)),)
@@ -1562,12 +1573,7 @@ class GemlvComposerHeader(gtk.HBox):
 		
 		self.container = container
 		
-		if chname in SenderHeaders:
-			self.hntype = self.HNTYPE_LABEL
-		elif chname in RecipientHeaders:
-			self.hntype = self.HNTYPE_MENU
-		else:
-			self.hntype = self.HNTYPE_CUSTOM
+		self.hntype = GemlvComposerHeader.get_hntype(chname)
 		
 		if self.hntype == self.HNTYPE_CUSTOM:
 			self.wdg_name = gui_toolkits.ComboBoxEntry(UnionHeadersStore, 0)
@@ -3197,8 +3203,14 @@ def build_newemail(with_attachment_data=True):
 	for hname in composer_headers.header_names:
 		del result_eml.headers[hname]
 	
+	for hname in SemiSingletonHeaders:
+		hval = ', '.join(composer_headers.multi_value[hname])
+		if hval:
+			result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
+	
 	for hname, hval in composer_headers.headers:
-		result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
+		if hname not in SemiSingletonHeaders:
+			result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
@@ -4418,6 +4430,7 @@ HeaderValidators = CaseInsensitiveDict({
 })
 for h in DateTimeHeaders:
 	HeaderValidators[h] = VAL_DATE
+del h
 AutocompletionListSizeLimitOnEmptyInput = 10
 AutocompletionHeaders = {
 	'Importance': Importances,
@@ -4432,9 +4445,22 @@ HeadersObfuscate = [
 DontLeakHeaders = [
 	'Bcc',
 ]
+# RFC 2822 sect 3.6
 SingletonHeaders = [
-
+	'Date',
+	'From',
+	'Sender',
+	'Reply-To',
+	'To',
+	'Cc',
+	'Bcc',
+	HDR_MID,
+	'In-Reply-To',
+	HDR_REF,
+	HDR_SUBJ,
 ]
+# SemiSingletonHeaders are shown as separate headers on the UI but clashed into one in the raw email.
+SemiSingletonHeaders = [ HDR_REF ] + RecipientHeaders
 MultiRecipientsMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
 AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
 
@@ -4832,6 +4858,7 @@ panel_attachments.append_column(tvc)
 
 for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
 	UnionHeadersStore.append([h])
+del h
 
 toolbuttons = [
 	(None, gui_toolkits.LabelsToolItem(), None, None, None),
@@ -4867,6 +4894,7 @@ if cliArgs.compose:
 			fh.close()
 		except RuntimeError:
 			sys.exit(1)
+		del fh
 		
 		# Import headers.
 		supersedes = []
@@ -4881,6 +4909,8 @@ if cliArgs.compose:
 			else:
 				composer_headers.add(header.name, header.value.decoded)
 		composer_headers.set_multi('Supersedes', [', '.join(supersedes)])
+		del header
+		del supersedes
 		
 		Global.body_found = False
 		Global.external_attachments = []
@@ -4935,6 +4965,7 @@ if cliArgs.compose:
 	if cliArgs.mailto:
 		mailto = parse_mailto(cliArgs.mailto)
 		add_composer_mailto(mailto)
+		del mailto
 	if getattr(cliArgs, 'from'):
 		composer_headers.set_multi('From', [getattr(cliArgs, 'from')])
 	if cliArgs.to:
@@ -4953,6 +4984,9 @@ if cliArgs.compose:
 			if header.find(':') == -1: header += ':'
 			hname, hval = re.split(': ?', header, 1)
 			composer_headers.add(gemlv.email.Header(hname).name, hval)
+			del hname
+			del hval
+		del header
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
