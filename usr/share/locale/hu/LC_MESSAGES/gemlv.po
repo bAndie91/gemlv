@@ -19,11 +19,11 @@ msgstr "Munkakönyvtár"
 msgid "Loading failed"
 msgstr "Betöltés meghiúsult"
 
-msgid "Content type: %s%s%s"
-msgstr "Tartalom típusa: %s%s%s"
+msgid "Content type, allegedly:"
+msgstr "Tartalom típusa, állítólagosan:"
 
-msgid "Filename: %s%s%s"
-msgstr "Fájlnév: %s%s%s"
+msgid "Filename"
+msgstr "Fájlnév"
 
 msgid "X-X-Sender"
 msgstr "X-X-Küldő"
@@ -214,8 +214,8 @@ msgstr "Fájlok csatolása"
 msgid "Attach"
 msgstr "Csatolás"
 
-msgid "This file is already attached."
-msgstr "Már csatolva van ez a fájl."
+msgid "This file is already attached"
+msgstr "Már csatolva van ez a fájl"
 
 msgid "This file is already attached:"
 msgstr "Már csatolva van ez a fájl:"
@@ -395,11 +395,11 @@ msgstr "Részletek"
 msgid "Hide Details"
 msgstr "Részletek elrejtése"
 
-msgid "Size: %s"
-msgstr "Méret: %s"
+msgid "Size"
+msgstr "Méret"
 
-msgid "Content Description by sender: %s%s%s"
-msgstr "Tartalom leírása a küldő szerint: %s%s%s"
+msgid "Content Description by sender"
+msgstr "Tartalom leírása a küldő szerint"
 
 msgid "Sent on %s"
 msgstr "Elküldve %s"
@@ -487,3 +487,64 @@ msgstr "Felvétel a címtárba"
 
 msgid "Added to addressbook"
 msgstr "Felvéve a címtárba"
+
+msgid "file"
+msgstr "fájl"
+
+msgid "Info"
+msgstr "Infó"
+
+msgid "Could not remove extra email identities (UIDs) from public key. Can not protect privacy of these email addresses: "
+msgstr "A titkosítókulcs nyilvános részéből nem tudtam eltávolítani a nem ide tartozó azonosítóidat (UID), ennél fogva az alábbi email címeid kinyerhetőek lesznek: "
+
+msgid "Skip header '%s' in email editing."
+msgstr "A '%s' fejléc kihagyása az email szerkesztésekor."
+
+msgid "Executing outstanding timers."
+msgstr "Időzített feladatok lefuttatása."
+
+msgid "Contact Address Chooser"
+msgstr "Kapcsolattartási Cím Választó"
+
+msgid "Open attachment"
+msgstr "Csatolmány megnyitása"
+
+msgid "Open original file"
+msgstr "Eredeti fájl megnyitása"
+
+msgid "Rename"
+msgstr "Átnevezés"
+
+msgid "Detach"
+msgstr "Lecsatolás"
+
+msgid "Source file not known."
+msgstr "Forrásfájl nem ismert."
+
+msgid "External Attachments"
+msgstr "Külső csatolmányok"
+
+msgid "The following attachments' data is not embedded in the email, but references to files on the disk are present."
+msgstr "A lenti csatolmányok adattartalma nincs az emailbe foglalva, de vannak hivatkozások lemezen lévő fájlokhoz."
+
+msgid "You may re-attach those files from disk and remove these empty ones."
+msgstr "Újracsatolhatod azokat a fájlokat, ezen üreseket pedig lecsatolhatod."
+
+msgid "Double check what do you attach, especially if the email file comes from a party not fully trusted."
+msgstr "Ellenőrizd mit csatolsz be, kiváltképp ha az email fájl olyan féltől származik ami nem teljesen megbízható."
+
+msgid "There are empty attachments."
+msgstr "Vannak üres csatolmányok."
+
+msgid "Choose a file to save to"
+msgstr "Válassz egy fájlt amibe mentsünk"
+
+msgid "Choose a folder to save to"
+msgstr "Válassz egy könyvtárat amibe mentsünk"
+
+msgid "Select a file"
+msgstr "Fájl kiválasztása"
+
+msgid "Select files"
+msgstr "Fájlok kiválasztása"
+

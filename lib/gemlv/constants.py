@@ -1,4 +1,16 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from contenttypestring import ContentTypeString
+
+COMMON_MULTIPART_PREAMBLE = "This is a multi-part message in MIME format."  # @notranslate
+
+RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
+RE_IPADDR = r'[0-9a-f\.:]+'
+RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
+RE_EMAIL_PERMISSIVE = r'.@' + RE_DOMAINPART
+RE_EMAIL = r'(?P<LP>\w[\w\.+-]*(?<![\.-]))@' + RE_DOMAINPART
+RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
 
 PMU_MIME = '<i><span color=\'gray30\'>'
 PMU_MIME_CLOSE = '</span></i>'
@@ -25,14 +37,17 @@ HDR_MID = 'Message-ID'
 HDR_REF = 'References'
 HDR_XSD = 'X-Sent-Date'
 HDR_XQID = 'X-Queue-ID'
+HDR_SUBJ = 'Subject'
 
-MIMETYPE_OCTETSTREAM = 'application/octet-stream'
-MIMETYPE_EMAIL = 'message/rfc822'
-MIMETYPE_URILIST = 'text/uri-list'
-MIMETYPE_TEXT = 'text/plain'
-MIMETYPE_HTML = 'text/html'
-MIMETYPE_SYMLINK = 'inode/symlink'
-MIMETYPE_HEADERS = 'text/rfc822-headers'
+
+MIMETYPE_OCTETSTREAM = ContentTypeString('application/octet-stream')
+MIMETYPE_EMAIL = ContentTypeString('message/rfc822')
+MIMETYPE_URILIST = ContentTypeString('text/uri-list')
+MIMETYPE_TEXT = ContentTypeString('text/plain')
+MIMETYPE_HTML = ContentTypeString('text/html')
+MIMETYPE_SYMLINK = ContentTypeString('inode/symlink')
+MIMETYPE_HEADERS = ContentTypeString('text/rfc822-headers')
+MIMETYPE_DN = ContentTypeString('message/disposition-notification')
 
 XATTR_CHARSET = 'user.mime_encoding'
 XATTR_TYPE = 'user.mime_type'
@@ -41,3 +56,14 @@ XATTR_MDNSENT = 'user.gemlv.mdn-sent-in'
 XATTR_REPLIED = 'user.gemlv.replied-in'
 XATTR_FORWARDED = 'user.gemlv.forwarded-in'
 XATTR_QUEUEID = 'user.gemlv.sent.queue-id'
+
+ENCNAMES_UUE = ('x-uuencode', 'uuencode', 'uue', 'x-uue')
+
+SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
+
+MULTIPART_INDEX_PGP_ENCRYPTED_V1 = 1  # see RFC 3156
+
+SYMBOL_BULLET = '•'
+SYMBOL_EMAIL = '✉'
+SYMBOL_WEB = '☛'
+

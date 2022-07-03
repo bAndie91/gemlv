@@ -2,6 +2,7 @@
 
 import gtk
 import glib
+from gemlv.constants import *
 
 class Window(gtk.Window):
 	def set_icon_name(self, name):
@@ -129,9 +130,14 @@ class Scrollable(gtk.ScrolledWindow):
 		super(self.__class__, self).__init__()
 		self.set_policy(gtk.POLICY_NEVER, gtk.POLICY_NEVER)
 		self.add_with_viewport(child)
+		self.set_shadow_type(gtk.SHADOW_NONE)
 		viewport = self.get_child()
-		viewport.set_shadow_type(gtk.SHADOW_NONE)
 		viewport.connect('scroll-event', self.scroll_viewport)
+	
+	def set_shadow_type(self, shadow_type):
+		viewport = self.get_child()
+		viewport.set_shadow_type(shadow_type)
+	
 	def scroll_viewport(self, viewport, event):
 		hadj = self.get_hadjustment()
 		delta = +10 if event.direction in [gtk.gdk.SCROLL_DOWN, gtk.gdk.SCROLL_LEFT] else -10
@@ -140,6 +146,32 @@ class Scrollable(gtk.ScrolledWindow):
 		if newvalue + width > hadj.upper:
 			newvalue = hadj.upper - width
 		hadj.set_value(newvalue)
+	
+	def scroll_to_focused_widget(self):
+		adjust = self.get_vadjustment()
+		focused = self.get_toplevel().get_focus()
+		
+		if focused is not None:
+			foc_left, foc_top = focused.translate_coordinates(self.child, 0, 0)
+			foc_bottom = foc_top + focused.get_allocation().height
+			top = adjust.value
+			bottom = top + adjust.page_size
+			if foc_top < top:
+				adjust.value = foc_top
+			elif foc_bottom > bottom:
+				adjust.value = foc_bottom - adjust.page_size
+
+class ComboBoxEntry(gtk.ComboBoxEntry):
+	def get_value(self):
+		"return the selected entry if any, otherwise the typed text"
+		it = self.get_active_iter()
+		if it is not None:
+			return self.get_model().get_value(it, self.get_text_column())
+		else:
+			return self.child.get_text()
+	def set_text(self, newtext):
+		"set the user-input text (regardless of that equivalent text is in the drop-down list or not)"
+		self.child.set_text(newtext)
 
 class Clock(gtk.HBox):
 	def __init__(self):
@@ -168,6 +200,7 @@ class Clock(gtk.HBox):
 		self.show_all()
 	
 	def select_time(self, ts=None):
+		import time
 		t = time.localtime(ts)
 		self.spin_hour.set_value(t.tm_hour)
 		self.spin_minute.set_value(t.tm_min)
@@ -203,3 +236,94 @@ def add_gtk_icon_to_stock(icon_name, label_str_localized):
 	icon_factory = gtk.IconFactory()
 	icon_factory.add(icon_name, iconset)
 	icon_factory.add_default()
+
+def get_stock_icon_by_mime(main, sub):
+	assoc_main = {
+		'multipart': gtk.STOCK_DIRECTORY,
+		'message': 'emblem-mail',
+	}
+	assoc_full = {
+		'application/pgp-signature': 'mail-signed',
+		'application/ics': 'x-office-calendar',
+		'text/calendar': 'x-office-calendar',
+		'inode/directory': gtk.STOCK_DIRECTORY,
+		'inode/x-empty': 'document-new',
+		'multipart/digest': 'emblem-mail',
+	}
+	full = main + '/' + sub
+	
+	if assoc_full.has_key(full):
+		return assoc_full[full]
+	elif assoc_main.has_key(main):
+		return assoc_main[main]
+	
+	if full in [MIMETYPE_HTML]:
+		return main + '-' + sub
+	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
+		return main + '-x-generic'
+	
+	return gtk.STOCK_FILE
+
+def coordinates(widget, corner):
+	assert isinstance(corner, gtk.CornerType)
+	X, Y = widget.window.get_origin()
+	x, y, w, h = widget.get_allocation()
+	if corner == gtk.CORNER_TOP_LEFT:
+		return (X + x, Y + y, True)
+	elif corner == gtk.CORNER_TOP_RIGHT:
+		return (X + x + w, Y + y, True)
+	elif corner == gtk.CORNER_BOTTOM_LEFT:
+		return (X + x, Y + y + h, True)
+	elif corner == gtk.CORNER_BOTTOM_RIGHT:
+		return (X + x + w, Y + y + h, True)
+
+class TreeStore(gtk.TreeStore):
+	@property
+	def iter_recursive(self):
+		return TreeStoreIterator(self)
+
+class TreeStoreIterator(object):
+	def __init__(self, treestore):
+		self.treestore = treestore
+		self.path = (0,)
+	
+	def __iter__(self):
+		return self
+	
+	def next(self):
+		try:
+			row = self.treestore[self.path]
+		except IndexError:
+			if len(self.path) > 1:
+				self.path = self.path[:-2] + (self.path[-2] + 1,)
+				return next(self)
+			else:
+				raise StopIteration
+		else:
+			self.path = self.path + (0,)
+			return row.iter
+	
+	def __del__(self):
+		pass
+
+def _call_loopless_handler(*args):
+	args = list(args)
+	data = args.pop()
+	func = args.pop()
+	target_widget = args[0]
+	user_data = data['user_data']
+	args.extend(user_data)
+	handler = data['handler-id']
+	target_widget.handler_block(handler)
+	result = func(*args)
+	target_widget.handler_unblock(handler)
+	return result
+
+def connect_loopless_signal(gobject, signal_name, func, *user_data):
+	"""
+	This function together with call_loopless_handler() manages to call
+	a signal handler function without recursion into itself.
+	"""
+	data = {'user_data': user_data}
+	handler = gobject.connect(signal_name, _call_loopless_handler, func, data)
+	data['handler-id'] = handler

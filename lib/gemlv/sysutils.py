@@ -1,4 +1,5 @@
 #!/usr/bin/env python2
+# -*- coding: utf-8 -*-
 
 import os
 import sys
@@ -6,6 +7,7 @@ import ctypes
 from ctypes.util import find_library
 import fcntl
 import re
+import urllib2
 
 
 def warnx(string):
@@ -97,3 +99,20 @@ def basenameify(s):
 	Replace ASCII slash (/) to a similar-looking multibyte char (U+2215 DIVISION SLASH)
 	"""
 	return s.replace('/', u'\u2215')
+
+def file_uri_to_path(uri):
+	if uri.startswith('file:///'):
+		return urllib2.unquote(uri[7:])
+	elif uri.startswith('file://'):
+		return urllib2.unquote(uri[6:])
+	elif uri.startswith('file:/'):
+		return urllib2.unquote(uri[5:])
+	return None
+
+def new_pipe_handles(npairs):
+	pipes = []
+	for n in range(0, npairs):
+		r, w = os.pipe()
+		pipes.append(os.fdopen(r, 'r'))
+		pipes.append(os.fdopen(w, 'w'))
+	return pipes

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import traceback
 import signal
 import select
 import gtk
@@ -12,23 +13,29 @@ import pango
 import locale
 import gettext
 from gemlv.sysutils import warnx
+try:
+	import better_exchook
+except ImportError:
+	pass
+else:
+	better_exchook.install()
 import email
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.message import MIMEMessage
+from gemlv.contenttypestring import ContentTypeString
+import gemlv.email
 import re
 from tempfile import mkstemp
 from tempfile import mkdtemp
 from mimetypes import guess_extension
 import magic
-from fnmatch import fnmatch
+from gemlv.textutils import wildcardmatch
 import argparse
-try:
-	import xattr
-except ImportError:
-	warnx("No module named xattr. Degrading extended attribute management.")
-	xattr = None
+import gemlv.xattr as xattr
+if not xattr.supported():
+	warnx(_("Notice: xattr is not available. Degrading extended attribute management."))
 import urlparse
 import pwd
 import threading
@@ -64,21 +71,23 @@ try:
 except ImportError:
 	warnx("No module named pyexiv2. Degrading image auto rotation.")
 	pyexiv2 = None
-import gemlv.utils
 try:
 	import sqlite3
 except ImportError:
 	warnx("No module named sqlite3. Degrading sender email address suggestion based on past correspondences.")
 	sqlite3 = None
-from gemlv.utils import headercase
 from gemlv.utils import AddressLine
+from gemlv.utils import getaddresslines
 from gemlv.utils import decode_mimetext
-from gemlv.utils import decode_mime_header
-from gemlv.utils import walk_multipart
-from gemlv.utils import MimeDecoded
-from gemlv.utils import MimeEncoded
+from gemlv.utils import get_gecos_name
+from gemlv.utils import analyze_for_optimal_encoding
+from gemlv.mimetext import MimeDecoded
+from gemlv.mimetext import MimeEncoded
+from gemlv.textutils import list2text
+from gemlv.textutils import human_size
+from gemlv.textutils import shorturl
+from gemlv.textutils import truish
 import gemlv.addressbook
-import gemlv.sysutils
 from gemlv.sysutils import futimes
 from gemlv.sysutils import recursive_rm
 from gemlv.sysutils import set_blocking
@@ -88,11 +97,22 @@ from gemlv.sysutils import make_relative_symlink
 from gemlv.sysutils import read_symlink_target_abs
 from gemlv.sysutils import is_safe_symlink
 from gemlv.sysutils import basenameify
+from gemlv.sysutils import file_uri_to_path
+from gemlv.sysutils import new_pipe_handles
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
-import gemlv.gemlvtk as gemlvtk
+from gemlv.pythonutils import SubstractableList
+from gemlv.pythonutils import DefaultingDict
+from gemlv.pythonutils import MultikeyUnionlistDict
+from gemlv.pythonutils import CaseInsensitiveDict
+from gemlv.pythonutils import CaseInsensitiveString
+from gemlv.pythonutils import compact
+import gemlv.gui_toolkits as gui_toolkits
+from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.constants import *
+import gemlv.mime as mime
+from gemlv.profilepicture import load_gravatar
 
 
 ### helper classes, functions ###
@@ -193,7 +213,7 @@ class pipereader(object):
 		self.exitdict = exitdict
 		args = args[:]
 		args.insert(0, os.path.basename(cmd))
-		child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
+		child_read, parent_write, parent_read, child_write = new_pipe_handles(2)
 		pid = os.fork()
 		if pid == 0:
 			parent_read.close()
@@ -277,54 +297,64 @@ def timer2_flush():
 		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 
-def display_error(e, suppl_text=None):
+def save_exception_traceback(exc_obj, traceback_str):
+	if hasattr(exc_obj, 'traceback_str'):
+		exc_obj.traceback_str += traceback_str
+	else:
+		exc_obj.traceback_str = traceback_str
+	exc_obj.traceback_str += '\n'
+
+def display_error(e, suppl_text='', async=False, icon=gtk.MESSAGE_ERROR):
 	text = None
 	if hasattr(e, 'strerror'):
 		text = e.strerror
 		if hasattr(e, 'errno'):
 			text += ' (code %d)' % e.errno
 		if e.filename is not None:
-			suppl_text = e.filename
+			text += '\n' + _("file") + ': ' + e.filename
 	elif isinstance(e, Exception):
-		text = e.message
-	elif type(e) == type([]):
+		text = e.__class__.__name__ + ':\n' + e.message
+		if hasattr(e, 'traceback_str'):
+			suppl_text += '\n' + e.traceback_str
+	elif isinstance(e, list):
 		text = ''.join(e)
 	if text is None:
 		text = str(e)
-	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_ERROR, gtk.BUTTONS_OK, text)
-	dlg.set_transient_for(gemlvtk.get_current_window())
+	dlg = gtk.MessageDialog(gui_toolkits.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, icon, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(gui_toolkits.get_current_window())
 	dlg.set_title(_("Error"))
-	if suppl_text is not None:
+	if suppl_text != '':
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
-		carea.pack_start(gemlvtk.ScrolledLabelView(suppl_text), True, True)
+		carea.pack_start(gui_toolkits.ScrolledLabelView(suppl_text), True, True)
+	dlg.get_widget_for_response(gtk.RESPONSE_OK).connect('clicked', lambda btn, dlg: dlg.destroy(), dlg)
 	dlg.show_all()
-	dlg.run()
-	dlg.destroy()
+	if not async:
+		dlg.run()
 
-def display_info_box_async(text, suppl_text=None):
-	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
-	dlg.set_transient_for(gemlvtk.get_current_window())
-	dlg.set_title(_("Info"))
+def display_info_box_async(text, suppl_text=None, title=None):
+	dlg = gtk.MessageDialog(gui_toolkits.get_current_window(), gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, text)
+	dlg.set_transient_for(gui_toolkits.get_current_window())
+	dlg.set_title(title or _("Info"))
 	if suppl_text is not None:
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
-		carea.pack_start(gemlvtk.ScrolledLabelView(suppl_text), True, True)
+		carea.pack_start(gui_toolkits.ScrolledLabelView(suppl_text), True, True)
 	dlg.get_widget_for_response(gtk.RESPONSE_OK).connect('clicked', lambda btn, dlg: dlg.destroy(), dlg)
 	dlg.show_all()
 
 def question(msg, stock_yes=None, stock_no=None, parent=None):
-	dlg = gtk.MessageDialog(parent or gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
+	dlg = gtk.MessageDialog(parent or gui_toolkits.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, gtk.BUTTONS_YES_NO)
 	dlg.set_markup(msg)
 	dlg.set_title(_("Question"))
 	if stock_no is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_NO).hide()
-		btn_no = gemlvtk.StockButton(label=stock_no[0], stock=stock_no[1])
+		btn_no = gui_toolkits.StockButton(label=stock_no[0], stock=stock_no[1])
 		dlg.add_action_widget(btn_no, gtk.RESPONSE_NO)
 		btn_no.show()
 	if stock_yes is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
-		btn_yes = gemlvtk.StockButton(label=stock_yes[0], stock=stock_yes[1])
+		btn_yes = gui_toolkits.StockButton(label=stock_yes[0], stock=stock_yes[1])
 		dlg.add_action_widget(btn_yes, gtk.RESPONSE_YES)
 		btn_yes.show()
 	resp = dlg.run()
@@ -335,25 +365,29 @@ def set_dialog_icon_name(dlg, icon):
 	img = dlg.get_content_area().children()[0].children()[0]
 	img.set_from_icon_name(icon, gtk.ICON_SIZE_DIALOG)
 
-def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, custom_accept_button_stock=None):
+def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, custom_accept_button_stock=None, title=None):
 	global FileChooserLastFolder
 	selected = None
 	
 	assert (multifile and not ask_overwrite) or not multifile
 	assert (ask_overwrite and action == gtk.FILE_CHOOSER_ACTION_SAVE) or not ask_overwrite
+	if title is None:
+		title = PROGNAME
+	else:
+		title += ' - ' + PROGNAME
 	
 	btn_accept_stock = gtk.STOCK_SAVE
 	if action == gtk.FILE_CHOOSER_ACTION_OPEN:
 		btn_accept_stock = gtk.STOCK_OPEN
 	if custom_accept_button_stock is not None:
 		btn_accept_stock = custom_accept_button_stock
-	dlg = gtk.FileChooserDialog(parent=gemlvtk.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT))
+	dlg = gtk.FileChooserDialog(parent=gui_toolkits.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT), title=title)
 	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
 		dlg.set_select_multiple(True)
 		selected = []
-	btn_cwd = gemlvtk.StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
+	btn_cwd = gui_toolkits.StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
 	while True:
@@ -378,24 +412,17 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 	return selected
 
 def choose_save_file(filename=None, ask_overwrite=False):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename, ask_overwrite=ask_overwrite)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SAVE, filename, ask_overwrite=ask_overwrite, title=_("Choose a file to save to"))
 
 def choose_save_folder():
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_SELECT_FOLDER, title=_("Choose a folder to save to"))
 
 def choose_open_file(custom_accept_button_stock=None):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, custom_accept_button_stock=custom_accept_button_stock)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, custom_accept_button_stock=custom_accept_button_stock, title=_("Select a file"))
 
 def choose_open_files(custom_accept_button_stock=None):
-	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock)
+	return choose_dialog(gtk.FILE_CHOOSER_ACTION_OPEN, multifile=True, custom_accept_button_stock=custom_accept_button_stock, title=_("Select files"))
 
-def get_pipe_handlers(npairs):
-	pipes = []
-	for n in range(0, npairs):
-		r, w = os.pipe()
-		pipes.append(os.fdopen(r, 'r'))
-		pipes.append(os.fdopen(w, 'w'))
-	return pipes
 
 
 def run_async(cmd, args, postrun):
@@ -466,28 +493,7 @@ def main_thread_alive():
 			break
 	return alive
 
-RE_HEADERPARAM = '(\\b%s)(=(?:\x22([^\x22]+)\x22|([^\s;]+)))?'
 
-def get_header_parameter(text, param):
-	for left, right, dqval, val in re.findall(RE_HEADERPARAM % (re.escape(param),), text or ''):
-		if dqval != '': return dqval
-		if val != '': return val
-	return None
-
-def set_header_parameter(eml, hname, param, pvalue):
-	return eml.set_param(param, pvalue, hname)
-
-def truish(x):
-	return(str(x).lower() in ['yes', '1', 'true', 'on'])
-
-def file_uri_to_path(uri):
-	if uri.startswith('file:///'):
-		return urllib2.unquote(uri[7:])
-	elif uri.startswith('file://'):
-		return urllib2.unquote(uri[6:])
-	elif uri.startswith('file:/'):
-		return urllib2.unquote(uri[5:])
-	return None
 
 
 def get_iterator_from_pos(treeview, x, y):
@@ -495,13 +501,6 @@ def get_iterator_from_pos(treeview, x, y):
 	if pathinfo is None: return None
 	return treeview.get_model().get_iter(pathinfo[0])
 
-
-def human_size(x, suffix='B', decimals=1):
-	prefixa = ['', 'K', 'M', 'G']
-	for prefixum in prefixa:
-		if abs(x) < 1024.0 or prefixum == prefixa[-1]:
-			return '%.*f %s%s' % (decimals, x, prefixum, suffix)
-		x /= 1024.0
 
 
 
@@ -513,16 +512,16 @@ def win_main_show(widget, event):
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
 
-def get_email_addresses_in_main_headers(h):
-	return get_email_addresses_from_headers(h, Email)
 
-def get_email_addresses_from_headers(h, email_obj):
-	return map(lambda x: x[1], gemlv.utils.getaddresses(email_obj.get_all(h) or []))
+def extract_email_addresses_from_headers(headername, email_obj):
+	return map(lambda al: al.email, \
+		getaddresslines(email_obj.headers[headername].encoded))
 
-def get_email_address_from_headers(h, email_obj):
-	l = get_email_addresses_from_headers(h, email_obj)
-	if len(l) == 0: return None
-	else: return l[0]
+def extract_1_email_address_from_headers(headername, email_obj):
+	addresses = extract_email_addresses_from_headers(headername, email_obj)
+	if len(addresses) == 0: return None
+	else: return addresses[0]
+
 
 def email_from_file(filename):
 	try:
@@ -532,54 +531,46 @@ def email_from_file(filename):
 		act_quit()
 		return None, None
 	eml = email.message_from_file(fh)
-	return eml, fh
+	return gemlv.email.Email(eml), fh
 
 def load_file(filename):
-	global Email
+	global TheEmail
 	global LeafParts
-	Email, fh = email_from_file(filename)
-	if Email is None: return
+	TheEmail, fh = email_from_file(filename)
+	if TheEmail is None: return
+	TheEmail = gemlv.email.Email(TheEmail)
 	win_main.set_data('email-file-handle', fh)
 	win_main.set_data('email-file', filename)
-	update_window_title(win_main, filename, get_one_header_main('Subject'))
+	update_window_title(win_main, filename, TheEmail.header[HDR_SUBJ].decoded)
 	
 	senderaddr = None
 	for h in OriginatorHeaders:
-		addrs = get_email_addresses_in_main_headers(h)
-		if len(addrs) > 0:
-			senderaddr = addrs[0]
+		addr = extract_1_email_address_from_headers(h, TheEmail)
+		if addr:
+			senderaddr = addr
 			break
-	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar)).start()
+	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar, Props)).start()
 	
-	if (Email[HDR_DNT] or '').strip():
-		if get_xattr(filename, XATTR_MDNSENT) is None:
+	if TheEmail.header[HDR_DNT].nonempty:
+		if xattr.get(filename, XATTR_MDNSENT) is None:
 			menubutton_mdn.show()
-	if truish(get_xattr(filename, XATTR_MDNSENT)):
+	if truish(xattr.get(filename, XATTR_MDNSENT)):
 		stck_mdn.show()
-	if truish(get_xattr(filename, XATTR_REPLIED)):
+	if truish(xattr.get(filename, XATTR_REPLIED)):
 		stck_repl.show()
-	if truish(get_xattr(filename, XATTR_FORWARDED)):
+	if truish(xattr.get(filename, XATTR_FORWARDED)):
 		stck_fwd.show()
 	
 	if get_listaddressline_main().email:
 		menubutton_replytolist.show()
-	if (Email['List-Unsubscribe'] or '').strip():
+	if TheEmail.header['List-Unsubscribe'].nonempty:
 		menubutton_unsubscribe.show()
 	
-	panel_view_header.set_markup(get_headers_markup(Email))
-	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(re.sub('\n', '', get_one_header_main('Subject') or '')) + PMU_SUBJ_CLOSE)
+	panel_view_header.set_markup(get_headers_markup(TheEmail))
+	panel_view_subject.set_markup(PMU_SUBJ + glib.markup_escape_text(TheEmail.header[HDR_SUBJ].decoded.replace('\n', '')) + PMU_SUBJ_CLOSE)
 	clear_parts(Parts)
-	load_parts(Email, Parts, Parts.get_iter_root())
-	panel_parts.expand_all()
-	if Email.is_multipart():
-		if PartPrimary is not None:
-			selection_parts.select_iter(PartPrimary)
-		elif PartSecondary is not None:
-			selection_parts.select_iter(PartSecondary)
-		else:
-			selection_parts.select_path((0,))
-	else:
-		selection_parts.select_path((0,))
+	load_parts(TheEmail, Parts, Parts.get_iter_root())
+	select_default_main_email_part()
 
 	if LeafParts > 1:
 		pos = panel_body.get_data('saved-position')
@@ -590,68 +581,107 @@ def load_file(filename):
 		panel_body.set_data('saved-position', panel_body.get_position())
 		panel_body.set_position(0)
 
+def select_default_main_email_part():
+	if TheEmail.is_multipart():
+		if PartPrimary is not None and Parts[PartPrimary][COL_PARTS_EML].payload_decoded.strip() != '':
+			selection_parts.select_iter(PartPrimary)
+		elif PartSecondary is not None:
+			selection_parts.select_iter(PartSecondary)
+		else:
+			selection_parts.select_path((0,))
+	else:
+		selection_parts.select_path((0,))
+
 def clear_parts(model):
 	global LeafParts
 	LeafParts = 0
 	model.clear()
 
-def load_parts(eml, model, parent):
+def load_parts(eml, model, parent_it):
 	global PartPrimary
 	global PartSecondary
 	global LeafParts
-	content_type = eml.get_content_type()
 	
-	label = PMU_MIME + glib.markup_escape_text(content_type) + PMU_MIME_CLOSE
-	filename = decode_mimetext(eml.get_filename())
-	if filename is not None: label = glib.markup_escape_text(filename) + ' ' + label
-	stock = get_stock_by_mime(eml.get_content_maintype(), eml.get_content_subtype())
+	label = PMU_MIME + glib.markup_escape_text(eml.content_type) + PMU_MIME_CLOSE
+	if eml.filename: label = glib.markup_escape_text(eml.filename) + ' ' + label
+	stock = gui_toolkits.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
 	pixb = None
 	
-	iterator = model.append(parent, [eml, label, stock, pixb, {}])
+	iterator = model.append(parent_it, [eml, label, stock, pixb, {}])
+	
 	# Note: buggy or incomplete Content-Type (eg. "Content-Type: pdf") is reported as text/plain by email module
-	if PartPrimary is None and content_type == MIMETYPE_TEXT:
+	if PartPrimary is None and eml.content_type == MIMETYPE_TEXT:
 		PartPrimary = iterator
-	if PartSecondary is None and content_type == MIMETYPE_HTML:
+	if PartSecondary is None and eml.content_type == MIMETYPE_HTML:
 		PartSecondary = iterator
-	if content_type == 'multipart/encrypted':
-		crypto_protocol = get_header_parameter(eml[HDR_CT], 'protocol')
-		if crypto_protocol == 'application/pgp-encrypted':
-			# RFC3156
-			pgp_metadata_part = eml.get_payload()[0]
-			load_parts(pgp_metadata_part, model, iterator)
-			encrypted_part_num = 1
-			encrypted_part = eml.get_payload()[encrypted_part_num]
-			encrypted_data = encrypted_part.as_string()
-			decrypt = gpg.decrypt(encrypted_data)
-			if decrypt.ok:
-				decrypted_eml = email.message_from_string(decrypt.data)
-				load_parts(decrypted_eml, model, iterator)
-				iconname = 'changes-allow'
-			else:
-				iconname = 'changes-prevent'
-			
-			if decrypt.key_id is not None:
-				# it's a encrypted and signed message, store signatue info for later
-				model[model.iter_nth_child(iterator, encrypted_part_num)][4]['gpg'] = {
-					'valid': decrypt.valid,
-					'stderr': decrypt.stderr,
-					'username': decrypt.username,
-				}
-			
-			for other_part in eml.get_payload()[2:]:
-				load_parts(other_part, model, iterator)
-			
-			# Display an open/locked padlock icon
-			model[model.iter_nth_child(iterator, encrypted_part_num)][2] = None
-			model[model.iter_nth_child(iterator, encrypted_part_num)][3] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
-			if not decrypt.ok:
-				display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
-			return
-	if type(eml.get_payload()) == type([]):
-		for part in eml.get_payload():
-			load_parts(part, model, iterator)
+	
+	if eml.is_multipart():
+		if eml.content_type == 'multipart/encrypted':
+			crypto_protocol = eml.header[HDR_CT].param['protocol'].decoded
+		else:
+			crypto_protocol = None
+		for index, part in enumerate(eml.parts):
+			part_it = load_parts(part, model, iterator)
+			if crypto_protocol == 'application/pgp-encrypted' and index == MULTIPART_INDEX_PGP_ENCRYPTED_V1:
+				# see RFC 3156
+				replace_pgp_encrypted_part(model, part_it)
 	else:
 		LeafParts += 1
+	panel_parts.expand_to_path(model.get_path(iterator))
+	return iterator
+
+def replace_pgp_encrypted_part(model, iterator):
+	encrypted_part = model[iterator][COL_PARTS_EML]
+	encrypted_data = encrypted_part.as_string()
+	try:
+		decrypt = gpg.decrypt(encrypted_data)
+	except Exception as e:
+		traceback.print_exc()
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(e)
+		decrypt = PropertyStoreClass()
+		decrypt.ok = False
+		decrypt.key_id = False
+		decrypt.status = -1
+		decrypt.stderr = ''
+	
+	if decrypt.ok:
+		decrypted_eml = gemlv.email.Email(email.message_from_string(decrypt.data))
+		model[iterator][COL_PARTS_INFO]['gpg-encrypted-part'] = False
+		load_parts(decrypted_eml, model, iterator)
+		iconname = 'changes-allow'
+	else:
+		iconname = 'changes-prevent'
+		# place a hidden TreeViewRow under this row to have the expander show up
+		model.append(iterator, [None, '', '', None, {}])
+		panel_parts.collapse_row(model.get_path(iterator))
+		model[iterator][COL_PARTS_INFO]['gpg-encrypted-part'] = True
+	
+	if decrypt.key_id is not None:
+		# it's a encrypted and signed message, store signatue info for later
+		model[iterator][COL_PARTS_INFO]['gpg'] = {
+			'valid': decrypt.valid,
+			'stderr': decrypt.stderr,
+			'username': decrypt.username,
+		}
+	
+	# Display an open/locked padlock icon
+	model[iterator][COL_PARTS_ICONNAME] = None
+	model[iterator][COL_PARTS_ICON] = gtk.icon_theme_get_default().load_icon(iconname, gtk.ICON_SIZE_SMALL_TOOLBAR, 0)
+	if decrypt.ok:
+		select_default_main_email_part()
+	else:
+		display_error(_("Decryption error") + ':\n' + decrypt.status, decrypt.stderr)
+	return bool(decrypt.ok)
+
+def user_try_expand_panel_parts_row(treeview, iterator, it_path):
+	model = treeview.get_model()
+	if model[iterator][COL_PARTS_INFO].get('gpg-encrypted-part'):
+		encrypted_part = model[iterator][COL_PARTS_EML]
+		phantom_it = model.iter_nth_child(iterator, 0)
+		model.remove(phantom_it)
+		return replace_pgp_encrypted_part(model, iterator)
+	return True
 
 def clear_content(s=''):
 	bufr = panel_content.get_buffer()
@@ -660,18 +690,18 @@ def clear_content(s=''):
 	return bufr
 
 def decode_readably(s, eml):
-	charset = eml.get_content_charset()
-	if charset is None: charset = 'utf-8'
+	charset = eml.header[HDR_CT].param['charset'].decoded or 'utf-8'
 	return s.decode(charset, 'replace')
 
 def get_content_readably(eml):
 	return decode_readably(get_content_any(eml), eml)
 
 def get_content_any(eml):
-	s = eml.get_payload(decode=True)
-	# TODO: preamble+epilogue instead of as_string?
-	if s is None: s = eml.as_string()
-	return s
+	if eml.is_multipart():
+		# TODO: preamble+epilogue instead of as_string?
+		return eml.as_string()
+	else:
+		return eml.payload_decoded
 
 def set_content_text(s):
 	bufr = panel_content.get_buffer()
@@ -680,13 +710,6 @@ def set_content_text(s):
 		return False
 	panel_content.set_sensitive(True)
 	return True
-
-def get_email_part_size_net(eml):
-	# Extracted email part here to tell its size
-	# TODO: check memory footprint of email parts (attachments)
-	raw_part = eml.get_payload(decode=True)
-	if raw_part is None: raw_part = eml.as_string()
-	return len(raw_part)
 
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
@@ -699,8 +722,9 @@ def verify_gpg_signature(message, signature):
 	sgn_fh.close()
 	return gpg.verify_data('/dev/fd/%d'%sgn_r, message)
 
-def gpg_sign_data(message, author_address):
-	gpg_uid = '<%s>'%author_address
+def gpg_sign_data(message, gpg_uid):
+	assert gpg_uid[0] == '<' and gpg_uid[-1] == '>', "Need GPG UID in \"<name@example.net>\" format."
+	
 	sgn = gpg.sign(message, keyid=gpg_uid, detach=True, extra_args=['--local-user', gpg_uid])
 	if sgn.data == '':
 		raise GnuPGSignError(sgn)
@@ -708,11 +732,11 @@ def gpg_sign_data(message, author_address):
 
 def get_uids_from_key0(gpg_handle):
 	"""
-	Return list of (the email part of) all UIDs in the 0th key on the keyring.
+	Return list of (the email part of) all UIDs in the 0th key on the keyring in "<name@example.net>" format.
 	"""
 	uids = []
 	for uid_full in gpg_handle.list_keys()[0]['uids']:
-		uid_mail = re.findall(r'(<[^<]+>)\s*$', uid_full)[0]
+		uid_mail = re.findall(r'(<[^<>]+>)\s*$', uid_full)[0]
 		uids.append(uid_mail)
 	return uids
 
@@ -765,18 +789,19 @@ def gpg_strip_all_uids(key_data, except_uid):
 	recursive_rm(tmp_gpghome)
 	return new_key_data
 
-def gpg_export_pubkey(addr):
+def gpg_export_pubkey(gpg_uid):
 	"""
 	Returns the ascii-armoured representation (without BEGIN, END marks, or header)
 	of the public key with the given email address. Removes all UIDs from the key
 	except the selected one.
 	"""
 	
-	gpg_uid = '<%s>' % addr
+	assert gpg_uid[0] == '<' and gpg_uid[-1] == '>', "Need GPG UID in \"<name@example.net>\" format."
+	
 	data = gpg.export_keys(gpg_uid, minimal=True)
 	if data == '':
 		raise GnuPGError(_("Could not find public key for %s.") % (gpg_uid,))
-	data = gpg_strip_all_uids(data, gpg_uid)
+	data = gpg_strip_all_uids(data, except_uid=gpg_uid)
 	keydata = ''
 	for line in data.split('\n'):
 		if line.startswith('-'): pass
@@ -795,12 +820,12 @@ def show_signature_info(*_x):
 	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
 	dlg.set_markup(glib.markup_escape_text(_("Digital signature is validated. See details below.") if valid else _("The digital signature on this email/attachment could not be validated. The email might be forged.")))
 	if not valid:
-		dlg.add_action_widget(gemlvtk.StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
+		dlg.add_action_widget(gui_toolkits.StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
 	dlg.add_buttons(gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE)
 	dlg.set_default_response(gtk.RESPONSE_CLOSE)
 	
 	carea = dlg.get_content_area()
-	carea.pack_start(gemlvtk.ScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
+	carea.pack_start(gui_toolkits.ScrolledLabelView(stck_sign_bad.get_data('signature-info-text')), True, True)
 	
 	dlg.show_all()
 	resp = dlg.run()
@@ -812,7 +837,6 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if eml is None: return
 	clear_content(_("Loading failed"))
 	panel_content.set_data('view-unfiltered', False)
-	ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
 	loaded_text = None
 	
 	stck_sign_good.hide()
@@ -825,7 +849,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_save2.set_sensitive(False)
 	gpg_msg = get_gpg_signed_data_from_mime_part(eml)
 	gpg_signature_valid = None
-	eml_data = Parts[get_part_iter(eml)][4]
+	eml_data = Parts[get_part_iter(eml)][COL_PARTS_INFO]
 	if eml_data.has_key('gpg'):
 		gpg_info = eml_data['gpg']
 		gpg_signature_valid = gpg_info['valid']
@@ -837,15 +861,15 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				gpg_signature_valid = gpg_info['valid']
 				gpg_signature_info = gpg_info['stderr']
 				break
-			if parent_part.get_content_type() == 'multipart/signed':
-				sign_protocol = get_header_parameter(parent_part[HDR_CT], 'protocol')
-				if parent_level == 1 and eml.get_content_type() == sign_protocol:
+			if parent_part.content_type == 'multipart/signed':
+				sign_protocol = parent_part.header[HDR_CT].param['protocol'].decoded
+				if parent_level == 1 and eml.content_type == sign_protocol:
 					# This part is the signature itself. Skip signature verification.
 					continue
-				if sign_protocol is not None:
-					for sibling_part in parent_part.get_payload():
-						if sibling_part.get_content_type() == sign_protocol:
-							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.get_payload(decode=True))
+				if sign_protocol:
+					for sibling_part in parent_part.parts:
+						if sibling_part.content_type == sign_protocol:
+							sign_verify = verify_gpg_signature(gpg_msg, sibling_part.payload_decoded)
 							gpg_signature_valid = sign_verify.valid
 							gpg_signature_info = sign_verify.stderr
 							break
@@ -853,6 +877,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			else:
 				# The MIME part we are about to show itself is not signed, but
 				# included in a signed MIME part.
+				# FIXME: it sometimes is not in a signed message: avoid extra as_string() call!
 				gpg_msg = get_gpg_signed_data_from_mime_part(parent_part)
 	if gpg_signature_valid is not None:
 		stck_sign_bad.set_data('signature-valid', gpg_signature_valid)
@@ -867,8 +892,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_open2.set_sensitive(True)
 	btn_save2.set_sensitive(True)
 	
-	if eml['Content-Location']:
-		uri = eml['Content-Location']
+	if eml.header['Content-Location'].nonempty:
+		uri = urllib2.unquote(eml.header['Content-Location'].decoded).decode('utf-8')
 		uri_esc = glib.markup_escape_text(uri)
 		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
 		lbl_content_location.show()
@@ -876,34 +901,35 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		lbl_content_location.hide()
 	
 	if filt is None:
-		filt = get_filter_by_mime(ct_main, ct_sub)
+		filt = get_filter_by_mime(eml.content_type.main, eml.content_type.sub)
 	
 	if filt is None:
-		if type(eml.get_payload()) == list and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
+		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
 			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 			set_content_text(text)
 			loaded_text = text
 		else:
-			if ct_main == 'image':
-				exif_info = load_exif_metadata(eml.get_payload(decode=True))
+			if eml.content_type.main == 'image':
+				image_data = eml.payload_decoded
+				exif_info = load_exif_metadata(image_data)
 				loader = gtk.gdk.PixbufLoader()
-				loader.write(eml.get_payload(decode=True))
+				loader.write(image_data)
 				loader.close()
 				pxb = loader.get_pixbuf()
 				pxb = exif_transforms(pxb, exif_info)
 				panel_content_image.set_data('last-alloc', None)
 				panel_content_image.set_data('pixbuf', pxb)
 				panel_content_image.show()
-#			elif ct_main == 'audio':
-#				TODO
+#			elif eml.content_type.main == 'audio':
+#				TODO: add embedded audio player
 			else:
-				label = _("Content type: %s%s%s") % (PMU_MIME, glib.markup_escape_text(eml.get_content_type()), PMU_MIME_CLOSE)
-				filename = decode_mimetext(eml.get_filename())
-				if filename is not None: label = (_("Filename: %s%s%s") % (PMU_NAME, glib.markup_escape_text(filename), PMU_NAME_CLOSE)) + '\n' + label
-				content_description = eml['Content-Description']
-				if content_description is not None:
-					label += '\n' + _("Content Description by sender: %s%s%s") % (PMU_MIME, glib.markup_escape_text(decode_mimetext(content_description)), PMU_MIME_CLOSE)
-				label += '\n' + _("Size: %s") % (human_size(get_email_part_size_net(eml)),)
+				label = _("Content type, allegedly:") + " %s%s%s" % (PMU_MIME, glib.markup_escape_text(eml.content_type), PMU_MIME_CLOSE)
+				if eml.filename:
+					label = _("Filename") + ": %s%s%s" % (PMU_NAME, glib.markup_escape_text(eml.filename), PMU_NAME_CLOSE) + '\n' + label
+				content_description = eml.header['Content-Description'].decoded
+				if content_description:
+					label += '\n' + _("Content Description by sender") + ": %s%s%s" % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
+				label += '\n' + _("Size") + ": %s" % human_size(eml.size_decoded_approx)
 				lbl_right.set_markup(label)
 				
 				panel_btnbox.show()
@@ -934,7 +960,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	if spanel_content.get_data('-loaded-part') != eml:
 		spanel_content.get_vadjustment().set_value(0.0)
 	spanel_content.set_data('-loaded-part', eml)
-	if ct_main == 'text' and loaded_text is not None:
+	if eml.content_type.main == 'text' and loaded_text is not None:
 		spanel_content.set_data('last-loaded-text', loaded_text)
 
 def on_window_configure(widget, event):
@@ -1015,17 +1041,6 @@ def resize_panel_view_header(wdg, rect=None):
 		h, v = panel_view_header.get_padding()
 		panel_view_header.set_size_request(rect.width - h - 4, -1)
 
-def get_one_header_main(hname):
-	hval = Email[hname]
-	if hval is None: return None
-	return decode_mime_header(hval, eml=Email)
-
-def get_all_headers_main(hname):
-	return map(lambda hdr: decode_mime_header(hdr, eml=Email), Email.get_all(hname) or [])
-
-def get_all_headers_main_mimeencoded(hname):
-	return (Email.get_all(hname) or [])
-
 def get_header_links(s, schemata):
 	"""
 	parse "Link:"-type headers and return parsed links' URI (and comments) that schema is in 
@@ -1058,21 +1073,22 @@ def get_header_links(s, schemata):
 			link['scheme'] = uriparts.scheme.lower()
 			link['comment'] = comment
 			if link['scheme'] == 'mailto':
-				for hname in MultiRecipientsMailtoFields:
-					link[hname] = []
-				link['to'] = gemlv.utils.getaddresslines([urlparse.unquote(uriparts.path)])
-				for hname, hvalues in urlparse.parse_qs(uriparts.query).iteritems():
-					hname = hname.lower()
-					if hname in AcceptableMailtoFields and len(hvalues) > 0:
-						if hname in MultiRecipientsMailtoFields:
+				for field_name in MultiRecipientsMailtoFields:
+					link[field_name] = []
+				link['to'] = getaddresslines([urlparse.unquote(uriparts.path)])
+				for field_name, field_values in urlparse.parse_qs(uriparts.query).iteritems():
+					field_name = field_name.lower()
+					if field_name in AcceptableMailtoFields and len(field_values) > 0:
+						field_values_decoded = [decode_mimetext(v) for v in field_values]
+						if field_name in MultiRecipientsMailtoFields:
 							# RFC2368
 							# there may be multiple fields of the same kind (eg. "?cc=addr1&cc=addr2")
 							# and each of them may hold multiple addresses delimited by comma (eg. "addr1%2C%20addr2")
-							hvalues = gemlv.utils.getaddresslines(hvalues)
-						if hname in MultiRecipientsMailtoFields:
-							link[hname].extend(hvalues)
+							field_values_decoded = getaddresslines(field_values)
+						if field_name in MultiRecipientsMailtoFields:
+							link[field_name].extend(field_values_decoded)
 						else:
-							link[hname] = hvalues[0]
+							link[field_name] = field_values_decoded[0]
 			links.append(link)
 	return links
 
@@ -1082,40 +1098,19 @@ def parse_mailto(s):
 	warnx(_("Can not parse mailto link: '%s'") % (s))
 	return {}
 
-def load_gravatar(addr, container):
-	if not isinstance(addr, str): return
-	url_templ = Props['avatar/url_template'] or 'https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G'
-	url = url_templ.format(email=addr.lower(), email_md5=hashlib.md5(addr.lower()).hexdigest())
-	try:
-		web = urllib2.urlopen(url)
-	except urllib2.HTTPError:
-		pass
-	else:
-		loader = gtk.gdk.PixbufLoader()
-		try:
-			loader.write(web.read())
-			loader.close()
-		except glib.GError as e:
-			if e.code != 3:   # 'Unrecognized image file format'
-				raise e
-		else:
-			pxb = loader.get_pixbuf()
-			img = container.children()[0]
-			img.set_from_pixbuf(pxb)
-			container.show_all()
 
 def get_listaddressline_main():
 	try:
 		# Assuming there is only one list address.
 		# Take the first 'To' parameter from the first mailto link.
-		listaddressline = get_header_links(','.join(get_all_headers_main_mimeencoded('List-Post') or []), schemata=['mailto'])[0]['to'][0]
+		listaddressline = get_header_links(','.join(TheEmail.headers['List-Post'].encoded), schemata=['mailto'])[0]['to'][0]
 	except (IndexError, KeyError):
 		listaddressline = AddressLine('')
 	return listaddressline
 
 def get_headers_markup(eml):
-	lns = []
-	hdrs = [
+	display_lines = []
+	display_headers = [
 		"Return-Path",
 		"X-X-Sender",
 		"X-Sender",
@@ -1134,23 +1129,24 @@ def get_headers_markup(eml):
 		"Expires",
 		"X-Spam",  # @notranslate
 	]
-	from_addresses = get_email_addresses_in_main_headers('From')
+	from_addresses = extract_email_addresses_from_headers('From', eml)
+	# if there is proper sender recorded in the email then do not show the envelope sender 
+	# (ie. "mail from" sender, conventionally recorded in Return-Path header)
 	for h in 'From', 'Sender', 'X-Sender', 'X-X-Sender':
-		if eml[h] is not None:
-			hdrs.remove('Return-Path')
+		if h in eml.headers:
+			display_headers.remove('Return-Path')
 			break
 	
-	for hname in hdrs:
+	for hname in display_headers:
 		hvals_mu = []
-		for hval_mimeencoded in eml.get_all(hname) or []:
-			hval = decode_mime_header(hval_mimeencoded, eml=eml)
-			if hname != 'From' and hname in OriginatorHeaders:
+		for header in eml.headers[hname]:
+			if header.name != 'From' and header.name in OriginatorHeaders:
 				# Do not display Sender or Reply-To fields if they equal to From.
-				addr = AddressLine(hval_mimeencoded, eml=eml).email
+				addr = AddressLine(header.value.encoded).email
 				if addr in from_addresses: continue
-			if hname in RecipientHeaders or hname in OriginatorHeaders:
+			if header.name in RecipientHeaders or header.name in OriginatorHeaders:
 				list_mu = []
-				for al in gemlv.utils.getaddresslines([hval], eml=eml):
+				for al in getaddresslines([header.value.encoded]):
 					if al.realname:
 						mu = '%s <a href=\'mailto:%s\'>%s</a>' % (
 							glib.markup_escape_text(al.realname),
@@ -1164,8 +1160,9 @@ def get_headers_markup(eml):
 						)
 					list_mu.append(mu)
 				hval_mu = ', '.join(list_mu)
-			elif hname in DateTimeHeaders:
+			elif header.name in DateTimeHeaders:
 				# Display Date field in local timezone.
+				hval = header.value.decoded
 				try:
 					timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(hval))
 				except TypeError:
@@ -1174,43 +1171,46 @@ def get_headers_markup(eml):
 					hval = email.utils.formatdate(timestamp, True)
 				hval_mu = glib.markup_escape_text(hval)
 				if timestamp is not None and timestamp < time.time():
-					if hname == 'Reply-By':
+					wrn = None
+					if header.name == 'Reply-By':
 						wrn = _("Overdue")
-					elif hname == 'Expires':
+					elif header.name == 'Expires':
 						wrn = _("(Expired)")
-					try: hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
-					except NameError: pass
+					if wrn is not None:
+						hval_mu += ' ' + PMU_WARN + wrn + PMU_WARN_CLOSE
 			else:
-				hval_mu = glib.markup_escape_text(hval)
+				hval_mu = glib.markup_escape_text(header.value.decoded)
 			
-			if hname == 'Importance' or hname.find('Priority')>-1:
-				hval_lc = hval.lower()
-				if hval_lc == 'urgent' or hval_lc.find('high')>-1 or re.search('^[12]', hval):
+			if header.name == 'Importance' or header.name.find('Priority')>-1:
+				hval_lc = header.value.decoded.lower()
+				if hval_lc == 'urgent' or hval_lc.find('high')>-1 or re.search('^[12]', hval_lc):
 					# Show urgent, high priority headers emphasized.
-					hval_mu = PMU_WARN + glib.markup_escape_text(hval) + PMU_WARN_CLOSE
+					hval_mu = PMU_WARN + glib.markup_escape_text(header.value.decoded) + PMU_WARN_CLOSE
 					win_main.set_icon_name('mail-mark-important')
 					stck_imp.show()
-				elif hval_lc == 'non-urgent' or hval_lc.find('low')>-1 or re.search('^[45]', hval):
+				elif hval_lc == 'non-urgent' or hval_lc.find('low')>-1 or re.search('^[45]', hval_lc):
 					stck_unimp.show()
-				if not UserConfig.show_importance_headers:
+				if not Global.show_importance_headers:
 					hval_mu = None
 			
-			if hname == 'X-Spam':
-				if re.search(r'\b(no|undefined)\b', hval):
+			if header.name == 'X-Spam':
+				if re.search(r'\b(no|undefined)\b', header.value.decoded):
 					pass
 				else:
 					stck_spam.show()
 			
 			if hval_mu is not None and len(hval_mu):
 				hvals_mu.append(hval_mu)
+			
 		if len(hvals_mu):
-			lns.append(PMU_HEAD + _(hname) + PMU_HEAD_CLOSE + ': ' + ', '.join(hvals_mu))
-	return '\n'.join(lns)
+			display_lines.append(PMU_HEAD + _(header.name) + PMU_HEAD_CLOSE + ': ' + ', '.join(hvals_mu))
+		
+	return '\n'.join(display_lines)
 
 def get_filters_by_mime(main, sub, all=True):
 	filters = []
 	for m, s, marks, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+([!\$]*)(\S+)\s*(.+)?', splitgroups=[5]):
-		if fnmatch(main, m) and fnmatch(sub, s):
+		if wildcardmatch(main, m) and wildcardmatch(sub, s):
 			isbin = marks.find('!')>-1
 			isshell = marks.find('$')>-1
 			e = None
@@ -1233,33 +1233,6 @@ def get_filters_by_mime(main, sub, all=True):
 
 def get_filter_by_mime(main, sub):
 	return get_filters_by_mime(main, sub, all=False)
-
-def get_stock_by_mime(main, sub):
-	assoc_main = {
-		'multipart': gtk.STOCK_DIRECTORY,
-		'message': 'emblem-mail',
-	}
-	assoc_full = {
-		'application/pgp-signature': 'mail-signed',
-		'application/ics': 'x-office-calendar',
-		'text/calendar': 'x-office-calendar',
-		'inode/directory': gtk.STOCK_DIRECTORY,
-		'inode/x-empty': 'document-new',
-		'multipart/digest': 'emblem-mail',
-	}
-	full = main + '/' + sub
-	
-	if assoc_full.has_key(full):
-		return assoc_full[full]
-	elif assoc_main.has_key(main):
-		return assoc_main[main]
-	
-	if full in [MIMETYPE_HTML]:
-		return main + '-' + sub
-	elif main in ['audio', 'image', 'font', 'package', 'text', 'video']:
-		return main + '-x-generic'
-	
-	return gtk.STOCK_FILE
 
 def sighandler(sign, frame):
 	if sign == signal.SIGTERM:
@@ -1316,142 +1289,294 @@ def open_comp_hdr_menu(widget, event):
 	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
 		menu_add_header.popup(None, None, None, event.button, event.time)
 		return True
+	return False
 
-def act_comp_hdr_menuitem(mi, hname=None):
+def on_composer_attachments_clicked(widget, event):
+	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+		
+		itpath, _col = panel_attachments.get_cursor()
+		if itpath is not None:
+			it = Attachments.get_iter(itpath)
+			part = Attachments[it][COL_ATTACHMENTS_EML]
+			menuitem_comp_att_open_mem.set_sensitive(part.payload_encoded != '')
+			menuitem_comp_att_open_disk.set_sensitive(hasattr(part._ll_email, 'payload_data_origin_path'))
+		
+		menu_composer_attachments.popup(None, None, None, event.button, event.time)
+		return True
+	return False
+
+def act_composer_header_menuitem_clicked(mi, hname=None):
 	if hname is None:
 		hname = mi.get_data('chname')
 	if hname == '':
 		menuitem_all_comp_hdr.set_active(True)
-	on = mi.active if isinstance(mi, gtk.CheckMenuItem) else None
-	box = add_composer_header__direct(hname)
-	if on == False:
-		box.cancel()
-	else:
-		glib.idle_add(box.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
+	if isinstance(mi, gtk.CheckMenuItem):
+		if not mi.active:
+			composer_headers.remove_multi(hname)
+			return True
+	hbox = composer_headers.add(hname, '')
+	glib.idle_add(hbox.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
 	return True
 
-def act_all_comp_hdr(mi):
-	show_advanced_comp_hdr(mi.active)
+def act_composer_header_menuitem_all_clicked(mi):
+	composer_headers.show_advanced_headers(mi.active)
 
-def act_tgl_comp_hdr():
+def act_toggle_composer_headers():
 	on = menuitem_all_comp_hdr.get_active()
 	menuitem_all_comp_hdr.set_active(not on)
-	show_advanced_comp_hdr(not on)
+	composer_headers.show_advanced_headers(not on)
 
-def show_advanced_comp_hdr(show=True):
-	clear_composer_headers('', '')
-	for n in range(0, len(panel_comp_header.children())):
-		box = panel_comp_header.children()[n]
-		if box.hntype == compose_header_box.HNTYPE_CUSTOM:
-			if show:
-				box.show()
-			else:
-				box.hide()
-
-def add_composer_header__direct(hname, hval=None, manual_call=True):
-	box = None
-	for thisbox in panel_comp_header.children():
-		if thisbox.hntype == compose_header_box.HNTYPE_LABEL and thisbox['name'] == hname:
-			box = thisbox
-			if hval is not None: box['value'] = hval
-			break
-	if box is None:
-		if hval is None: hval = ''
-		box = compose_header_box(hname, hval)
-		panel_comp_header.pack_start(box, False, True)
-		if box.hntype == compose_header_box.HNTYPE_MENU:
-			for n in range(len(panel_comp_header.children())):
-				if panel_comp_header.children()[n].hntype == compose_header_box.HNTYPE_CUSTOM:
-					panel_comp_header.reorder_child(box, n)
-					break
-				# Ignore every 2nd child.
-				n += 1
-	if manual_call: box.focus()
-	box.show_all()
-	return box
-
-def add_composer_header(hname, hval=None, manual_call=True):
-	box = add_composer_header__direct(hname, hval, manual_call)
-	box.tick_my_menuitem(1)
-	return box
-
-def add_composer_headers(hname, hvals, manual_call=True):
-	for hval in hvals:
-		add_composer_header(hname, hval, manual_call)
-
-def reset_composer_headers(hname, hvals, manual_call=True):
-	clear_composer_headers(hname)
-	for hval in hvals:
-		add_composer_header(hname, hval, manual_call)
-
-def set_composer_header(hname, hval):
-	for hbox in panel_comp_header.children():
-		if hbox['name'] == hname:
-			hbox['value'] = hval
-			return hbox
-	return add_composer_header(hname, hval)
-
-def clear_composer_headers(hname, content=None):
-	for box in panel_comp_header.children():
-		if (hname is None or box['name'] == hname) and (content is None or content == box['value']):
-			box.cancel(manual=False)
 
 def composer_maintain_references_headers():
-	references = get_one_header_main(HDR_REF)
-	messageid = get_one_header_main(HDR_MID)
-	if messageid is not None:
-		if references is not None:
+	references = TheEmail.header[HDR_REF].decoded
+	messageid = TheEmail.header[HDR_MID].decoded
+	if messageid:
+		if references:
 			references = references + ' ' + messageid
 		else:
 			references = messageid
-	if references is not None:
-		add_composer_header(HDR_REF, references, manual_call=False)
+	if references:
+		composer_headers.add(HDR_REF, references, is_manual_call=False)
 
-def composer_append_to_list_header(hname, hvals, delimiter=' '):
-	hval = delimiter.join(filter(lambda x: x is not None, hvals))
-	headers = get_composer_headers(hname)
-	if len(headers) == 0:
-		reset_composer_headers(hname, [hval])
+def composer_append_to_list_header(name, values, delimiter=' '):
+	for header in reversed(composer_headers.items):
+		if header.name == name:
+			header.value += delimiter + delimiter.join(values)
+			break
 	else:
-		headers[-1] = delimiter.join([headers[-1], hval])
-		reset_composer_headers(HDR_REF, headers, manual_call=False)
+		composer_headers.set_single(name, delimiter.join(values))
 
-def composer_substract_from_list_header(hname, hvals, delimiter=' '):
-	hvals = filter(lambda x: x is not None, hvals)
-	headers = get_composer_headers(hname)
-	for idx in reversed(range(len(headers))):
-		newvalue = []
-		for word in headers[idx].split(delimiter):
-			if word in hvals:
-				hvals.remove(word)
+def composer_substract_once_from_list_header(name, values, delimiter=' '):
+	reductor = values[:]
+	for header in reversed(composer_headers.items):
+		newwords = []
+		for word in header.value.split(delimiter):
+			if word in reductor:
+				# each value in values is removed at most once
+				reductor.remove(word)
 			else:
-				newvalue.append(word)
-		headers[idx] = delimiter.join(newvalue)
-	reset_composer_headers(hname, headers, manual_call=False)
+				newwords.append(word)
+		header.value = delimiter.join(newwords)
 
-class compose_header_box(gtk.HBox):
+
+class GemlvComposerMultiHeaderValue(MultikeyUnionlistDict, DefaultingDict, CaseInsensitiveDict):
+	pass
+
+class GemlvComposerSingleHeaderValue(DefaultingDict, CaseInsensitiveDict):
+	pass
+
+class GemlvComposerHeadersContainer(gtk.VBox):
+	"""
+	Manages Email's header fields on the UI.
+	Creates GemlvComposerHeader objects for individual headers of various types.
+	The UI field for the Subject header is not meant to be created by this, rather it 
+	takes an external obbject (eg. gtk.Entry) to account for the Subject header.
+	"""
+	def __init__(self, subject_field):
+		super(self.__class__, self).__init__(False, 0)
+		self.set_border_width(4)
+		# subject_field is an unmanaged gtk.Entry for the Subject header
+		self.subject_field = subject_field
+	
+	@property
+	def _headerboxes(self):
+		return [c for c in self.children() if isinstance(c, GemlvComposerHeader)]
+	
+	@property
+	def items(self):
+		"""
+		Yields all subordinated GemlvComposerHeader objects which counts in the user's point of view,
+		ie. filled (visible) OriginatorHeaders and RecipientHeaders, and all custom headers (even if hidden).
+		"""
+		for headerbox in self._headerboxes:
+			if headerbox.get_visible() or headerbox.name not in SenderHeaders:
+				yield headerbox
+	
+	def __delitem__(self, item):
+		# assumeing all children to be GemlvComposerHeader
+		self.remove(item)
+	
+	@property
+	def _dict(self):
+		d = GemlvComposerMultiHeaderValue()
+		d.set_default_value([])
+		d[HDR_SUBJ] = [ self.subject_field.get_text() ]
+		for headerbox in self.items:
+			if headerbox.name:
+				if headerbox.name not in d:
+					d[headerbox.name] = []
+				d[headerbox.name].append(headerbox.value)
+		return d
+	
+	@property
+	def value(self):
+		"""
+		dict, for each item:
+			key is header name,
+			value is the content of one header with the given name.
+		
+		useful for singleton headers (like Subject, but not for Received)
+		
+		Examples:
+			GemlvComposerHeadersContainer.value['Subject'] --> 'Dear friend'
+			GemlvComposerHeadersContainer.value['X-Spam'] --> None
+		"""
+		d = dict([(k, v[-1]) for k, v in self._dict.iteritems()])
+		d = GemlvComposerSingleHeaderValue(d)
+		d.set_default_value(None)
+		return d
+	
+	@property
+	def multi_value(self):
+		"""
+		dict, for each item:
+			key is header name
+			value is a list of strings representing all headers' contents with the given name.
+		
+		Examples:
+			GemlvComposerHeadersContainer.multi_value['Received'] --> ['from helo=...', 'from helo=...']
+			GemlvComposerHeadersContainer.multi_value['DKIM-Signature'] --> []
+			GemlvComposerHeadersContainer.multi_value[('To', 'Cc')] --> ['Joe <joe@example.net>', 'Jane <jane@example.net>', 'Jim <jim@example.net>']
+		"""
+		return self._dict
+	
+	@property
+	def headers(self):
+		"""
+		Returns list of tuples: (header_name, header_value)
+		header_value being string.
+		certain header_name may occur multiple times.
+		empty header names and values are ignored.
+		"""
+		for key, vlist in self._dict.iteritems():
+			for value in vlist:
+				if key != '' and value != '':
+					yield (key, value)
+	
+	@property
+	def header_names(self):
+		"""
+		Yields each distinct header names once.
+		"""
+		names = {}
+		for headerbox in self.items:
+			if headerbox.name not in names:
+				yield headerbox.name
+				names[headerbox.name] = True
+	
+	def show_advanced_headers(self, show=True):
+		self.remove_all_empty()
+		for box in self._headerboxes:
+			if box.hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+				if show:
+					box.show()
+				else:
+					box.hide()
+	
+	def add(self, name, value, is_manual_call = True, below_to = None):
+		box = None
+		# find if a singleton header with this name is already there
+		# and if so, set value to it rather than creating a new header.
+		if (name in SingletonHeaders and name not in SemiSingletonHeaders) or GemlvComposerHeader.get_hntype(name) == GemlvComposerHeader.HNTYPE_LABEL:
+			for thisbox in self._headerboxes:
+				if thisbox.name == name:
+					box = thisbox
+					if value: box.value = value
+					break
+		if box is None:
+			box = GemlvComposerHeader(name, value, container=self)
+			self.pack_start(box, False, True)
+			if below_to is not None:
+				# place the new headerbox below to the noted one
+				for n in range(len(self._headerboxes)):
+					if self._headerboxes[n] == below_to:
+						self.reorder_child(box, n)
+			else:
+				if box.hntype == GemlvComposerHeader.HNTYPE_MENU:
+					# place all HNTYPE_MENU headers always above all HNTYPE_CUSTOM ones
+					for n in range(len(self._headerboxes)):
+						if self._headerboxes[n].hntype == GemlvComposerHeader.HNTYPE_CUSTOM:
+							self.reorder_child(box, n)
+							break
+						# Ignore every 2nd child.
+						n += 1
+		if is_manual_call:
+			box.focus()
+		box.show_all()
+		box.tick_my_menuitem(True)
+		return box
+	
+	def add_multi(self, name, values, is_manual_call = True):
+		assert isinstance(values, (list, tuple))
+		assert name not in SingletonHeaders or name in SemiSingletonHeaders
+		for value in values:
+			self.add(name, value, is_manual_call)
+	
+	def set_multi(self, name, values, is_manual_call = True):
+		assert isinstance(values, (list, tuple))
+		assert name not in SingletonHeaders or name in SemiSingletonHeaders
+		self.remove_multi(name)
+		self.add_multi(name, values, is_manual_call)
+	
+	def set_single(self, name, value):
+		if name == HDR_SUBJ:
+			self.subject_field.set_text(value)
+			return None
+		for box in self._headerboxes:
+			if box.name == name:
+				box.value = value
+				return box
+		return self.add(name, value)
+	
+	def remove_multi(self, name, value = None):
+		"""
+		Remove all headers of which name matches to name and value matches to value.
+		If value is None, then header name matching is sufficient to remove the header.
+		"""
+		for box in self._headerboxes:
+			if box.name == name and (value is None or value == box.value):
+				box.cancel(manual=False)
+	
+	def remove_all(self):
+		for box in self._headerboxes:
+			box.cancel(manual=False)
+	
+	def remove_all_empty(self):
+		self.remove_multi('', '')
+
+class GemlvComposerHeader(gtk.HBox):
+	"""
+	Has to be placed somewhere under a GtkScrolledWindow widget to make
+	right-clicks work.
+	"""
+	
 	HNTYPE_LABEL, HNTYPE_MENU, HNTYPE_CUSTOM = range(3)
 	ICON_POS_VALIDATION = 1
 	
-	def __init__(self, chname, val, hntype=None):
+	@classmethod
+	def get_hntype(klass, hname):
+		if hname in SenderHeaders:
+			return klass.HNTYPE_LABEL
+		elif hname in RecipientHeaders:
+			return klass.HNTYPE_MENU
+		else:
+			return klass.HNTYPE_CUSTOM
+	
+	def __init__(self, chname, val, container):
 		if isinstance(val, AddressLine): val = str(val)
-		assert isinstance(chname, str), "chname is %s not str."%(repr(type(chname)),)
-		assert isinstance(val, str) or isinstance(val, unicode), "val is %s not str nor unicode."%(repr(type(val)),)
+		assert isinstance(chname, str), 'chname is %s not str.'%(repr(type(chname)),)
+		assert isinstance(val, str) or isinstance(val, unicode), 'val is %s not str nor unicode.'%(repr(type(val)),)
 		plus = True
 		minus = True
 		
 		super(self.__class__, self).__init__(False, 2)
-		if hntype is None:
-			if chname in SenderHeaders:
-				hntype = self.HNTYPE_LABEL
-			elif chname in RecipientHeaders:
-				hntype = self.HNTYPE_MENU
-			else:
-				hntype = self.HNTYPE_CUSTOM
 		
-		self.hntype = hntype
+		self.container = container
+		
+		self.hntype = GemlvComposerHeader.get_hntype(chname)
+		
 		if self.hntype == self.HNTYPE_CUSTOM:
-			self.wdg_name = gtk.combo_box_entry_new_with_model(UnionHeadersStore, 0)
+			self.wdg_name = gui_toolkits.ComboBoxEntry(CustomHeadersStore, 0)
 			self.wdg_name.connect('changed', self.on_name_changed)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
@@ -1468,25 +1593,26 @@ class compose_header_box(gtk.HBox):
 		self.wdg_value.connect('changed', self.on_value_changed)
 		self.wdg_value.connect('key-press-event', self.on_keypress)
 		self.wdg_value.connect('populate-popup', self.on_populate_text_context_menu)
+		
 		self.completer = gtk.EntryCompletion()
 		self.wdg_value.set_completion(self.completer)
+		col_text, col_markup, col_ismatch, col_order = 0, 1, 2, 3
 		self.completer.set_model(gtk.ListStore(str, str, bool, int))
 		self.completer.set_minimum_key_length(0)
-		col_text, col_markup, col_ismatch, col_order = 0, 1, 2, 3
 		self.completer.set_match_func(self.autocomplete_matcher, {'text': col_text, 'markup': col_markup, 'is_match': col_ismatch, 'order': col_order})
 		self.completer.set_text_column(col_text)
 		self.completer.set_attributes(self.completer.get_cells()[0], markup=col_markup)
 		self.completer.get_model().set_sort_column_id(col_order, gtk.SORT_ASCENDING)
 		self.completer.set_popup_single_match(True)
 		
-		self.btn_datetime = gemlvtk.StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_datetime = gui_toolkits.StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_datetime.set_tooltip_text(_("Pick date and time"))
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_datetime, False, False)
 		self.btn_datetime.connect('clicked', self.pick_datetime)
 		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
-		self.btn_suggestions = gemlvtk.StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_suggestions = gui_toolkits.StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_suggestions.set_tooltip_text(_("Suggestions…"))
 		self.btn_suggestions.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_suggestions, False, False)
@@ -1494,20 +1620,22 @@ class compose_header_box(gtk.HBox):
 		self.btn_suggestions.connect('button-press-event', self.propagate_button_press_event)
 		
 		if plus:
-			self.btn_add = gemlvtk.StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_add = gui_toolkits.StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
 			self.pack_start(self.btn_add, False, False)
 			self.btn_add.set_relief(gtk.RELIEF_NONE)
 			self.btn_add.connect('clicked', self.duplicate)
 			self.btn_add.connect('button-press-event', self.propagate_button_press_event)
 		if minus:
-			self.btn_del = gemlvtk.StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_del = gui_toolkits.StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
 			self.btn_del.set_relief(gtk.RELIEF_NONE)
 			self.pack_start(self.btn_del, False, False)
 			self.btn_del.connect('clicked', self.cancel)
 			self.btn_del.connect('button-press-event', self.propagate_button_press_event)
 		
-		self['name'] = chname
-		self['value'] = val
+		self.name = chname
+		self.value = val
+		self.readonly = False
+		self.removable = True
 	
 	def autocomplete_matcher(self, completion, userinput, treeiter, column):
 		ac_model = completion.get_model()
@@ -1563,17 +1691,18 @@ class compose_header_box(gtk.HBox):
 			return ac_model.get_value(treeiter, column['order']) != -1
 	
 	def open_suggestions_panel(self, wdg):
-		assert self['name'] in SenderHeaders
+		assert self.name in SenderHeaders
 		
 		win = AddressBrowser(modal_window=True, single_select=True)
+		win.set_title(_("Contact Address Chooser"))
 		win.set_transient_for(win_comp)
 		win.button_edit.hide()
-		win.connect('items-add', lambda addressbrowser, items: self.__setitem__('value', items[0]))
+		win.connect('items-add', lambda addressbrowser, items: setattr(self, 'value', items[0]))
 		
 		# load those (self-) addresses from the participants database which are in correspondence with the current recipients
 		recipients = get_composer_all_recipients_emails()
 		participants = query_participants(recipients)
-		correspondence = dict(map(lambda x: (x['our_address'], x), participants))
+		correspondence = dict([(x['our_address'], x) for x in participants])
 		def load_one(al, correspondence):
 			emailaddr = AddressLine(MimeDecoded(al)).email
 			if emailaddr in correspondence.keys():
@@ -1594,42 +1723,43 @@ class compose_header_box(gtk.HBox):
 		return True
 	
 	def on_keypress(self, wdg, evt):
-		if evt.keyval == gtk.gdk.keyval_from_name('Down'):
-			try:
-				if wdg.get_text() == '' and len(wdg.get_completion().get_model()) <= AutocompletionListSizeLimitOnEmptyInput:
-					# Trigger auto completion popup. [hack]
-					wdg.emit('changed')
-					return True
-			except AttributeError:
-				pass
+		if evt.keyval == gtk.gdk.keyval_from_name('Down') and evt.state & gtk.gdk.SHIFT_MASK:
+			# Trigger auto completion popup. [hack]
+			wdg.emit('changed')
+			return True
 		return False
 	
 	def propagate_button_press_event(self, w, evt):
-		self.parent.parent.parent.emit('button-press-event', evt)
+		# find the nearest GtkScrolledWindow ancestor
+		# and pass the click event to it to handle (open context menu)
+		ancestor = self.parent
+		while not isinstance(ancestor, gtk.ScrolledWindow) or ancestor is None:
+			ancestor = ancestor.parent
+		ancestor.emit('button-press-event', evt)
 	
 	def pick_datetime(self, w):
 		prompt_datetime(self.wdg_value)
 	
 	def showhide_pick_buttons(self):
-		if self['name'] in DateTimeHeaders:
+		if self.name in DateTimeHeaders:
 			self.btn_datetime.show()
 		else:
 			self.btn_datetime.hide()
-		if self['name'] in SenderHeaders:
+		if self.name in SenderHeaders:
 			self.btn_suggestions.show()
 		else:
 			self.btn_suggestions.hide()
 	
 	def on_populate_text_context_menu(self, entry, menu):
-		if self['name'] in AddressbookHeaders:
+		if self.name in AddressbookHeaders:
 			pos = 0
-			mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
-			mi.connect('activate', self.add_value_to_addressbook)
+			mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+			mi.connect('activate', self.add_to_addressbook)
 			menu.insert(mi, pos)
 			menu.show_all()
 	
-	def add_value_to_addressbook(self, *_x):
-		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self['value'])))
+	def add_to_addressbook(self, *_x):
+		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self.value)))
 	
 	def set_autocomplete_list(self, autocomplete_list):
 		ac_model = self.completer.get_model()
@@ -1638,85 +1768,6 @@ class compose_header_box(gtk.HBox):
 			ac_model.append([item, glib.markup_escape_text(item), False, 0])
 		self.wdg_value.remove_data('autocomplete-computed-for')
 	
-	def on_name_changed(self, _x=None):
-		name = self['name']
-		self.showhide_pick_buttons()
-		if name in ValidatorHeaders.keys():
-			self['validate'] = ValidatorHeaders[name]
-		else:
-			self['validate'] = None
-		
-		if name in AddressbookHeaders:
-			self.set_autocomplete_list(gemlv.addressbook.get_full())
-		elif name in AutocompletionHeaders.keys():
-			self.set_autocomplete_list(AutocompletionHeaders[name])
-		self.on_changed()
-	
-	def on_value_changed(self, entry=None):
-		if entry is None: entry = self.wdg_value
-		
-		# indicate field validity
-		bg_invalid = gtk.gdk.Color('#FFA4A4')
-		bg_normal = entry.get_data('bg-normal')
-		if not bg_normal:
-			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
-			entry.set_data('bg-normal', bg_normal)
-		valid = self.validate()
-		if valid == VALID_PASS:
-			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
-		else:
-			if valid == VALID_INVALID:
-				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
-				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
-				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
-			else:
-				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
-				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_DIALOG_QUESTION)
-				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Strange input; maybe double check"))
-			self.point_out()
-		
-		self.on_changed()
-		return False
-
-	def on_changed(self):
-		name = self['name']
-		val = self['value']
-		update_composer_toolbar_toggle_buttons()
-		if name in RecipientHeaders:
-			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
-		set_unsaved()
-		update_composer_status_message()
-	
-	def validate(self):
-		if not self['validate']:
-			return VALID_PASS
-		text = self['value']
-		if text == '':
-			return VALID_PASS
-		result = True
-		for validation_rule in self['validate']:
-			if validation_rule.has_key('require'):
-				result = bool(re.search(validation_rule['require'], text))
-			elif validation_rule.has_key('require-repetative'):
-				remainder = text
-				while True:
-					m = re.search(validation_rule['require-repetative'], remainder)
-					if m is not None:
-						remainder = remainder[m.end():]
-						if remainder == '':
-							break
-					else:
-						result = False
-						break
-				if remainder != '':
-					result = False
-			if not result:
-				break
-		if result:
-			return VALID_PASS
-		else:
-			return validation_rule.get('condition', VALID_INVALID)
 	
 	def point_out(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
@@ -1735,24 +1786,17 @@ class compose_header_box(gtk.HBox):
 				mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
 				mnu.append(mi)
 			mnu.show_all()
-			mnu.popup(None, None, self.bottomleft, evt.button, evt.time, wdg)
+			mnu.popup(None, None, lambda _menu, widget: gui_toolkits.coordinates(widget, gtk.CORNER_BOTTOM_LEFT), evt.button, evt.time, wdg)
 			return True
 		return False
 	
 	def popup_rcpt_menuitem_activated(self, mi, wdg):
-		self['name'] = mi.get_data('name')
+		self.name = mi.get_data('name')
 		self.popup_rcpt_menu_disappear(mi.parent, wdg)
 	
 	def popup_rcpt_menu_disappear(self, mnu, wdg):
 		wdg.set_relief(gtk.RELIEF_NONE)
 		self.focus()
-	
-	def bottomleft(self, mnu, wdg):
-		X, Y = self.window.get_origin()
-		x, y, w, h = wdg.get_allocation()
-		mx = X + x
-		my = Y + y + h
-		return (mx, my, True)
 	
 	def show_all(self):
 		super(self.__class__, self).show_all()
@@ -1760,41 +1804,37 @@ class compose_header_box(gtk.HBox):
 			self.hide()
 		self.showhide_pick_buttons()
 	
-	def duplicate(self, evtwdg=None):
-		newbox = self.__class__(self['name'], '', hntype=self.hntype)
-		self.parent.pack_start(newbox, False, True)
-		newbox.show_all()
-		newbox.focus()
-		for n in range(0, len(self.parent.children())):
-			if self.parent.children()[n] == self:
-				self.parent.reorder_child(newbox, n)
+	def __repr__(self):
+		return '<%s object at 0x%x name=%s value=%s>' % (self.__class__.__name__, id(self), self.name, self.value)
 	
-	def cancel(self, evtwdg=None, manual=True):
-		if self['name'] and self['value']:
+	def duplicate(self, _evtwdg=None):
+		self.container.add(self.name, '', below_to=self)
+	
+	def cancel(self, _evtwdg=None, manual=True):
+		if self.name and self.value:
 			set_unsaved()
 		if self.hntype == self.HNTYPE_LABEL:
 			self.hide()
-			self.tick_my_menuitem(0)
+			self.tick_my_menuitem(False)
 			if not manual:
-				self['value'] = ''
+				self.value = ''
 		else:
-			if manual and self.hntype == self.HNTYPE_MENU:
-				n = 0
-				for x in self.parent.children():
-					if x.hntype == self.HNTYPE_MENU: n += 1
-					if n > 1: break
-				if n < 2:
-					self['value'] = ''
-					return False
-			self.parent.remove(self)
+			do_remove = True
+			if manual and self.name in RecipientHeaders:
+				# don't allow zero Recipient field
+				if len(self.container.multi_value[RecipientHeaders]) <= 1:
+					self.value = ''
+					do_remove = False
+			if do_remove:
+				del self.container[self]
 			update_composer_toolbar_toggle_buttons()
-		if self['name'] in RecipientHeaders:
+		if self.name in RecipientHeaders:
 			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
 		update_composer_status_message()
 	
 	def tick_my_menuitem(self, on):
 		for mi in menu_add_header.children():
-			if mi.get_data('chname') == self['name']:
+			if mi.get_data('chname') == self.name:
 				mi.set_active(on)
 				break
 	
@@ -1805,71 +1845,152 @@ class compose_header_box(gtk.HBox):
 	
 	def scrollfocus(self):
 		if self.get_visible():
-			scrwin = self.parent.parent
-			cntnr = scrwin.child
-			vadj = scrwin.get_vadjustment()
-			wdg = win_comp.get_focus()
-			
-			if wdg is not None:
-				wleft, wtop = wdg.translate_coordinates(cntnr, 0, 0)
-				wbottom = wtop + wdg.get_allocation().height
-				top = vadj.value
-				bottom = top + vadj.page_size
-				if wtop < top:
-					vadj.value = wtop
-				elif wbottom > bottom:
-					vadj.value = wbottom - vadj.page_size
+			spanel_comp_header.scroll_to_focused_widget()
 	
-	def __getitem__(self, key):
-		if key == 'name':
-			if self.hntype == self.HNTYPE_CUSTOM:
-				it = self.wdg_name.get_active_iter()
-				if it is not None:
-					ret = self.wdg_name.get_model().get_value(it, 0)
-				else:
-					ret = self.wdg_name.children()[0].get_text()
-			else:
-				ret = self.wdg_name.get_data('name')
-			if ret is not None:
-				ret = headercase(ret)
-			return ret
-		elif key == 'name_lc':
-			return self['name'].lower()
-		elif key == 'value':
-			return self.wdg_value.get_text()
-		elif key == 'readonly':
-			return not self.wdg_value.get_sensitive()
-		elif key in ['validate']:
-			return self.wdg_value.get_data(key)
+	@property
+	def name(self):
+		if self.hntype == self.HNTYPE_CUSTOM:
+			ret = self.wdg_name.get_value()
+			ret = gemlv.email.Header(ret).name
 		else:
-			raise KeyError()
+			ret = self.wdg_name.get_data('name')
+		if ret is not None:
+			ret = CaseInsensitiveString(ret)
+		return ret
 	
-	def __setitem__(self, key, newvalue):
-		if key == 'name':
-			newvalue = headercase(newvalue)
-			old = self[key]
-			self.wdg_name.set_data('name', newvalue)
-			if self.hntype == self.HNTYPE_CUSTOM:
-				self.wdg_name.children()[0].set_text(newvalue)
-			else:
-				self.wdg_name.set_label(_(newvalue))
-			if old != newvalue:
-				self.on_name_changed()
-		elif key == 'value':
-			self.wdg_value.set_text(newvalue)
-		elif key == 'readonly':
-			self.wdg_name.set_sensitive(not newvalue)
-			self.wdg_value.set_sensitive(not newvalue)
-		elif key == 'validate':
-			self.wdg_value.set_data(key, newvalue)
-			self.on_value_changed()
+	@name.setter
+	def name(self, newname):
+		newname = gemlv.email.Header(newname).name
+		if self.hntype == self.HNTYPE_CUSTOM:
+			self.wdg_name.set_text(newname)
 		else:
-			raise KeyError()
+			self.wdg_name.set_label(_(newname))
+			self.wdg_name.set_data('name', newname)
+		self.on_name_changed()
+	
+	def on_name_changed(self, _x=None):
+		name = self.name
+		self.showhide_pick_buttons()
+		if name in HeaderValidators:
+			self.validators = HeaderValidators[name]
+		else:
+			self.validators = None
+		
+		if name in AddressbookHeaders:
+			self.set_autocomplete_list(gemlv.addressbook.get_full())
+		elif name in AutocompletionHeaders.keys():
+			self.set_autocomplete_list(AutocompletionHeaders[name])
+		
+		if self.hntype == self.HNTYPE_CUSTOM:
+			self.btn_add.set_sensitive(name not in SingletonHeaders)
+		
+		self.on_changed()
+	
+	@property
+	def value(self):
+		return self.wdg_value.get_text()
+	
+	@value.setter
+	def value(self, newvalue):
+		self.wdg_value.set_text(newvalue)
+	
+	def on_value_changed(self, entry=None):
+		if entry is None: entry = self.wdg_value
+		
+		# indicate field validity
+		bg_invalid = gtk.gdk.Color('#FFA4A4')
+		bg_normal = entry.get_data('bg-normal')
+		if not bg_normal:
+			bg_normal = entry.get_style().base[gtk.STATE_NORMAL]
+			entry.set_data('bg-normal', bg_normal)
+		valid = self.validate()
+		if valid == VALIDATION_RESULT_PASS:
+			entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+			entry.set_icon_from_stock(self.ICON_POS_VALIDATION, None)
+		else:
+			if valid == VALIDATION_RESULT_INVALID:
+				entry.modify_base(gtk.STATE_NORMAL, bg_invalid)
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_STOP)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Invalid input"))
+			else:
+				entry.modify_base(gtk.STATE_NORMAL, bg_normal)
+				entry.set_icon_from_stock(self.ICON_POS_VALIDATION, gtk.STOCK_DIALOG_QUESTION)
+				entry.set_icon_tooltip_text(self.ICON_POS_VALIDATION, _("Strange input; maybe double check"))
+			self.point_out()
+		
+		self.on_changed()
+		return False
+	
+	def validate(self, fail_on_empty=False):
+		if not self.validators:
+			return VALIDATION_RESULT_PASS
+		text = self.value
+		result = True
+		for validation_rule in self.validators:
+			if validation_rule.has_key('require'):
+				result = bool(re.search(validation_rule['require'], text))
+			elif validation_rule.has_key('require-repetative'):
+				remainder = text
+				while True:
+					m = re.search(validation_rule['require-repetative'], remainder)
+					if m is not None:
+						remainder = remainder[m.end():]
+						if remainder == '':
+							break
+					else:
+						result = False
+						break
+				if remainder != '':
+					result = False
+			if not result:
+				break
+		if result:
+			return VALIDATION_RESULT_PASS
+		else:
+			if not fail_on_empty and self.value == '':
+				return VALIDATION_RESULT_PASS
+			return validation_rule.get('fail-result', VALIDATION_RESULT_INVALID)
+	
+	def on_changed(self):
+		"runs when either the name or the value has been changed"
+		update_composer_toolbar_toggle_buttons()
+		if self.name in RecipientHeaders:
+			glib.idle_add(update_addressbook_highlights, priority=glib.PRIORITY_DEFAULT_IDLE)
+		set_unsaved()
+		update_composer_status_message()
+	
+	@property
+	def readonly(self):
+		return not self.wdg_value.get_sensitive()
+	
+	@readonly.setter
+	def readonly(self, newreadonly):
+		self.wdg_name.set_sensitive(not newreadonly)
+		self.wdg_value.set_sensitive(not newreadonly)
+	
+	@property
+	def validators(self):
+		return self._validators
+	
+	@validators.setter
+	def validators(self, newvalidators):
+		self._validators = newvalidators
+		self.on_value_changed()
+	
+	@property
+	def removable(self):
+		return self.btn_del.get_sensitive()
+	
+	@removable.setter
+	def removable(self, newremovable):
+		self.btn_del.set_sensitive(newremovable)
+
 
 def act_add_to_addressbook_manual(address_line):
 	try:
 		gemlv.addressbook.add(section='gemlv.manual', address_line=address_line)
 	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		raise
 	else:
@@ -1908,17 +2029,17 @@ def prompt_datetime(entry):
 		calendar.select_month(m-1, y)
 		calendar.select_day(d)
 		clock.select_time(ts)
-	dlg = gtk.MessageDialog(gemlvtk.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
-	dlg.set_title(_("Pick date an time"))
+	dlg = gtk.MessageDialog(gui_toolkits.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_OK_CANCEL, _("Select Date and Time in local TimeZone"))
+	dlg.set_title(_("Pick date and time"))
 	calendar = gtk.Calendar()
-	clock = gemlvtk.Clock()
+	clock = gui_toolkits.Clock()
 	dt = email.utils.parsedate_tz(entry.get_text())
 	if dt is not None:
 		select_datetime(email.utils.mktime_tz(dt))
 	cbox = dlg.get_content_area()
 	cbox.pack_start(calendar, True, True)
 	cbox.pack_start(clock, True, True)
-	btn_now = gemlvtk.StockButton(_("Now"), gtk.STOCK_JUMP_TO)
+	btn_now = gui_toolkits.StockButton(_("Now"), gtk.STOCK_JUMP_TO)
 	btn_now.connect('clicked', lambda x: select_datetime())
 	abox = dlg.get_action_area()
 	abox.pack_start(btn_now, False, False)
@@ -1930,69 +2051,20 @@ def prompt_datetime(entry):
 		entry.set_text(email.utils.formatdate(time.mktime((y, m+1, d, H, M, S, -1, -1, -1)), True))
 	dlg.destroy()
 
-def get_composer_headerboxes(search_hname):
-	"""
-	get_composer_headerboxes(search_hname)
-	
-		finds those compose_header_box objects of which name 
-		- is in search_hname (if search_hname is list)
-		- is search_hname (if search_hname is str)
-		- is anything (if search_hname is None)
-		
-		do not count hidden compose_header_box objects which represent sender (From, Organization, Reply-To, …)
-	"""
-	search_hnames = None
-	if search_hname is not None:
-		if type(search_hname) == list:
-			search_hnames = list([x.lower() for x in search_hname])
-		else:
-			search_hnames = [search_hname.lower()]
-	hlist = []
-	for hbox in panel_comp_header.children():
-		if hbox.get_visible() or hbox['name_lc'] not in [x.lower() for x in SenderHeaders]:
-			if search_hname is None:
-				hlist.append(hbox)
-			elif hbox['name_lc'] in search_hnames:
-				hlist.append(hbox)
-	return hlist
-
-def get_composer_headers(search_hname):
-	hlist = []
-	for hbox in get_composer_headerboxes(search_hname):
-		if search_hname is None:
-			hlist.append((hbox['name'], hbox['value']))
-		else:
-			hlist.append(hbox['value'])
-	return hlist
-
-def get_composer_header_last(hname):
-	hdrs = get_composer_headers(hname)
-	if hdrs:
-		return hdrs[-1]
-	return None
-
-def get_composer_headerbox_last(hname):
-	hdrs = get_composer_headerboxes(hname)
-	if hdrs:
-		return hdrs[-1]
-	return None
 
 def get_composer_all_recipients_emails():
-	return [al.email for al in gemlv.utils.getaddresslines(get_composer_headers(RecipientHeaders))]
+	# Note: getaddresslines() expects MIME-encoded strings, but composer_headers
+	# gives MIME-decoded ones, however it should not matter since we take only al.email,
+	# which is indifferent to MIME-coding.
+	return [al.email for al in getaddresslines(composer_headers.multi_value[RecipientHeaders])]
 
 
-def set_composer_subject(s):
-	entry_subject.set_text(s)
-
-def get_composer_subject():
-	return entry_subject.get_text()
-
-def on_edit_subject(wdg):
+def on_edit_subject(_wdg):
 	update_window_title(win_comp, win_comp.get_data('saved-to-file'), entry_subject.get_text())
 	set_unsaved()
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
 
-def on_change_message(wdg):
+def on_change_message(_wdg):
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
 	win_comp.set_data('is-auto-saved', False)
 
@@ -2013,6 +2085,15 @@ def quote_message():
 		return re.sub('^', '> ', re.sub('\r', '', spanel_content.get_data('last-loaded-text')), 0, re.MULTILINE)
 	return ''
 
+def make_new_blank_email():
+	eml = gemlv.email.Email(MIMEMultipart('mixed'))
+	eml.preamble = COMMON_MULTIPART_PREAMBLE
+	part_body = gemlv.email.Email(MIMEText(''), parent_email_obj = eml)
+	part_body.set_charset('UTF-8')
+	part_body.header[HDR_CTE].decoded = ''
+	eml.attach(part_body)
+	return eml
+
 def open_composer(reason):
 	if win_comp.get_visible():
 		cur_reason = win_comp.get_data('reason')
@@ -2026,23 +2107,20 @@ def open_composer(reason):
 				return False
 	
 	global NewEmail
-	NewEmail = MIMEMultipart('mixed')
-	win_comp.set_data('blank-email-default-headers', map(lambda x: x[0].lower(), NewEmail._headers))
-	NewEmail.preamble = PREAMBLE
-	part_body = MIMEText('')
-	part_body.set_charset('UTF-8')
-	part_body.replace_header(HDR_CTE, '')
-	NewEmail.attach(part_body)
+	NewEmail = make_new_blank_email()
 	Attachments.clear()
 	
 	win_comp.show_all()
 	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_all_comp_hdr.set_active(False)
-	clear_composer_headers(None)
-	add_composer_From_hidden()
+	composer_headers.remove_all()
+	
 	for h in SenderHeaders:
-		add_composer_header(h).cancel()
-	set_composer_subject('')
+		composer_headers.add(h, '').cancel()
+	my_addressline = guess_my_addressline()
+	if my_addressline.email:
+		composer_headers.add('From', str(my_addressline))
+	composer_headers.set_single(HDR_SUBJ, '')
 	composer_text_buffer.clear()
 	
 	win_comp.set_data('is-an-mdn', False)
@@ -2071,83 +2149,64 @@ def auto_save_draft():
 		draft_name = '%s pid-%d.eml' % (time.strftime('%F %T').replace(':', '.'), os.getpid())
 		draft_dir = get_autosave_dir()
 		mkdir(draft_dir)
-		if save_to_file(NewEmail, os.path.join(draft_dir, draft_name), ask_overwrite=False):
+		email_to_save = build_newemail(with_attachment_data=False)
+		if save_to_file(email_to_save, os.path.join(draft_dir, draft_name), ask_overwrite=False):
 			win_comp.set_data('is-auto-saved', True)
 			remove_old_draft()
 			win_comp.set_data('last-auto-saved-draft-file-name', draft_name)
 	# Keep timer running:
 	return True
 
-
-def filter_out_addresses(noaddrs, hvals_mimeencoded):
-	filtered = []
-	for al in gemlv.utils.getaddresslines(hvals_mimeencoded):
-		if al.email not in noaddrs:
-			filtered.append(al)
-	return filtered
-
 def add_composer_agent_headers():
-	add_composer_header('User-Agent', USERAGENT)
-	add_composer_header('X-Mailer', USERAGENT)
+	composer_headers.add('User-Agent', USERAGENT)
+	composer_headers.add('X-Mailer', USERAGENT)
 
 def add_composer_mailto(mailto):
 	for field in AcceptableMailtoFields:
 		if field in mailto:
-			header = headercase(field)
+			header = gemlv.email.Header(field).name
 			if field in MultiRecipientsMailtoFields:
-				add_composer_headers(header, mailto[field])
+				composer_headers.add_multi(header, mailto[field])
 			elif field == 'subject':
-				set_composer_subject(mailto[field])
+				composer_headers.set_single(HDR_SUBJ, mailto[field])
 			elif field == 'body':
 				set_composer_text(mailto[field])
 			else:
-				add_composer_header(header, mailto[field])
-
-def guess_my_address():
-	"guess what is the user's email address to which the currently opened email is sent"
-	if Email is None: return None
-	return get_one_header_main('Envelope-To') or get_one_header_main('Delivered-To')
+				composer_headers.add(header, mailto[field])
 
 def guess_my_addressline():
-	"like guess_my_address() but with added realname"
-	addr = guess_my_address()
-	if addr is None: return AddressLine('')
+	"guess what is the user's address line to which the currently opened email is sent"
+	if TheEmail is None: return AddressLine('')
+	addr = TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
 	realname = gemlv.utils.get_gecos_name()
-	# TODO consult addressbook for a known realname part
-	return AddressLine((realname, addr))
+	# TODO: consult addressbook for a known realname part
+	return AddressLine((MimeDecoded(realname), addr))
 
 def guess_reply_addressline():
-	if Email is None: return AddressLine('')
-	for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
-		if Email[hname] is not None:
-			break
-	return AddressLine(Email[hname], eml=Email)
+	if TheEmail is not None:
+		for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
+			if hname in TheEmail.headers:
+				return AddressLine(TheEmail.header[hname].encoded)
+	return AddressLine('')
 
-def add_composer_From_hidden():
-	addressline = guess_my_addressline()
-	if addressline.email:
-		box = add_composer_header('From', str(addressline))
-		box.cancel()
-		return True
-	return False
 
 def act_compose():
 	if open_composer(reason=COMPOSE_NEW):
 		add_composer_agent_headers()
-		add_composer_header('To', '')
-		set_composer_subject('')
+		composer_headers.add('To', '')
+		composer_headers.set_single(HDR_SUBJ, '')
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-SUBJECT_PREFIX_FWD, SUBJECT_PREFIX_RE = range(2)
 
 class InvalidSubjectLinePrefix(Exception):
 	pass
 
 def make_subject_line(original, pre_kind):
+	# TODO: get language-alternative subject prefixes from gettext database
 	if pre_kind == SUBJECT_PREFIX_FWD:
 		pre = _("Fwd: ")
 		alternatives = ["to:", "tov:"]  # @notranslate
@@ -2165,52 +2224,55 @@ def make_subject_line(original, pre_kind):
 def act_reply(compose_type):
 	if open_composer(reason=compose_type):
 		add_composer_agent_headers()
-		orig_subj = get_one_header_main('Subject') or ''
+		orig_subj = TheEmail.header[HDR_SUBJ].decoded
 		composer_text_buffer.clear()
 		append_composer_text_default_user_signature()
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		my_addressline = guess_my_addressline()
-		add_composer_header('From', str(my_addressline))
 		
 		if compose_type in [COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY]:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_FORWARDED])
 			fwdname = (orig_subj or _("Email")) + '.eml'
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_FWD)
-			set_composer_subject(subj)
+			composer_headers.set_single(HDR_SUBJ, subj)
 			# TODO: maintain Thread-Topic header here in forwards too?
-			add_composer_header('To', '')
+			composer_headers.add('To', '')
 			composer_maintain_references_headers()
 			
 			if compose_type == COMPOSE_FORWARD_MSG:
-				email_to_forward = email.message_from_string(Email.as_string())
-				for fwd_header in email_to_forward.keys():
-					fwd_header = headercase(fwd_header)
-					if any(fnmatch(fwd_header, headercase(sensitive_header)) for sensitive_header in SensitiveHeaders):
-						del email_to_forward[fwd_header]
-				part = MIMEMessage(email_to_forward)
-				part.add_header(HDR_CD, 'attachment', filename=fwdname)
+				# copy the whole viewed email to an attachment
+				email_to_forward = gemlv.email.Email(email.message_from_string(TheEmail.as_string()))
+				# remove sensitive email headers from the forwarded email
+				for fwd_header in email_to_forward.headers.keys:
+					if any(wildcardmatch(fwd_header, sensitive_header) for sensitive_header in SensitiveHeaders):
+						del email_to_forward.headers[fwd_header]
+				part = gemlv.email.Email(MIMEMessage(email_to_forward._ll_email))
+				part.header[HDR_CD].value.encoded = 'attachment'
+				part.header[HDR_CD].param['filename'].decoded = fwdname
 				NewEmail.attach(part)
-				Attachments.append(None, [part, fwdname, 'emblem-mail', None, '', calc_attachment_checksum(part)])
+				# TODO: make the attached email's row expandable in the attachments panel,
+				# so its big attachments can be removed by the user
+				Attachments.append(None, [part, glib.markup_escape_text(fwdname), 'emblem-mail', None, '', calc_attachment_checksum(part)])
 			else:
 				composer_text_buffer.append('\n')
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
-			add_composer_header('Thread-Topic', get_one_header_main('Thread-Topic') or orig_subj)
+			composer_headers.add('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
 			subj = make_subject_line(orig_subj, SUBJECT_PREFIX_RE)
-			set_composer_subject(subj)
+			composer_headers.set_single(HDR_SUBJ, subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
 			
-			messageid = get_one_header_main(HDR_MID)
-			add_composer_header('In-Reply-To', messageid)
+			messageid = TheEmail.header[HDR_MID].decoded
+			composer_headers.add('In-Reply-To', messageid)
 			composer_maintain_references_headers()
 			
 			reply_addressline = guess_reply_addressline()
 			listaddress = get_listaddressline_main()
 			
 			if compose_type == COMPOSE_REPLY:
-				add_composer_header('To', str(reply_addressline))
+				composer_headers.add('To', str(reply_addressline))
 			elif compose_type == COMPOSE_REPLY_ALL:
 				# gather all email addresses in the message
 				# but do not duplicate any
@@ -2218,29 +2280,24 @@ def act_reply(compose_type):
 				rcpt_addresses = []
 				
 				if reply_addressline.email and reply_addressline.email != my_addressline.email:
-					add_composer_header('To', str(reply_addressline))
+					composer_headers.add('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
-				for h in RecipientHeaders:
-					for addressline in filter_out_addresses(skip_addresses, get_all_headers_main_mimeencoded(h)):
-						add_composer_header(h, str(addressline))
+				for rh in RecipientHeaders:
+					for addressline in [al.email for al in getaddresslines(TheEmail.headers[rh].encoded)] - SubstractableList(skip_addresses):
+						composer_headers.add(rh, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
-					add_composer_header('To', str(listaddress))
+					composer_headers.add('To', str(listaddress))
 			elif compose_type == COMPOSE_REPLY_LIST:
-				add_composer_header('To', str(listaddress))
+				composer_headers.add('To', str(listaddress))
 		
 		composer_text_buffer.place_cursor(composer_text_buffer.get_start_iter())
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
-def shorturl(url, maxlength=72):
-	if len(url) > maxlength:
-		return url[0:maxlength-1] + '…'
-	else:
-		return None
 
 def act_unsubscribe():
-	links = get_header_links(','.join(Email.get_all('List-Unsubscribe')), schemata=['*'])
+	links = get_header_links(','.join(TheEmail.headers['List-Unsubscribe'].encoded), schemata=['*'])
 	if len(links) == 1 and links[0]['scheme'] == 'mailto':
 		if open_composer(reason=COMPOSE_UNSUB):
 			add_composer_mailto(links[0])
@@ -2250,19 +2307,23 @@ def act_unsubscribe():
 		for link in links:
 			uri = link['uri']
 			if link['scheme'] == 'mailto' and link.get('to') and len(link['to'])>0:
+				pretext = SYMBOL_EMAIL
 				linktext = str(link['to'][0])
 			else:
+				pretext = SYMBOL_WEB
 				linktext = uri
 			short = shorturl(linktext, 80)
-			if short is not None: linktext = short
-			text += '\n\n<a href=\'%s\'>%s</a> <i>%s</i>' % (
+			if short is not None:
+				linktext = short
+			text += '\n%s <a href=\'%s\'>%s</a> <i>%s</i>' % (
+				glib.markup_escape_text(pretext),
 				glib.markup_escape_text(uri), 
 				glib.markup_escape_text(linktext), 
 				glib.markup_escape_text(link['comment']),
 			)
 		dlg = gtk.MessageDialog(win_main, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_OTHER, gtk.BUTTONS_CLOSE)
 		dlg.set_title(_("Unsubscribe"))
-		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + text)
+		dlg.set_markup(_("Select a link to unsubscribe") + '\n\n' + _("Beware, open links only from trusted source. Spammers know their spam reached target if you follow fake unsubscribe links.") + '\n' + text)
 		dlg.get_action_area().children()[0].grab_focus()
 		dlg.run()
 		dlg.destroy()
@@ -2276,7 +2337,7 @@ def act_report_spam(considered_as_spam = True):
 	run_async('gemlv-report-%s' % ('spam' if considered_as_spam else 'ham'), [emailfile], None)
 
 def runcmd_thread(args, input_fd, out_buffer, vb):
-	reader, writer = get_pipe_handlers(1)
+	reader, writer = new_pipe_handles(1)
 	pid = os.fork()
 	if pid == 0:
 		reader.close()
@@ -2307,9 +2368,9 @@ def runcmd_thread(args, input_fd, out_buffer, vb):
 	gtk.threads_leave()
 
 def get_extension_by_mime(mime):
-	if mime is None:
+	if not mime:
 		e = None
-	elif mime.startswith('multipart/'):
+	elif mime.main == 'multipart':
 		e = '.eml'
 	else:
 		e = guess_extension(mime)
@@ -2317,27 +2378,43 @@ def get_extension_by_mime(mime):
 		e = '.dat'
 	return e
 
+def get_attachment_extension(part):
+	filename = part.filename
+	if filename:
+		_, ext = os.path.splitext(filename)
+		if ext:
+			return ext
+	return get_extension_by_mime(part.content_type)
+
 def get_mime_by_filepath(path):
-	t = get_xattr(path, XATTR_TYPE)
+	t = xattr.get(path, XATTR_TYPE)
 	if t is None or t.find('/')<1:
 		t = Magic.file(os.path.realpath(path))
 		if t is None or t.find('/')<1:
 			return MIMETYPE_OCTETSTREAM
-	return t
+	return ContentTypeString(t)
 
 def get_mime_by_data(data):
-	return Magic.buffer(data)
+	return ContentTypeString(Magic.buffer(data))
 
 def act_open():
 	eml = get_part_by_itpath()
 	if eml is None: return
-	mime = eml.get_content_type()
-	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_extension_by_mime(mime))
+	open_payload_as_temp_file(eml)
+
+def open_payload_as_temp_file(eml):
+	fd, tmppath = mkstemp(prefix = PROGNAME + '-', suffix = get_attachment_extension(eml))
 	try:
 		save_to_filedescriptor(eml, fd)
-		fh = os.fdopen(fd, 'r')
-		set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mime}, tmppath)
-		fh.close()
+		try:
+			fh = os.fdopen(fd, 'r')
+			xattr.set(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: eml.content_type}, tmppath)
+			fh.close()
+		except Exception as e:
+			e.filename = tmppath
+			traceback.print_exc()
+			save_exception_traceback(e, traceback.format_exc())
+			display_error(e, async=True, icon=gtk.MESSAGE_WARNING)
 	except OSError as e:
 		os.unlink(tmppath)
 		e.filename = tmppath
@@ -2351,11 +2428,11 @@ def calc_attachment_name(part, n=None):
 	Return a filename for a given MIME part to save it into a file.
 	The filename is based on the Content-Disposition headers, else the Subject plus the MIME part's index.
 	"""
-	name = decode_mimetext(part.get_filename())
-	if name is None:
+	name = part.filename
+	if not name:
 		sfx = ''
 		if n is not None: sfx = '-' + str(n)
-		name = "%s - attachment%s%s" % (get_one_header_main('Subject') or _("Email"), sfx, get_extension_by_mime(part.get_content_type()))
+		name = "%s - attachment%s%s" % (TheEmail.header[HDR_SUBJ].decoded or _("Email"), sfx, get_attachment_extension(part))
 	return basenameify(name)
 
 def find_free_filename(directory=None, nice_name=None, nice_path=None):
@@ -2373,19 +2450,19 @@ def find_free_filename(directory=None, nice_name=None, nice_path=None):
 	return os.path.basename(free_path)
 
 def part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True, add_subject=False):
-	part = Parts[itpath][0]
-	fname = decode_mimetext(part.get_filename())
-	if fname is None:
+	part = Parts[itpath][COL_PARTS_EML]
+	fname = part.filename
+	if not fname:
 		fname = ''
 		if add_subject:
-			fname += basenameify(get_one_header_main('Subject') or '')
+			fname += basenameify(TheEmail.header[HDR_SUBJ].decoded)
 			if fname:
 				fname += ' - '
 		oid = '-'.join(map(str, itpath))
 		fname += '%s-%s' % (prefix, oid)
 		if add_extension not in [False, None]:
 			if add_extension is True:
-				fname += get_extension_by_mime(part.get_content_type())
+				fname += get_extension_by_mime(part.content_type)
 			else:
 				fname += '.' + add_extension
 	return fname
@@ -2398,19 +2475,20 @@ def act_save_struct():
 			act_save_struct_inner(savedir, Parts.get_iter(itpaths[n]))
 
 def act_save_struct_inner(savedir, iterator):
-	part = Parts[iterator][0]
+	part = Parts[iterator][COL_PARTS_EML]
 	itpath = Parts.get_path(iterator)
-	mimepart_name = decode_mimetext(part.get_filename())
-	if mimepart_name is not None:
+	mimepart_name = part.filename
+	if mimepart_name:
 		mimepart_name = os.path.basename(mimepart_name)
 	if Parts.iter_has_child(iterator):
-		if mimepart_name is None:
+		if not mimepart_name:
 			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='multipart', add_extension=False)
-		body = part.get_payload(decode=True)
-		if body is None and (part.preamble is not None or part.epilogue is not None):
+		if part.is_multipart():
 			savefile = os.path.join(savedir, part_filename_by_iteratorpath(itpath, prefix='part', add_extension='txt'))
 			# TODO: should we care about overwriting files here?
 			save_to_file(part, savefile, consider_preamble=True)
+		else:
+			body = part.payload_decoded
 		mysavedir = os.path.join(savedir, mimepart_name)
 		try:
 			mkdir(mysavedir)
@@ -2420,8 +2498,8 @@ def act_save_struct_inner(savedir, iterator):
 			for nth in range(0, Parts.iter_n_children(iterator)):
 				subiter = Parts.iter_nth_child(iterator, nth)
 				act_save_struct_inner(mysavedir, subiter)
-			moddatetime = get_header_parameter(part[HDR_CD], 'modification-date')
-			posixmode = get_header_parameter(part[HDR_CD], 'posix-mode')
+			moddatetime = part.header[HDR_CD].param['modification-date'].decoded
+			posixmode = part.header[HDR_CD].param['posix-mode'].decoded
 			try:
 				if moddatetime:
 					mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
@@ -2431,9 +2509,8 @@ def act_save_struct_inner(savedir, iterator):
 			except OSError as e:
 				display_error(e)
 	else:
-		if mimepart_name is None:
-			body = part.get_payload(decode=True)
-			if body is None or len(body) == 0:
+		if not mimepart_name:
+			if part.is_multipart() or part.payload_decoded == '':
 				# Skip empty noname parts.
 				return
 			mimepart_name = part_filename_by_iteratorpath(itpath, prefix='part', add_extension=True)
@@ -2458,42 +2535,6 @@ def act_save():
 				savefile = os.path.join(savedir, basename)
 				save_to_file(eml, savefile)
 
-def get_xattr(file_, attrname):
-	if xattr is not None:
-		try:
-			return xattr.getxattr(file_, attrname)
-		except IOError as e:
-			if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
-				raise e
-	return None
-
-def append_xattrs(fh, attrs, filename='-', glue=''):
-	attrs = attrs.copy()
-	for attr in attrs.keys():
-		curr_value = get_xattr(fh, attr)
-		if curr_value is not None:
-			attrs[attr] = curr_value + glue + attrs[attr]
-	return set_xattrs(fh, attrs, filename)
-
-def set_xattrs(fh, attrs, filename='-'):
-	allok = True
-	if xattr is not None:
-		for attrname, attrval in attrs.iteritems():
-			try:
-				if attrval is None:
-					xattr.removexattr(fh, attrname)
-				else:
-					xattr.setxattr(fh, attrname, attrval)
-			except IOError as e:
-				if e.errno == os.errno.ENODATA and attrval is None:
-					# Ignore that a nonexistent attribute could not be removed
-					pass
-				else:
-					warnx(_("Notice: can not set xattr '%s' on '%s': %s") % (attrname, filename, str(e)))
-					allok = False
-					if e.errno not in [os.errno.ENODATA, os.errno.ENOTSUP, os.errno.ENOSYS]:
-						raise e
-	return allok
 
 def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	if ask_overwrite:
@@ -2501,29 +2542,31 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			if not question(_("This file already exists:") + ('\n<tt>%s</tt>\n' % (glib.markup_escape_text(os.path.basename(filename)))) + _("Overwrite?"), (None, gtk.STOCK_SAVE)):
 				return None
 	try:
-		if eml.get_content_type() == MIMETYPE_SYMLINK:
-			link_target = eml.get_payload(decode=True)
+		if eml.content_type == MIMETYPE_SYMLINK:
+			link_target = eml.payload_decoded
+			# TODO: check safe symlink
 			os.symlink(link_target, filename)
 		else:
 			fh = open(filename, 'w')
 			fd = fh.fileno()
 			save_to_filedescriptor(eml, fd, consider_preamble)
-			if eml.get_content_maintype() == 'multipart':
+			if eml.content_type.main == 'multipart':
 				mimetype = MIMETYPE_EMAIL
 			else:
-				mimetype = eml.get_content_type()
-			messageid = eml[HDR_MID]
-			if not messageid and hasattr(Email, '__getitem__'):
-				messageid = Email[HDR_MID]
-			set_xattrs(fh, {XATTR_CHARSET: eml.get_content_charset(), XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
+				mimetype = eml.content_type
+			messageid = eml.header[HDR_MID].decoded
+			if not messageid and TheEmail is not None:
+				messageid = TheEmail.header[HDR_MID].decoded
+			xattr.set(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
 			fh.flush()
-			moddatetime = get_header_parameter(eml[HDR_CD], 'modification-date')
-			posixmode = get_header_parameter(eml[HDR_CD], 'posix-mode')
+			moddatetime = eml.header[HDR_CD].param['modification-date'].decoded
+			posixmode = eml.header[HDR_CD].param['posix-mode'].decoded
 			if moddatetime:
 				mod_timestamp = email.utils.mktime_tz(email.utils.parsedate_tz(moddatetime))
 				futimes(fd, (-1, mod_timestamp))
 			if posixmode:
-				os.fchmod(fd, int(posixmode, 8))
+				# set POSIX permission bits, except the suid/sgid octet
+				os.fchmod(fd, int(posixmode, 8) & 0777)
 			fh.close()
 		return True
 	except IOError as e:
@@ -2534,15 +2577,16 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 	return False
 
 def save_to_filedescriptor(eml, fd, consider_preamble=False):
-	s = eml.get_payload(decode=True)
-	if s is None:
+	if eml.is_multipart():
 		if consider_preamble:
 			s = '\n'.join([eml.preamble or '', eml.epilogue or ''])
 		else:
 			s = eml.as_string()
+	else:
+		s = eml.payload_decoded
 	written = os.write(fd, s)
 	if written != len(s):
-		raise OSError(5, 'Write Error')
+		raise OSError(5, 'Write Error. %d out of %d bytes written.' % (written, len(s)))
 	os.fdatasync(fd)
 
 def act_view_source():
@@ -2579,7 +2623,7 @@ def act_font_switch(tv):
 
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
-	dlg.set_transient_for(gemlvtk.get_current_window())
+	dlg.set_transient_for(gui_toolkits.get_current_window())
 	dlg.set_modal(True)
 	dlg.set_font_name(tv.get_data('saved-font')['string'])
 	if dlg.run() == gtk.RESPONSE_OK:
@@ -2649,22 +2693,23 @@ def show_view_headers(show=True):
 		spanel_view_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 		panel_view_header.set_size_request(-1, -1)
 		panel_view_header.set_line_wrap(False)
-		s = ''
-		for hname, hval_mimeencoded in Email._headers:
-			hval = decode_mime_header(hval_mimeencoded, eml=Email)
-			s += PMU_HEAD + glib.markup_escape_text(hname) + PMU_HEAD_CLOSE + ': ' + glib.markup_escape_text(hval) + '\n'
-		panel_view_header.set_markup(s)
+		headers_markup = [ \
+			PMU_HEAD + glib.markup_escape_text(header.raw_name) + PMU_HEAD_CLOSE + ': ' + \
+			glib.markup_escape_text(header.value.decoded) \
+			for header in TheEmail.headers.items \
+		]
+		panel_view_header.set_markup(list2text(headers_markup))
 	else:
 		spanel_view_header.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
 		resize_panel_view_header(spanel_view_header)
 		panel_view_header.set_line_wrap(True)
-		panel_view_header.set_markup(get_headers_markup(Email))
+		panel_view_header.set_markup(get_headers_markup(TheEmail))
 	panel_view_header.set_data('all-headers', show)
 
 def populate_header_menu(label, menu):
 	selected_link = label.get_current_uri()
 	if selected_link is not None:
-		mi = gemlvtk.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+		mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
 		mailto_al = parse_mailto(selected_link)['to'][0]
 		mi.connect('activate', lambda *_x: act_add_to_addressbook_manual(mailto_al))
 		menu.append(mi)
@@ -2681,7 +2726,7 @@ def populate_filters_menu(eml):
 		menu_filters.remove(mi)
 	uniqfilt = {}
 	rmi_group = None
-	for filt in get_filters_by_mime(eml.get_content_maintype(), eml.get_content_subtype()):
+	for filt in get_filters_by_mime(eml.content_type.main, eml.content_type.sub):
 		if filt[0] == '': continue
 		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
 		uniqfilt[filt[0]] = filt[1]
@@ -2694,10 +2739,11 @@ def populate_filters_menu(eml):
 		menu_filters.append(mi)
 		rmi_group = mi
 	menu_filters.show_all()
-	disable_filters_menu(True if len(menu_filters.children()) == 0 else False)
+	disable_filters_menu(len(menu_filters.children()) == 0)
 
 def filters_menu_filter_selected(mi_selected, eml, filt):
-	load_part(eml, filt)
+	if mi_selected.get_active():
+		load_part(eml, filt)
 
 class TextBuffer(gtk.TextBuffer):
 	class TextBufferNamedRangeError(Exception):
@@ -2763,14 +2809,14 @@ class TextBuffer(gtk.TextBuffer):
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
-	mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
+	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
 	menu_addsign = gtk.Menu()
 	for user_signature_name in gemlv.user_signature.iter_all():
 		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
 		submi.connect('activate', lambda _x, user_signature_name: composer_text_buffer.update_namedrange('user_signature', gemlv.user_signature.byname(user_signature_name)), user_signature_name)
 		menu_addsign.append(submi)
 	menu_addsign.append(gtk.SeparatorMenuItem())
-	submi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
+	submi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
 	submi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
 	menu_addsign.append(submi)
 	mi.set_submenu(menu_addsign)
@@ -2778,10 +2824,10 @@ def populate_composer_textview_menu(textview, menu):
 	
 	pos += 1
 	if composer_text_buffer.get_namedrange_text('quoted_message'):
-		mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
+		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('quoted_message'))
 	else:
-		mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
+		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('quoted_message', get_reply_quotation()))
 	menu.insert(mi, pos)
 	pos += 1
@@ -2789,8 +2835,8 @@ def populate_composer_textview_menu(textview, menu):
 	pos +=1 
 	menu.show_all()
 
-def disable_filters_menu(b=True):
-	menubutton_filters.children()[0].children()[1].set_sensitive(not b)
+def disable_filters_menu(disable=True):
+	menubutton_filters.children()[0].children()[1].set_sensitive(not disable)
 
 def get_part_by_itpath(itpath = None):
 	if itpath is None:
@@ -2815,12 +2861,11 @@ def get_all_parent_parts(part_asked):
 		if it is None:
 			break
 		else:
-			yield level, Parts[it][0], Parts[it][4]
+			yield level, Parts[it][COL_PARTS_EML], Parts[it][COL_PARTS_INFO]
 
 def load_toolitems(toolbar, toolitems):
 	items = []
 	for label, stock, tip, fnc_left, fnc_right in toolitems:
-		hid = None
 		if type(fnc_left) == str:
 			tbi = gtk.SeparatorToolItem()
 			if fnc_left == 'space':
@@ -2838,18 +2883,20 @@ def load_toolitems(toolbar, toolitems):
 					tbi.set_label(tip)
 				else:
 					tbi.set_label(label)
-				hid = tbi.connect('clicked', on_click_button, fnc_left)
+				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
 		else:
 			Lstocklabel = None
 			st = gtk.stock_lookup(stock)
 			if st:
 				Lstocklabel = re.sub('_', '', st[1])  # remove shortcut key from button
+			
 			if label is not None:
 				Llabel = label
 			elif Lstocklabel is not None:
 				Llabel = Lstocklabel
 			else:
 				Llabel = None
+			
 			if tip is not None:
 				Ltip = tip
 				if Llabel is None:
@@ -2859,21 +2906,27 @@ def load_toolitems(toolbar, toolitems):
 					Ltip = Llabel
 				else:
 					Ltip = Lstocklabel
+			
 			if fnc_left is None and fnc_right is None:
 				tbi = gtk.ToolItem()
 				tbi.set_border_width(3)
 				tbi.add(gtk.image_new_from_icon_name(stock, toolbar.get_icon_size()))
 				tbi.set_tooltip_text(Ltip)
 			else:
-				tbi = gemlvtk.StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
+				tbi = gui_toolkits.StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
 				tbi.set_data('stock', stock)
 				tbi.set_data('label', label)
-				hid = tbi.connect('clicked', on_click_button, fnc_left)
-				tbi.child.connect('button-press-event', on_press_button, fnc_right)
-		tbi.set_data('clicked-handler', hid)
+				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
+				connect_loopless_signal(tbi.child, 'button-press-event', on_press_button, fnc_right)
 		toolbar.insert(tbi, -1)
 		items.append(tbi)
 	return items
+
+COL_PARTS_EML, COL_PARTS_LABEL_MARKUP, COL_PARTS_ICONNAME, COL_PARTS_ICON, COL_PARTS_INFO = range(5)
+COL_ATTACHMENTS_EML, COL_ATTACHMENTS_LABEL_MARKUP, COL_ATTACHMENTS_ICONNAME, COL_ATTACHMENTS_ICON, COL_ATTACHMENTS_SIZE_LABEL, COL_ATTACHMENTS_CHECKSUM = range(6)
+assert COL_PARTS_LABEL_MARKUP == COL_ATTACHMENTS_LABEL_MARKUP
+assert COL_PARTS_ICONNAME == COL_ATTACHMENTS_ICONNAME
+assert COL_PARTS_ICON == COL_ATTACHMENTS_ICON
 
 def setup_treeview__icon_label(tv, label_edit_cb=None):
 	colnum_txt = 1
@@ -2884,40 +2937,48 @@ def setup_treeview__icon_label(tv, label_edit_cb=None):
 	if label_edit_cb is not None:
 		cr_txt.set_property('editable', True)
 		cr_txt.connect('edited', label_edit_cb, colnum_txt)
+		tv.set_data('edit-treeviewcolumn', tvc)
+		tv.set_data('edit-cellrenderer', cr_txt)
 	tvc.pack_start(cr_pix, False)
 	tvc.pack_start(cr_txt, True)
-	tvc.add_attribute(cr_txt, 'markup', colnum_txt)
-	tvc.add_attribute(cr_pix, 'icon-name', 2)
-	tvc.add_attribute(cr_pix, 'pixbuf', 3)
+	tvc.add_attribute(cr_txt, 'markup', COL_ATTACHMENTS_LABEL_MARKUP)
+	tvc.add_attribute(cr_pix, 'icon-name', COL_ATTACHMENTS_ICONNAME)
+	tvc.add_attribute(cr_pix, 'pixbuf', COL_ATTACHMENTS_ICON)
 
+
+class ComposerHeaderValidationError(Exception):
+	pass
 
 def validate_all_comp_headers():
-	for n in range(0, len(panel_comp_header.children())):
-		box = panel_comp_header.children()[n]
-		if box.get_visible():
-			valid = box.validate()
-			if valid == VALID_INVALID:
-				box.point_out()
-				return False
-	return True
+	for headerbox in composer_headers.items:
+		valid = headerbox.validate()
+		if valid == VALIDATION_RESULT_INVALID:
+			headerbox.point_out()
+			raise ComposerHeaderValidationError(headerbox.name)
 
 class CanNotPrepareEmailToSend(Exception):
 	pass
 
+class EmailPreparationCanceled(Exception):
+	pass
+
 def prepare_to_send():
-	if not validate_all_comp_headers():
-		raise CanNotPrepareEmailToSend()
-	err_msg = ''
-	if not get_composer_subject():
-		err_msg += _("No Subject.") + '\n'
-	if len(filter(lambda x: len(x.strip()), get_composer_headers(RecipientHeaders))) < 1:
-		err_msg += _("No any Recipient.") + '\n'
-	if toggle_rqdn.get_active() and not filter(None, get_composer_headers([HDR_DNT, 'From', 'Reply-To'])):
-		err_msg += _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT) + '\n'
-	if err_msg != '':
-		err_msg += _("Send anyway?")
-		if not question(err_msg, (_("Send"), 'mail-send')):
-			raise CanNotPrepareEmailToSend()
+	validate_all_comp_headers()
+	err_msgs = []
+	if not composer_headers.value[HDR_SUBJ]:
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("No Subject."))
+	if len(filter(lambda x: len(x.strip()), composer_headers.multi_value[RecipientHeaders])) < 1:
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("No any Recipient."))
+	if toggle_rqdn.get_active() and not compact(composer_headers.multi_value[(HDR_DNT, 'From', 'Reply-To')]):
+		err_msgs.append(SYMBOL_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
+	for it in Attachments.iter_recursive:
+		if not Attachments[it][COL_ATTACHMENTS_EML].is_multipart() and Attachments[it][COL_ATTACHMENTS_EML].payload_encoded == '':
+			err_msgs.append(SYMBOL_BULLET + ' ' + _("There are empty attachments."))
+			break
+	if err_msgs:
+		err_msgs.append(_("Send anyway?"))
+		if not question(list2text(err_msgs), (_("Send"), 'mail-send')):
+			raise EmailPreparationCanceled()
 	try:
 		email_to_send = build_newemail_to_send()
 	except GnuPGSignError as e:
@@ -2927,13 +2988,22 @@ def prepare_to_send():
 		if e.status == 'invalid recipient':
 			# TODO: choose GPG recipients
 			pass
+		save_exception_traceback(e, traceback.format_exc())
 		display_error(e)
 		raise CanNotPrepareEmailToSend()
 	
 	return email_to_send
 
 def act_send_to_file():
-	email_to_send = prepare_to_send()
+	try:
+		email_to_send = prepare_to_send()
+	except (EmailPreparationCanceled, CanNotPrepareEmailToSend) as e:
+		return
+	except Exception as e:
+		traceback.print_exc()
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(e)
+		return
 	
 	filename = propose_and_confirm_a_filename_to_save_edit()
 	if filename is not None:
@@ -2944,7 +3014,14 @@ def act_send_to_file():
 		# the user might not able to read it because it may be encrypted for the recipient.
 
 def act_send():
-	email_to_send = prepare_to_send()
+	try:
+		email_to_send = prepare_to_send()
+	except (EmailPreparationCanceled, CanNotPrepareEmailToSend) as e:
+		return
+	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(e)
+		return
 	
 	dlg = gtk.MessageDialog(win_comp, gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO, gtk.BUTTONS_CANCEL)
 	dlg.connect('delete-event', lambda w, e: True)
@@ -2955,13 +3032,13 @@ def act_send():
 	
 	carea = dlg.get_content_area()
 	progressbar = gtk.ProgressBar()
-	details = gemlvtk.ScrolledLabelView()
+	details = gui_toolkits.ScrolledLabelView()
 	carea.pack_start(progressbar, False, True)
 	carea.pack_start(details, True, True)
 	
 	aarea = dlg.get_action_area()
 	btn_cancel = aarea.children()[0]
-	btn_show_details = gemlvtk.StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
+	btn_show_details = gui_toolkits.StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
 	btn_show_details.connect('clicked', act_show_details_on_send_panel, dlg, details)
 	
 	aarea.pack_start(btn_show_details, False, True)
@@ -2976,16 +3053,16 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	global StopSending
 	StopSending = False
 	
-	recipients_deep = map(lambda h: email_to_send.get_all(h), RecipientHeaders)
-	recipients_flat = reduce(lambda a, b: a+b, map(lambda x: [] if x is None else x, recipients_deep))
-	recipients_addr = gemlv.utils.getaddresslines(recipients_flat, eml=email_to_send)
+	recipients_deep = [email_to_send.headers[h].encoded for h in RecipientHeaders]
+	recipients_flat = reduce(lambda a, b: a+b, recipients_deep)
+	recipients_addr = getaddresslines(recipients_flat)
 	
 	sendmail_envs = {
 		'FROM': get_email_address_from_headers('From', email_to_send),
 		'RCPT': ','.join(map(lambda al: al.email, recipients_addr)),
 	}
 	
-	child_read, parent_write, parent_read, child_write = get_pipe_handlers(2)
+	child_read, parent_write, parent_read, child_write = new_pipe_handles(2)
 	pid = os.fork()
 	if pid == 0:
 		parent_read.close()
@@ -3055,7 +3132,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
 	
-	btn_save_sent = gemlvtk.StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
+	btn_save_sent = gui_toolkits.StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
 	btn_save_sent.connect('clicked', on_save_sent)
 	dlg.get_action_area().pack_start(btn_save_sent, False, False)
 	
@@ -3067,22 +3144,22 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 			menubutton_mdn.set_markup(menubutton_mdn.get_data('saved-label'))
 		# Assume the last line is the queue id.
 		sendmail_queue_id = resp.strip().split('\n')[-1]
-		add_composer_header(HDR_XQID, sendmail_queue_id)
-		add_composer_header(HDR_XSD, email.utils.formatdate(time.time(), True))
+		composer_headers.add(HDR_XQID, sendmail_queue_id)
+		composer_headers.add(HDR_XSD, email.utils.formatdate(time.time(), True))
 		win_comp.set_data('email-sent', True)
 		composer_text_buffer.set_modified(False)
 		# Save Message-ID to the email file's xattr which we forwarded or replied to.
 		origin_email_fh = win_main.get_data('email-file-handle')
 		if origin_email_fh is not None:
 			origin_email_file = win_main.get_data('email-file')
-			MsgId = email_to_send[HDR_MID]
+			msgid = email_to_send.header[HDR_MID].decoded
 			for xattrname in win_comp.get_data('add-msgid-xattr-on-send'):
-				append_xattrs(origin_email_fh, {xattrname: MsgId}, origin_email_file, glue=',')
+				xattr.append(origin_email_fh, {xattrname: msgid}, origin_email_file, glue=',')
 		# Save queue id to the composed email file's xattr.
 		emailfile = win_comp.get_data('saved-to-file')
 		if emailfile is not None:
 			# Note: queue id won't be saved in xattributes if you have not saved the email before sent.
-			append_xattrs(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
+			xattr.append(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
 		# Show button to save sent email in 'Sent/' folder
 		btn_save_sent.show_all()
 		# Save recipient to the auto addressbook.
@@ -3093,7 +3170,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 		dlg.set_markup(' '.join([_("Sendmail error: %s") % (status.code,), _("signal: %s") % (status.signal,) if status.signal!=0 else '']))
 	btn_show_details.show()
 	details_widget.set_text(resp)
-	update_composer_status_message(do_build=False)
+	update_composer_status_message()
 	gtk.threads_leave()
 
 def act_show_details_on_send_panel(btn, dlg, details):
@@ -3112,161 +3189,171 @@ def sending_cancel(btn, pid, writer_fh):
 	StopSending = True
 	os.kill(pid, signal.SIGINT)
 
-def iterate_composer_headers():
-	for hname, hval in get_composer_headers(None) + [('Subject', get_composer_subject())]:
-		if len(hname) > 0 and len(hval) > 0:
-			yield (hname, hval)
 
 def make_msgid():
 	# Don't leak hostname, IP, or time in generated Message-ID.
 	return '<%s@%s>' % (uuid.uuid4().hex, uuid.uuid4().hex)
 
-def encode_header(header_name, header_value):
-	"""
-	Make an RFC 2047-compilant header value string (without line breaks),
-	ie. encode non-ascii-only words, but leave ascii-only words as-is.
-	Encode subsequent non-ascii-only words together to keep space chars.
-	"""
-	chunks = []
-	CHUNK_PLAIN, CHUNK_ENCODED = range(2)
-	separator = ' '
-	prev_word = None
-	prev_chunk = None
-	for word in header_value.split(separator):
-		try:
-			if prev_chunk is not None and word == '':
-				# two or more spaces follow a non-ascii-only word, this might result
-				# in two subsequent MIME-encoded words (two or more spaces between them)
-				# which is in turn decoded as one continuous word instead of two.
-				# ie. whitespace between MIME-encoded words are ignored.
-				# so jump to the CHUNK_ENCODED branch to snap the extra space to the
-				# word before it.
-				raise UnicodeError()
-			chunk = email.Header.make_header([(word, None)], header_name=header_name)
-			chunk_type = CHUNK_PLAIN
-		except (UnicodeDecodeError, UnicodeError):
-			if prev_word is not None:
-				word = prev_word + separator + word
-			chunk = email.Header.make_header([(word, 'UTF-8')], header_name=header_name)
-			chunk_type = CHUNK_ENCODED
-		chunk = chunk.encode()
-		if chunk_type == CHUNK_PLAIN:
-			if prev_chunk is not None:
-				chunks.append(prev_chunk)
-			chunks.append(chunk)
-			prev_word = None
-			prev_chunk = None
-		else:
-			prev_word = word
-			prev_chunk = chunk
-	if prev_chunk is not None:
-		chunks.append(prev_chunk)
-	return separator.join(chunks)
 
-def build_newemail():
-	keep_headers = win_comp.get_data('blank-email-default-headers')
-	for hname, hval in NewEmail._headers:
-		if hname.lower() not in keep_headers:
-			del NewEmail[hname]
-	for hname, hval in iterate_composer_headers():
-		mime_encoded_header = encode_header(hname, hval)
-		if hname.lower() in keep_headers:
-			del NewEmail[hname]
-		NewEmail.add_header(hname, mime_encoded_header)
+def build_newemail(with_attachment_data=True):
 	
-	# if there is not Message-ID but we want to add it to xattrs on successful sending
-	if not NewEmail[HDR_MID] and win_comp.get_data('add-msgid-xattr-on-send'):
-		NewEmail.add_header(HDR_MID, make_msgid())
+	# if there is not Message-ID yet but we want to add it to xattrs on successful sending:
+	msgid = composer_headers.value[HDR_MID]
+	if msgid is None and win_comp.get_data('add-msgid-xattr-on-send'):
+		composer_headers.add(HDR_MID, make_msgid())
+	
+	result_eml = make_new_blank_email()
+	
+	for hname in composer_headers.header_names:
+		del result_eml.headers[hname]
+	
+	for hname in SemiSingletonHeaders:
+		hval = ', '.join(composer_headers.multi_value[hname])
+		if hval:
+			result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
+	
+	for hname, hval in composer_headers.headers:
+		if hname not in SemiSingletonHeaders:
+			result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
 	
 	text = composer_text_buffer.get_text_all()
 	enc = analyze_for_optimal_encoding(text)
 	text = text.encode(enc)
-	part_body = NewEmail.get_payload()[0]
-	part_body.replace_header(HDR_CTE, enc)
-	part_body.set_payload(text)
+	part_body = result_eml.parts[0]
+	part_body.header[HDR_CTE].encoded = enc
+	part_body.payload_encoded = text
+	
+	if with_attachment_data:
+		for part in NewEmail.parts[1:]:
+			result_eml.attach(part)
+	else:
+		# clone each MIME parts (except the first one which is part_body) without scalar payload
+		latest_parts = [result_eml]
+		for depth, index, part in NewEmail.iterate_parts_recursively():
+			if depth == 0: continue  # this is the main email object
+			if depth == 1 and index == 0: continue  # this is the email body part
+			if part.content_type == MIMETYPE_DN:
+				# attach disposition notification part directly, it is not from a file.
+				latest_parts[depth-1].attach(part)
+				continue
+			# TODO: what to do with forwarded envelopes here?
+			thin_part = make_thin_mime_part(part)
+			latest_parts[depth-1].attach(thin_part)
+			if len(latest_parts) <= depth: latest_parts.append(thin_part)
+			latest_parts[depth] = thin_part
+	
+	return result_eml
+
+def make_thin_mime_part(eml):
+	"""
+	Create a MIME message without payload, but set content metadata in MIME headers.
+	It is intended only for the user's personal use, not to send away,
+	because it records the local filesystem path where the attachments came from.
+	"""
+	thin_eml = gemlv.email.Email(MIMEBase(eml.content_type.main, eml.content_type.sub))
+	# remove default core headers, all core and custom headers will be copied later.
+	for header_name in thin_eml.headers.keys:
+		del thin_eml.headers[header_name]
+	# copy all headers from the original email.
+	for header in eml.headers.items:
+		thin_eml.headers.append(header)
+	thin_eml.preamble = eml.preamble
+	thin_eml.epilogue = eml.epilogue
+	if hasattr(eml._ll_email, 'payload_data_origin_path'):
+		# record where this file was attached from, if it's known
+		origin_path = eml._ll_email.payload_data_origin_path
+		thin_eml.header['Content-Location'].decoded = 'file://' + urllib2.quote(origin_path.encode('utf-8'))
+		# intentionally skip payload here.
+	else:
+		# copy the payload if the file where the data come from is not known
+		# and if it's a leaf MIME part (ie. not multipart)
+		if not eml.is_multipart():
+			thin_eml.payload_encoded = eml.payload_encoded
+	return thin_eml
 
 def make_protected_headers_part(eml):
-	protected_headers_part = MIMEText('')
-	protected_headers_part.set_type(MIMETYPE_HEADERS)
+	protected_headers_part = gemlv.email.Email(MIMEText(''))
+	protected_headers_part.content_type = MIMETYPE_HEADERS
 	protected_headers_part.set_charset('UTF-8')
-	protected_headers_part.set_param('protected-headers', 'v1', header=HDR_CT)
-	protected_headers_part.add_header(HDR_CD, 'inline', filename='rfc822-headers.txt')
-	protected_headers_part.replace_header(HDR_CTE, 'quoted-printable')
-	for hname, hvalue_mimeencoded in eml._headers:
+	protected_headers_part.header[HDR_CT].param['protected-headers'].encoded = 'v1'
+	protected_headers_part.header[HDR_CD].encoded = 'inline'
+	protected_headers_part.header[HDR_CD].param['filename'].decoded = 'rfc822-headers.txt'
+	protected_headers_part.header[HDR_CTE].encoded = 'quoted-printable'
+	for header in eml.headers.items:
 		# sign main email headers, except base technical ones 
 		# and other headers not being in the recipients' interest
-		if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-			protected_headers_part._payload += '%s: %s\n' % (hname, decode_mime_header(hvalue_mimeencoded, eml=eml).encode('quoted-printable'))
+		if header.name not in DontLeakHeaders and not header.name.startswith('Content-') and header.name not in CoreTechnicalHeaders:
+			protected_headers_part.append_encoded_payload('%s: %s\n' % (header.name, header.value.decoded.encode('quoted-printable')))
 	return protected_headers_part
 
 def build_newemail_to_send():
-	build_newemail()
-	email_to_send = email.message_from_string(NewEmail.as_string())
-	del email_to_send[HDR_XSD]
-	del email_to_send[HDR_XQID]
+	email_to_send = build_newemail()
+	del email_to_send.headers[HDR_XSD]
+	del email_to_send.headers[HDR_XQID]
 	
 	# set the Disposition-Notification-To header if the user has not set it.
-	if toggle_rqdn.get_active() and email_to_send[HDR_DNT] == '':
-		for addr in filter(None, get_composer_headers(['From', 'Reply-To'])):
-			email_to_send[HDR_DNT] = addr
+	if toggle_rqdn.get_active() and email_to_send.header[HDR_DNT].decoded == '':
+		for addr in compact(composer_headers.multi_value[('From', 'Reply-To')]):
+			email_to_send.header[HDR_DNT].decoded = addr
 			break
 	
 	# crypto-sign
 	if toggle_sign.get_active():
-		signed_email = MIMEMultipart(NewEmail.get_content_subtype())
-		signed_email.set_param('protected-headers', 'v1', header=HDR_CT)
-		signature_part = MIMEBase('application', 'pgp-signature')
+		signed_email = gemlv.email.Email(MIMEMultipart(NewEmail.content_type.sub))
+		signed_email.header[HDR_CT].param['protected-headers'].decoded = 'v1'
+		signature_part = gemlv.email.Email(MIMEBase('application', 'pgp-signature'))
 		
 		# make a MIME part containing the email's headers as a mean to sign headers as well.
 		protected_headers_part = make_protected_headers_part(email_to_send)
 		signed_email.attach(protected_headers_part)
 		# copy over the email's headers to the attached signed email. this is another way to sign headers.
-		for hname, hvalue in email_to_send._headers:
-			if hname not in DontLeakHeaders and not hname.startswith('Content-') and hname not in CoreTechnicalHeaders:
-				signed_email.add_header(hname, hvalue)
+		for header in email_to_send.headers.items:
+			if header.name not in DontLeakHeaders and not header.name.startswith('Content-') and header.name not in CoreTechnicalHeaders:
+				signed_email.headers.append(header)
 		
 		# move all attachments over to the signed email.
-		for part in email_to_send.get_payload():
+		for part in email_to_send.parts:
 			signed_email.attach(part)
-		email_to_send.set_payload([])
+		email_to_send.parts.clear()
 		# change the root MIME email type to indicate that it is (including) a signed email.
-		email_to_send.set_type('multipart/signed')
-		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-signature')
+		email_to_send.content_type = 'multipart/signed'
+		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-signature'
 		
 		# produce signature
-		signed_email = email.message_from_string(signed_email.as_string())
 		data_to_sign = signed_email.as_string()
 		# workaround missing newline between boundaries, https://bugs.python.org/issue14983
-		if signed_email.get_content_maintype() == 'multipart' and data_to_sign[-1] != '\n':
+		if signed_email.content_type.main == 'multipart' and data_to_sign[-1] != '\n':
 			data_to_sign += '\n'
 			# there is no trailing '\n' after the closing boundary;
 			# this adds a '\n' at the end of the raw multipart/* part:
 			signed_email.epilogue = ''
 		signature = generate_signature(email_to_send, data_to_sign)
-		signature_part.set_payload(signature)
-		signature_part.add_header(HDR_CD, 'attachment', filename='signature.pgp.asc')
+		signature_part.payload_encoded = signature
+		signature_part.header[HDR_CD].decoded = 'attachment'
+		signature_part.header[HDR_CD].param['filename'].decoded = 'signature.pgp.asc'
 		email_to_send.attach(signed_email)
 		email_to_send.attach(signature_part)
 	
 	# gpg encryption
 	if toggle_encrypt.get_active():
-		crypt_meta_part = MIMEBase('application', 'pgp-encrypted')
-		crypt_meta_part.set_payload('Version: 1\n')
-		crypt_email = MIMEBase(*MIMETYPE_OCTETSTREAM.split('/'))
-		crypt_email.add_header(HDR_CD, 'attachment', filename='encrypted_message.pgp.asc')
+		crypt_meta_part = gemlv.email.Email(MIMEBase('application', 'pgp-encrypted'))
+		crypt_meta_part.payload_encoded = 'Version: 1\n'
+		crypt_email = gemlv.email.Email(MIMEBase(MIMETYPE_OCTETSTREAM.main, MIMETYPE_OCTETSTREAM.sub))
+		crypt_email.header[HDR_CD].value.encoded = 'attachment'
+		crypt_email.header[HDR_CD].param['filename'].decoded = 'encrypted_message.pgp.asc'
 		if not toggle_sign.get_active():
 			protected_headers_part = make_protected_headers_part(email_to_send)
-			email_to_send._payload = [protected_headers_part] + email_to_send._payload
-		crypt_email.set_payload(gpg_encrypt_email(email_to_send))
-		email_to_send.set_payload([])
-		email_to_send.set_type('multipart/encrypted')
-		set_header_parameter(email_to_send, HDR_CT, 'protocol', 'application/pgp-encrypted')
+			email_to_send.prepend_part(protected_headers_part)
+		crypt_email.payload_encoded = gpg_encrypt_email(email_to_send)
+		email_to_send.parts.clear()
+		email_to_send.content_type = 'multipart/encrypted'
+		email_to_send.header[HDR_CT].param['protocol'].decoded = 'application/pgp-encrypted'
 		email_to_send.attach(crypt_meta_part)
 		email_to_send.attach(crypt_email)
 		for hname in HeadersObfuscate:
-			if email_to_send.has_key(hname):
-				del email_to_send[hname]
-				email_to_send[hname] = '...'
+			if hname in email_to_send.headers:
+				del email_to_send.headers[hname]
+				email_to_send.header[hname] = '...'
 	
 	add_autocrypt_headers(email_to_send)
 	
@@ -3277,53 +3364,52 @@ def gpg_encrypt_email(eml):
 	hidden_recipients = []
 	for array, hnames in (recipients, ['From', 'To', 'Cc']), (hidden_recipients, ['Bcc']):
 		for hname in hnames:
-			array.extend(['<'+al.email+'>' for al in gemlv.utils.getaddresslines(eml.get_all(hname) or [])])
+			array.extend([al.email for al in getaddresslines(eml.headers[hname].encoded)])
 	extra_args = []
 	for r in hidden_recipients:
 		extra_args.extend(['--hidden-recipient', r])
-	email_to_encrypt = email.message_from_string(eml.as_string())
+	email_to_encrypt = gemlv.email.Email(email.message_from_string(eml.as_string()))
 	for hname in DontLeakHeaders:
-		del email_to_encrypt[hname]
+		del email_to_encrypt.headers[hname]
 	try:
 		crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
-	except Exception as err:
-		display_error(_("Encryption error"), str(err))
-		raise err
+	except Exception as e:
+		save_exception_traceback(e, traceback.format_exc())
+		display_error(_("Encryption error"), str(e))
+		raise
 	if not crypt.ok:
 		raise GnuPGEncryptError(crypt)
 	return crypt.data
 
 def add_autocrypt_headers(eml):
-	hname = 'Autocrypt'
 	try:
-		author_email_address = find_signature_author_address(eml)
+		email_identity = find_signature_author_address(eml)
 	except GnuPGSignError:
 		return
 	keydata = None
 	try:
-		keydata = gpg_export_pubkey(author_email_address)
+		keydata = gpg_export_pubkey('<'+email_identity+'>')
 	except GnuPGError:
 		pass
 	if keydata:
-		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (author_email_address, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
-		del eml[hname]
-		eml[hname] = hvalue
+		hvalue = 'addr=%s; prefer-encrypt=mutual; keydata= %s' % (email_identity, re.sub('(.{%d})'%email.Header.MAXLINELEN, '\\1\n ', keydata).rstrip())
+		eml.header['Autocrypt'].value.encoded = hvalue
 
 def find_signature_author_address(email_root):
 	"""
-	Find out with which GPG uid (email address) the email should be signed with.
+	Find out with which identity (email address) the email should be signed with.
 	"""
-	addr = gemlv.utils.getaddresslines(email_root.get_all('From') or [])
+	addr = getaddresslines(email_root.headers['From'].encoded)
 	if len(addr) != 1:
 		raise GnuPGSignError(_("No 'From' address (or more of them) given to match a GPG key to crypto-sign with."))
 	author_address = addr[0].email
 	return author_address
 
 def generate_signature(email_root, data_to_sign):
-	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), find_signature_author_address(email_root))
+	return gpg_sign_data(data_to_sign.replace('\n', '\r\n'), '<'+find_signature_author_address(email_root)+'>')
 
 def propose_and_confirm_a_filename_to_save_edit():
-	subj = get_composer_subject()
+	subj = composer_headers.value[HDR_SUBJ]
 	proposed_filename = ''
 	if not win_comp.get_data('email-sent') or not subj:
 		proposed_filename += _("Draft")
@@ -3339,10 +3425,10 @@ def act_save_edit(save_as=False):
 	if filename is None or save_as:
 		filename = propose_and_confirm_a_filename_to_save_edit()
 	if filename is not None:
-		build_newemail()
+		eml_to_save = build_newemail()
 		# NOTE: do not ask overwrite, because either the file chooser dialog asked it previously,
 		# or we're updating an earlier saved file.
-		if save_to_file(NewEmail, filename, ask_overwrite=False) == True:
+		if save_to_file(eml_to_save, filename, ask_overwrite=False) == True:
 			win_comp.set_data('saved-to-file', filename)
 			on_after_save_draft()
 
@@ -3363,18 +3449,13 @@ def on_save_sent(*X):
 def on_after_save_draft():
 	set_unsaved(False)
 	composer_text_buffer.set_modified(False)
-	update_window_title(win_comp, win_comp.get_data('saved-to-file'), get_composer_subject())
-	update_composer_status_message(do_build=False)
+	update_window_title(win_comp, win_comp.get_data('saved-to-file'), composer_headers.value[HDR_SUBJ])
+	update_composer_status_message()
 
-def get_composed_email_size():
-	return len(NewEmail.as_string())
-
-def update_composer_status_message(do_build=True):
-	if do_build:
-		build_newemail()
-	size = get_composed_email_size()
-	status_msgs = [_("Size: %s") % (human_size(size),)]
-	x_sent_date_last = get_composer_header_last(HDR_XSD)
+def update_composer_status_message():
+	if NewEmail is None: return
+	status_msgs = [_("Size") + ": %s" % human_size(NewEmail.size_approx)]
+	x_sent_date_last = composer_headers.value[HDR_XSD]
 	if x_sent_date_last:
 		try:
 			dt = email.utils.parsedate_tz(x_sent_date_last)
@@ -3384,31 +3465,42 @@ def update_composer_status_message(do_build=True):
 	tb_comp_label.set_labels(status_msgs)
 
 def update_composer_toolbar_toggle_buttons():
-	ninja_toggle(toggle_unimportant, False)
-	ninja_toggle(toggle_unimportant, False)
-	ninja_toggle(toggle_rqdn, False)
-	
-	for hname, hval in iterate_composer_headers():
+	encountered_headers = {}
+	for hname, hval in composer_headers.headers:
 		if hname == 'Importance':
 			if hval.lower().find('low')>-1:
-				ninja_toggle(toggle_unimportant, True)
-			if hval.lower().find('high')>-1:
-				ninja_toggle(toggle_important, True)
-		if hname == HDR_GDR:
-			ninja_toggle(toggle_rqdn, True)
+				toggle_unimportant.set_active(True)
+				toggle_important.set_active(False)
+				encountered_headers[hname] = True
+			elif hval.lower().find('high')>-1:
+				toggle_important.set_active(True)
+				toggle_unimportant.set_active(False)
+				encountered_headers[hname] = True
+		if hname in [HDR_GDR, HDR_DNT]:
+			toggle_rqdn.set_active(True)
+			encountered_headers[hname] = True
+	if 'Importance' not in encountered_headers:
+		toggle_important.set_active(False)
+		toggle_unimportant.set_active(False)
+	if HDR_GDR not in encountered_headers and HDR_DNT not in encountered_headers:
+		toggle_rqdn.set_active(False)
 
 def update_window_title(window, filename, subject_text):
 	window.set_title('%s - %s' % (subject_text or os.path.basename(filename or '') or _("Unsaved"), PROGNAME))
 
 def update_addressbook_highlights(abook_model=None):
+	col_data, col_label = 0, 1
 	if abook_model is None:
 		abook_model = win_comp.get_data('addressbook-model')
 		if abook_model is None: return
 	added_recipients = get_composer_all_recipients_emails()
 	for item in abook_model:
-		item_emailaddresses = gemlv.utils.getaddresslines([item[0]])
+		# Note: getaddresslines() expects MIME-encoded strings, but item[col_data] is MIME-decoded,
+		# however it does not matter since we take only AddressLine.email which is not affected MIME-coding.
+		item_emailaddresses = getaddresslines([item[col_data]])
 		try:
-			item[1] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddresses[0].email in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[0]),)
+			item_emailaddress = item_emailaddresses[0]
+			item[col_label] = (PMU_ADDRESSBOOK_ADDED_ADDRESS if item_emailaddress.email in added_recipients else PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS) % (glib.markup_escape_text(item[col_data]),)
 		except IndexError:
 			pass
 
@@ -3429,9 +3521,9 @@ class AddressBrowser(gtk.Window):
 		self.treeview = gtk.TreeView(self.listfilter)
 		self.selection = self.treeview.get_selection()
 		box_buttons = gtk.HBox(True, 2)
-		self.b_add = gemlvtk.StockButton(stock=gtk.STOCK_ADD)
-		self.b_edit = gemlvtk.StockButton(stock=gtk.STOCK_EDIT)
-		b_close = gemlvtk.StockButton(stock=gtk.STOCK_CLOSE)
+		self.b_add = gui_toolkits.StockButton(stock=gtk.STOCK_ADD)
+		self.b_edit = gui_toolkits.StockButton(stock=gtk.STOCK_EDIT)
+		b_close = gui_toolkits.StockButton(stock=gtk.STOCK_CLOSE)
 		
 		self.set_modal(modal_window)
 		winname = 'addressbook'
@@ -3455,7 +3547,7 @@ class AddressBrowser(gtk.Window):
 		entry.connect('changed', lambda _x: self.listfilter.refilter())
 		self.treeview.connect('button-press-event', self.handle_dblclick)
 		self.connect('delete-event', self.click_close)
-		gemlvtk.add_key_binding(self, 'Escape', self.click_close)
+		gui_toolkits.add_key_binding(self, 'Escape', self.click_close)
 		b_close.connect('clicked', self.click_close)
 		self.b_add.connect('clicked', self.click_add)
 		self.b_edit.connect('clicked', self.click_edit)
@@ -3513,8 +3605,8 @@ def act_addressbook():
 		return True
 	
 	def on_items_add(addressbrowser, items):
-		clear_composer_headers('To', '')
-		add_composer_headers('To', items)
+		composer_headers.remove_multi(name='To', value='')
+		composer_headers.add_multi('To', items)
 	
 	def on_edit(addressbrowser, _items):
 		addressbrowser.close()
@@ -3549,10 +3641,6 @@ def act_addressbook():
 	
 	return True
 
-def debug_multipart(eml):
-	for depth, part in walk_multipart(eml):
-		warnx('%s- [%s] %d %s' % (depth*2*' ', part.get_content_type(), len(part.get_payload()), decode_mimetext(part.get_filename())))
-
 def act_attach():
 	filenames = choose_open_files(custom_accept_button_stock='mail-attachment')
 	if len(filenames) != 0:
@@ -3560,45 +3648,57 @@ def act_attach():
 			attach_path(filename, filename)
 		update_composer_status_message()
 
-def byte_is_identical_qp(b):
-	if b == '\r' or b == '\n':
-		return True
-	if ord(b) < ord(' ') or ord(b) > ord('~') or b == '=':
-		return False
-	return True
 
-def analyze_for_optimal_encoding(buf):
-	# Guess the optimal transfer encoding.
-	approx_encoded_size_b64 = len(buf) * 1.37
-	approx_encoded_size_qp = sum(map(lambda b: 1 if byte_is_identical_qp(b) else 3, buf))
-	# add an extra equal mark and a linefeed for each 76th output byte
-	approx_encoded_size_qp += 2 * (approx_encoded_size_qp / 76)
-	
-	if approx_encoded_size_b64 < approx_encoded_size_qp:
-		return 'base64'
-	else:
-		return 'quoted-printable'
+def act_composer_attachment_menu_item_activated(mi, func):
+	itpath, _col = panel_attachments.get_cursor()
+	if itpath is None: raise ValueError
+	it = Attachments.get_iter(itpath)
+	part = Attachments[it][COL_ATTACHMENTS_EML]
+	opts = PropertyStoreClass()
+	opts.treeview_iterator = it
+	opts.treeview_iterator_path = itpath
+	opts.part = part
+	try:
+		opts.original_path = part._ll_email.payload_data_origin_path
+	except AttributeError as e:
+		opts.original_path = None
+	func(opts)
+
+def act_composer_attachment_menu_open_from_memory(opts):
+	open_payload_as_temp_file(opts.part)
+
+def act_composer_attachment_menu_open_from_disk(opts):
+	if not opts.original_path:
+		display_error(_("Source file not known."))
+		return
+	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
+
+def act_composer_attachment_menu_rename(opts):
+	tvc = panel_attachments.get_data('edit-treeviewcolumn')
+	cr = panel_attachments.get_data('edit-cellrenderer')
+	panel_attachments.set_cursor_on_cell(opts.treeview_iterator_path, focus_column=tvc, focus_cell=cr, start_editing=True)
+
+def act_composer_attachment_menu_detach(opts):
+	remove_attachments([opts.treeview_iterator_path])
+
 
 def on_composer_attachments_row_changed(model, itpath, iterator):
-	hid = model.get_data('row-changed-signal-handler-id')
-	model.handler_block(hid)
-	part = model[iterator][0]
-	model[iterator][4] = human_size(get_email_part_size_net(part))
-	model.handler_unblock(hid)
+	part = model[iterator][COL_ATTACHMENTS_EML]
+	model[iterator][COL_ATTACHMENTS_SIZE_LABEL] = human_size(part.size_decoded_approx)
 
 def attach_blob(data, parent_iter=None, check_unique_file=True):
 	mime = get_mime_by_data(data)
-	ct_main, ct_sub = mime.split('/')
 	basename = 'file%s' % (get_extension_by_mime(mime),)
 	
-	part = MIMEBase(ct_main, ct_sub)
-	attachment_email = email.message_from_string(data)
+	part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
+	attachment_email = gemlv.email.Email(email.message_from_string(data))
 	if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 		part.attach(attachment_email)
 	else:
 		enc = analyze_for_optimal_encoding(data[0:4096*3])
-		part.add_header(HDR_CTE, enc)
-		part.set_payload(data.encode(enc))
+		part.header[HDR_CTE].decoded = enc
+		# TODO: in background thread?
+		part.payload_encoded = data.encode(enc)
 	if check_unique_file and not check_unique_attachment(part):
 		display_info_box_async(_("This file is already attached"))
 		return False
@@ -3656,6 +3756,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 		with BasicReuseable(os.lstat(attachment_path)) as s:
 			content_disposition_params['modification_date'] = email.utils.formatdate(s.st_mtime, True)
 			if not isalink:
+				# record the POSIX permission bits including the SUID/SGID octet, if the recipient party
+				# deems this octet unsafe to set on a file, may she ignore it.
 				content_disposition_params['posix_mode'] = '%05o' % (s.st_mode & 07777,)
 	except OSError as e:
 		display_error(e)
@@ -3663,25 +3765,29 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	
 	if mime is None:
 		mime = get_mime_by_filepath(attachment_path)
-	ct_main, ct_sub = mime.split('/')
 	
 	if os.path.isdir(attachment_path) and not isalink:
-		part = MIMEMultipart('related')
+		part = gemlv.email.Email(MIMEMultipart('related'))
 	else:
-		part = MIMEBase(ct_main, ct_sub)
-		
 		if isalink:
-			part.set_payload(symlink_content)
+			part = gemlv.email.Email(MIMETYPE_SYMLINK)
+			part.header[HDR_CTE].decoded = 'quoted-printable'
+			part.payload_encoded = symlink_content.encode('quoted-printable')
 		else:
+			part = gemlv.email.Email(MIMEBase(mime.main, mime.sub))
+			part._ll_email.payload_data_origin_path = attachment_path
+			
 			# Check whether this file is an email file.
 			attachment_email = email.message_from_file(open(attachment_path, 'r'))
 			if mime == MIMETYPE_EMAIL or attachment_email.is_multipart():
 				# File being attached is an Email (according to mime type or by detected multipart)
 				# TODO: remove sensitive headers?
+				attachment_email = gemlv.email.Email(attachment_email)
+				attachment_email._ll_email.payload_data_origin_path = attachment_path
 				part.attach(attachment_email)
 			else:
 				del attachment_email
-				part.set_payload('')
+				part.payload_encoded = ''
 				enc = None
 				# Load file into memory
 				try:
@@ -3695,8 +3801,8 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 					if buf == '': break
 					if enc is None:
 						enc = analyze_for_optimal_encoding(buf)
-						part.add_header(HDR_CTE, enc)
-					part._payload += buf.encode(enc)
+						part.header[HDR_CTE].decoded = enc
+					part.append_encoded_payload(buf.encode(enc))
 				fh.close()
 	
 	basename = os.path.basename(original_path)
@@ -3716,43 +3822,50 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 	return True
 
 def attach__internal(parent_iter=None, content_disposition_params={}, basename=None, part=None, mime=None):
-	global NewEmail
+	assert 'attachment' not in content_disposition_params
+	assert 'filename' not in content_disposition_params
+	
+	# find that multipart MIME part which is closest to parent_iter
 	while True:
 		if parent_iter is None:
 			parent_part = NewEmail
 			break
 		else:
-			parent_part = Attachments[parent_iter][0]
-			if type(parent_part.get_payload()) == list: break
+			parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
+			if parent_part.is_multipart():
+				break
 			parent_iter = Attachments.iter_parent(parent_iter)
 	
-	ct_main, ct_sub = mime.split('/')
-	part.add_header(HDR_CD, 'attachment', filename=basename, **content_disposition_params)
+	part.header[HDR_CD].params.decoded = [('attachment', ''), ('filename', basename)] + content_disposition_params.items()
 	parent_part.attach(part)
 	set_unsaved()
 	
-	iterator = Attachments.append(parent_iter, [part, basename, get_stock_by_mime(ct_main, ct_sub), None, '', calc_attachment_checksum(part)])
+	iterator = Attachments.append(parent_iter, [part, glib.markup_escape_text(basename), gui_toolkits.get_stock_icon_by_mime(mime.main, mime.sub), None, '', calc_attachment_checksum(part)])
 	if parent_iter is not None:
 		panel_attachments.expand_row(Attachments.get_path(parent_iter), False)
 	
-	debug_multipart(NewEmail)
-	subparts = part.get_payload(decode=False)
-	if mime == MIMETYPE_EMAIL or (type(subparts) == list and len(subparts) > 0):
-		attachment_email = subparts[0]
-		if isinstance(attachment_email, email.message.Message):
-			amid = attachment_email.get(HDR_MID)
-			if amid is not None:
+	if mime == MIMETYPE_EMAIL or len(part.parts) > 0:
+		attachment_email = part.parts[0]
+		try:
+			amid = attachment_email.header[HDR_MID].decoded
+			if amid:
 				# Add Message-ID to main email's References.
 				composer_append_to_list_header(HDR_REF, [amid])
-				part.add_header(HDR_MID, amid)
+				part.headers.append(gemlv.email.Header(HDR_MID, amid))
 			# Add parts to the attachments panel which are already attached to this email file.
 			add_already_attached_parts(iterator, attachment_email)
+		except Exception as e:
+			# can not look into message/rfc822 file as it was an email
+			warnx(str(e))
 	
 	return iterator
 
 def calc_attachment_checksum(part):
-	data = part.get_payload(decode=True)
-	if data is None or data == '': return None
+	if part.is_multipart():
+		return None
+	data = part.payload_decoded
+	if data == '':
+		return None
 	return hashlib.md5(data).hexdigest()
 
 def check_unique_attachment(mimepart):
@@ -3766,7 +3879,7 @@ def check_unique_attachment(mimepart):
 	result = {'checksum': checksum, 'unique': True}
 	
 	def compare_checksums(ts_model, ts_path, ts_iter, result):
-		cksum = ts_model[ts_path][5]
+		cksum = ts_model[ts_path][COL_ATTACHMENTS_CHECKSUM]
 		if cksum == result['checksum']:
 			result['unique'] = False
 			# terminate foreach() loop:
@@ -3775,16 +3888,13 @@ def check_unique_attachment(mimepart):
 	Attachments.foreach(compare_checksums, result)
 	return result['unique']
 
-def add_already_attached_parts(root_iter, eml, callback=lambda x: True):
+def add_already_attached_parts(parent_iter, eml, callback = lambda x: True):
 	if callback(eml):
-		ct_main, ct_sub = eml.get_content_maintype(), eml.get_content_subtype()
-		name = decode_mimetext(eml.get_filename()) or '[%s/%s]' % (ct_main, ct_sub)
-		icon = get_stock_by_mime(ct_main, ct_sub)
-		iterator = Attachments.append(root_iter, [eml, name, icon, None, '', calc_attachment_checksum(eml)])
-		subparts = eml.get_payload()
-		if type(subparts) == list:
-			for subpart in subparts:
-				add_already_attached_parts(iterator, subpart, callback=callback)
+		label = eml.filename or '[%s]' % eml.content_type
+		icon = gui_toolkits.get_stock_icon_by_mime(eml.content_type.main, eml.content_type.sub)
+		iterator = Attachments.append(parent_iter, [eml, glib.markup_escape_text(label), icon, None, '', calc_attachment_checksum(eml)])
+		for subpart in eml.parts:
+			add_already_attached_parts(iterator, subpart, callback=callback)
 
 def drop_attachment_acceptable(targets):
 	acceptable_types = MIMETYPE_URILIST, MIMETYPE_OCTETSTREAM
@@ -3853,34 +3963,34 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 			if drop_info is not None:
 				relative_iterator_path, relation = drop_info
 				relative_iterator = Attachments.get_iter(relative_iterator_path)
-				relative_part = Attachments[relative_iterator][0]
+				relative_part = Attachments[relative_iterator][COL_ATTACHMENTS_EML]
 				if relation in [gtk.TREE_VIEW_DROP_BEFORE, gtk.TREE_VIEW_DROP_AFTER]:
 					parent_iter = Attachments.iter_parent(relative_iterator)
 					if parent_iter is None:
 						parent_part = NewEmail
 					else:
-						parent_part = Attachments[parent_iter][0]
+						parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
 					if relation == gtk.TREE_VIEW_DROP_BEFORE:
-						newindex = parent_part._payload.index(relative_part)
+						newindex = parent_part.parts.index(relative_part)
 					elif relation == gtk.TREE_VIEW_DROP_AFTER:
-						newindex = parent_part._payload.index(relative_part) + 1
+						newindex = parent_part.parts.index(relative_part) + 1
 				elif relation in [gtk.TREE_VIEW_DROP_INTO_OR_BEFORE, gtk.TREE_VIEW_DROP_INTO_OR_AFTER]:
 					parent_part = relative_part
 					newindex = 0
-				if type(parent_part.get_payload()) == list:
+				if parent_part.is_multipart():
 					# Reorder subject_part attachment.
-					subject_part = Attachments[subject_path][0]
+					subject_part = Attachments[subject_path][COL_ATTACHMENTS_EML]
 					old_parent_iter = Attachments.iter_parent(Attachments.get_iter(subject_path))
 					if old_parent_iter is None:
 						old_parent_part = NewEmail
 					else:
-						old_parent_part = Attachments[old_parent_iter][0]
+						old_parent_part = Attachments[old_parent_iter][COL_ATTACHMENTS_EML]
 					if old_parent_part == parent_part:
-						idx = old_parent_part._payload.index(subject_part)
+						idx = old_parent_part.parts.index(subject_part)
 						if idx < newindex:
 							newindex -= 1
-					old_parent_part._payload.remove(subject_part)
-					parent_part._payload.insert(newindex, subject_part)
+					old_parent_part.parts.remove(subject_part)
+					parent_part.parts.insert(newindex, subject_part)
 					success = True
 		context.finish(success, False, time)
 		event_is_handled = not success
@@ -3893,42 +4003,47 @@ def drop_attachment_reorder_drop(wdg, context, x, y, time):
 	return False
 
 def rename_attachment(cellrenderer, iterator, new_text, colnum):
-	eml = Attachments[iterator][0]
-	header_params = {}
-	if eml[HDR_CD]:
-		header_params = dict(eml.get_params(header=HDR_CD))
-		eml._headers.remove((HDR_CD, eml[HDR_CD]))
-	header_params['filename'] = new_text
-	eml.add_header(HDR_CD, 'attachment', **header_params)
-	Attachments[iterator][colnum] = new_text
+	assert colnum == COL_ATTACHMENTS_LABEL_MARKUP
+	eml = Attachments[iterator][COL_ATTACHMENTS_EML]
+	eml.header[HDR_CD].param['filename'].decoded = new_text
+	Attachments[iterator][colnum] = glib.markup_escape_text(new_text)
 	return True
 
-def on_keypress_attachments(tv, evt):
-	if evt.keyval == gtk.gdk.keyval_from_name('Delete'):
+def on_keypress_attachments(tv, event):
+	if event.keyval == gtk.gdk.keyval_from_name('Delete'):
 		sel = panel_attachments.get_selection()
-		for itpath in reversed(sel.get_selected_rows()[1]):
+		selected_itpaths = sel.get_selected_rows()[1]
+		remove_attachments(reversed(selected_itpaths))
+		update_composer_status_message()
+		return True
+	if event.keyval == gtk.gdk.keyval_from_name('Menu'):
+		menu_composer_attachments.popup(None, None, lambda _menu: gui_toolkits.coordinates(panel_attachments, gtk.CORNER_TOP_LEFT), 3, event.time)
+		return True
+	return False
+
+def remove_attachments(treeview_iterator_paths):
+	for itpath in treeview_iterator_paths:
 			try:
 				iterator = Attachments.get_iter(itpath)
 			except ValueError:
 				# Child was deleted in meantime.
 				continue
-			if Attachments[iterator][0].get_content_type() == 'message/disposition-notification':
+			if Attachments[iterator][COL_ATTACHMENTS_EML].content_type == MIMETYPE_DN:
 				# Disallow removing MDN part as it would lose to be an MDN anymore
 				win_comp.get_window().beep()
 				continue
-			part = Attachments[iterator][0]
-			if part.get_content_type() == MIMETYPE_EMAIL:
-				composer_substract_from_list_header(HDR_REF, [part.get(HDR_MID)])
+			part = Attachments[iterator][COL_ATTACHMENTS_EML]
+			if part.content_type == MIMETYPE_EMAIL:
+				# remove the Message-ID from the main edited email's References headers
+				# TODO: what if the message was attached multiple times
+				composer_substract_once_from_list_header(HDR_REF, [part.header[HDR_MID].decoded])
 			parent_iter = Attachments.iter_parent(iterator)
 			if parent_iter is None:
 				parent_part = NewEmail
 			else:
-				parent_part = Attachments[parent_iter][0]
-			parent_part._payload.remove(part)
+				parent_part = Attachments[parent_iter][COL_ATTACHMENTS_EML]
+			parent_part.parts.remove(part)
 			del Attachments[iterator]
-		update_composer_status_message()
-		return True
-	return False
 
 def on_panel_parts_button_press_event(wdg, event):
 	# https://stackoverflow.com/a/57470492/1676943
@@ -3946,7 +4061,7 @@ def on_panel_parts_button_press_event(wdg, event):
 def set_dnd_drag_targets():
 	itpaths = selection_parts.get_selected_rows()[1]
 	if len(itpaths) == 1:
-		mime = Parts[itpaths[0]][0].get_content_type()
+		mime = Parts[itpaths[0]][COL_PARTS_EML].content_type
 		targets = [(mime, gtk.TARGET_OTHER_APP, 1), ('XdndDirectSave0', gtk.TARGET_OTHER_APP, 2), (MIMETYPE_OCTETSTREAM, gtk.TARGET_OTHER_APP, 3)]
 	else:
 		targets = [(MIMETYPE_URILIST, gtk.TARGET_OTHER_APP, 0)]
@@ -3956,7 +4071,7 @@ def drag_part_begin(wdg, context):
 	dragged_parts = []
 	itpaths = selection_parts.get_selected_rows()[1]
 	for itpath in itpaths:
-		part = Parts[itpath][0]
+		part = Parts[itpath][COL_PARTS_EML]
 		filename = part_filename_by_iteratorpath(itpath, add_extension=True, add_subject=True)
 		dragged_parts.append((part, filename))
 	
@@ -3975,7 +4090,7 @@ def drag_part_begin(wdg, context):
 
 def drag_part_data(wdg, context, dnd_data, intid, time):
 	targettype = dnd_data.get_target()
-	warnx("Dropping %d %s" % (intid, targettype,))
+	warnx("Dropping %d %s" % (intid, targettype,))  # @notranslate
 	dragged_parts = context.get_data('dragged-parts')
 	
 	if targettype == MIMETYPE_URILIST:
@@ -3994,9 +4109,10 @@ def drag_part_data(wdg, context, dnd_data, intid, time):
 	else:
 		dragged_part = dragged_parts[0][0]
 		if targettype == MIMETYPE_OCTETSTREAM:
-			filedata = dragged_part.get_payload(decode=True)
-			if filedata is None:
+			if dragged_part.is_multipart():
 				filedata = dragged_part.as_string()
+			else:
+				filedata = dragged_part.payload_decoded
 			atom = gtk.gdk.atom_intern(MIMETYPE_OCTETSTREAM)
 			dnd_data.set(atom, 8, filedata)
 		elif targettype == 'XdndDirectSave0':
@@ -4026,24 +4142,26 @@ def drag_part_end(wdg, context):
 
 def act_dispos_notif():
 	if open_composer(reason=COMPOSE_MDN):
-		NewEmail.set_type('multipart/report')
-		NewEmail.set_param('report-type', 'disposition-notification', header=HDR_CT)
+		NewEmail.content_type = 'multipart/report'
+		NewEmail.header[HDR_CT].param['report-type'].decoded = 'disposition-notification'
 		
 		win_comp.set_data('is-an-mdn', True)
 		win_comp.set_data('add-msgid-xattr-on-send', [XATTR_MDNSENT])
 		add_composer_agent_headers()
-		pndr_box = add_composer_header(HDR_PNDR, 'yes')
-		pndr_box['readonly'] = True
+		pndr_box = composer_headers.add(HDR_PNDR, 'yes')
+		pndr_box.readonly = True
+		pndr_box.removable = False
 		toggle_rqdn.set_sensitive(False)
 		
-		dnt_addresses = Email.get_all(HDR_DNT)
-		my_address = guess_my_address()
+		dnt_addresses = TheEmail.headers[HDR_DNT].encoded
+		my_addressline = guess_my_addressline()
+		
 		if dnt_addresses:
-			for al in gemlv.utils.getaddresslines(dnt_addresses, eml=Email):
-				add_composer_header('To', al.addressline)
+			for al in getaddresslines(dnt_addresses):
+				composer_headers.add('To', al.addressline)
 		else:
-			add_composer_header('To', str(guess_reply_addressline()))
-		lang = get_one_header_main('Accept-Language')
+			composer_headers.add('To', str(guess_reply_addressline()))
+		lang = TheEmail.header['Accept-Language'].decoded
 		if lang:
 			savelang = os.environ['LANGUAGE']
 			os.environ['LANGUAGE'] = lang
@@ -4054,77 +4172,61 @@ def act_dispos_notif():
 		if lang:
 			os.environ['LANGUAGE'] = savelang
 		prms = {
-			'date': get_one_header_main('Date') or '[somewhen]',
-			'me': my_address or '[someone]',
-			'subject': get_one_header_main('Subject'),
-			'delivery_date': get_one_header_main('Delivery-Date') or '[somewhen]',
-			}
+			'date': TheEmail.header['Date'].decoded or '[somewhen]',
+			'me': my_addressline.email or '[someone]',
+			'subject': TheEmail.header[HDR_SUBJ].decoded,
+			'delivery_date': TheEmail.header['Delivery-Date'].decoded or '[somewhen]',
+		}
 		subject_text = Ltxt_subj.format(**prms)
-		message_text = ''.join(map(lambda x: x+'\n', textwrap.wrap(Ltxt_body.format(**prms), 79)))
-		set_composer_subject(subject_text)
+		message_text = list2text(textwrap.wrap(Ltxt_body.format(**prms), 79))
+		composer_headers.set_single(HDR_SUBJ, subject_text)
 		set_composer_text(message_text)
 		
-		dn_part = MIMEBase('message', 'disposition-notification')
+		dn_part = gemlv.email.Email(MIMEBase(MIMETYPE_DN.main, MIMETYPE_DN.sub))
 		dn_fields = ['Disposition: manual-action/MDN-sent-manually; displayed']
-		finalrecipient = my_address
-		dn_fields += ['Final-Recipient: RFC822;%s' % (finalrecipient)]
-		if Email[HDR_OR]:
-			origrcpt = get_one_header_main(HDR_OR)
-			dn_fields += ['%s: RFC822;%s' % (HDR_OR, origrcpt)]
-		if Email[HDR_MID]:
-			messageid = get_one_header_main(HDR_MID)
+		dn_fields += ['Final-Recipient: RFC822;%(finalrecipient)s' % {'finalrecipient': my_addressline.email}]
+		if TheEmail.header[HDR_OR].nonempty:
+			origrcpt = TheEmail.header[HDR_OR].decoded
+			dn_fields += ['%(fieldname)s: RFC822;%(recipient)s' % {'fieldname': HDR_OR, 'recipient': origrcpt}]
+		if TheEmail.header[HDR_MID].nonempty:
+			messageid = TheEmail.header[HDR_MID].decoded
 			dn_fields += ['Original-Message-ID: %s' % (messageid)]
-		dn_text = ''.join(map(lambda x: x+'\n', dn_fields))
-		dn_part.set_payload(dn_text)
+		dn_part.payload_encoded = list2text(dn_fields)
 		NewEmail.attach(dn_part)
-		Attachments.append(None, [dn_part, _("Disposition Notification"), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
+		# TODO: set Disposition Notification name according to Accept-Language
+		Attachments.append(None, [dn_part, glib.markup_escape_text(_("Disposition Notification")), 'mail-mark-read', None, '', calc_attachment_checksum(dn_part)])
 		
 		on_after_save_draft()
 		panel_edit_message.grab_focus()
 
 def act_req_dispos_notif():
 	if toggle_rqdn.get_active():
-		box_gdr = set_composer_header(HDR_GDR, 'Yes')
-		box_gdr['readonly'] = True
+		box_gdr = composer_headers.set_single(HDR_GDR, 'Yes')
+		box_gdr.readonly = True
 		
-		if not filter(None, get_composer_headers(['From', 'Reply-To'])):
+		if not compact(composer_headers.multi_value[('From', 'Reply-To')]):
 			display_error(_(MSG_NO_ADDRESS_FOR_DNT))
-		box_dnt = set_composer_header(HDR_DNT, '')
+		box_dnt = composer_headers.set_single(HDR_DNT, '')
 	else:
-		clear_composer_headers(HDR_GDR)
-		clear_composer_headers(HDR_DNT)
+		composer_headers.remove_multi(name=HDR_GDR)
+		composer_headers.remove_multi(name=HDR_DNT)
 
-def turn_clicked_signal(ti, on):
-	hid = ti.get_data('clicked-handler')
-	if on:
-		ti.handler_unblock(hid)
-	else:
-		ti.handler_block(hid)
-
-def ninja_toggle(ti, on):
-	turn_clicked_signal(ti, False)
-	ti.set_active(on)
-	turn_clicked_signal(ti, True)
+def act_importance():
+	importance = 1
+	if toggle_important.get_active(): importance = 2
+	elif toggle_unimportant.get_active(): importance = 0
+	composer_headers.set_multi('Importance', [] if importance == 1 else [Importances[importance]])
+	composer_headers.set_multi('Priority',   [] if importance == 1 else [Priorities[importance]])
 
 def on_toggled(wdg):
 	if wdg in [toggle_unimportant, toggle_important]:
-		return on_toggled_importance(wdg)
-
-def on_toggled_importance(wdg):
-	if wdg.get_active():
-		if wdg == toggle_important:
-			toggle_unimportant.set_active(False)
-		elif wdg == toggle_unimportant:
-			toggle_important.set_active(False)
-		return True
+		if wdg.get_active():
+			if wdg == toggle_important:
+				toggle_unimportant.set_active(False)
+			elif wdg == toggle_unimportant:
+				toggle_important.set_active(False)
+			return True
 	return False
-
-def act_importance():
-	n = 1
-	if toggle_important.get_active(): n = 2
-	elif toggle_unimportant.get_active(): n = 0
-	reset_composer_headers('Importance', [] if n == 1 else [Importances[n]])
-	reset_composer_headers('Priority', [] if n == 1 else [Priorities[n]])
 
 def act_edit_external():
 	menubutton_send.set_sensitive(False)
@@ -4136,11 +4238,13 @@ def act_edit_external():
 	try:
 		filehandler = os.fdopen(fd, 'w')
 		filehandler.write(composer_text_buffer.get_text_all())
-		set_xattrs(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
+		xattr.set(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
 	except IOError as e:
+		save_exception_traceback(e, traceback.format_exc())
 		err = e
 	except OSError as e:
+		save_exception_traceback(e, traceback.format_exc())
 		e.filename = tmppath
 		err = e
 	if err is not None:
@@ -4205,46 +4309,41 @@ def on_edit_message(tb):
 ### Main ###
 
 PROGNAME = 'gemlv'
-VERSION = '0.1'
+VERSION = '0.5'
 USERAGENT = PROGNAME + '/' + VERSION
 locale.setlocale(locale.LC_ALL, '')
 gettext.textdomain(PROGNAME)
+if 'TEXTDOMAINDIR' in os.environ: gettext.bindtextdomain(PROGNAME, os.path.abspath(os.environ['TEXTDOMAINDIR']))
 _ = gettext.gettext
 setproctitle.setproctitle(PROGNAME)
 MSG_NO_ADDRESS_FOR_DNT = "Set a From or Reply-To address to have Disposition Notification."
-Importances = ['low','normal','high']
-Priorities = ['non-urgent','normal','urgent']
-Precedences = ['list', 'junk', 'bulk']
-RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
-RE_IPADDR = r'[0-9a-f\.:]+'
-RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
-RE_EMAIL_PERMISSIVE = r'.@' + RE_DOMAINPART
-RE_EMAIL = r'(?P<LP>\w[\w\.+-]*(?<![\.-]))@' + RE_DOMAINPART
-RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
-VALID_PASS, VALID_INVALID, VALID_NOTICE = 1, 0, 2
+Importances = ('low','normal','high')
+Priorities = ('non-urgent','normal','urgent')
+Precedences = ('list', 'junk', 'bulk')
+VALIDATION_RESULT_PASS, VALIDATION_RESULT_INVALID, VALIDATION_RESULT_NOTICE = 1, 0, 2
 VAL_EMAIL = [{
 		'require': r'(?i)' + RE_EMAIL_PERMISSIVE  + '$',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},
 	{
 		'require': r'^(?i)' + RE_EMAIL + '$',
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_ADDRESSES = [{
 		# note: no left-anchor
 		'require-repetative': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?\s*(?:,\s*|$)',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},{
 		'require-repetative': r'^(?i)' + RE_ADDRESS,
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_ADDRESS = [{
 		# note: no left-anchor
 		'require': r'(?i)' + RE_EMAIL_PERMISSIVE + '>?$',
-		'condition': VALID_INVALID,
+		'fail-result': VALIDATION_RESULT_INVALID,
 	},{
 		'require': r'^(?i)' + RE_ADDRESS + '$',
-		'condition': VALID_NOTICE,
+		'fail-result': VALIDATION_RESULT_NOTICE,
 	}]
 VAL_AGE = [{
 	'require': r'^\d+[smhdwy]$',
@@ -4262,15 +4361,16 @@ VAL_PRECEDENCE = [{
 	'require': '^(?i)(%s)$' % '|'.join(Precedences),
 	}]
 COMPOSE_NEW, COMPOSE_REPLY, COMPOSE_REPLY_ALL, COMPOSE_REPLY_LIST, COMPOSE_FORWARD_MSG, COMPOSE_FORWARD_BODY, COMPOSE_MDN, COMPOSE_UNSUB = range(8)
-Email = None
+TheEmail = None
 PartPrimary = None
 PartSecondary = None
 FileChooserLastFolder = os.getcwd()
+
 OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
 DateTimeHeaders = ['Date', 'Reply-By', 'Expires', 'Deliver-At-Date']
-PopularHeaders = ['Subject']
+PopularHeaders = [HDR_SUBJ]
 AdvancedHeaders = [
 	HDR_REF, 'In-Reply-To', HDR_DNT,
 	'Generate-Delivery-Report', 'Prevent-NonDelivery-Report',
@@ -4279,7 +4379,7 @@ AdvancedHeaders = [
 	'Content-Language', 'Accept-Language',
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
-	]
+]
 # sensitive headers are stripped on opening an email for edit
 # TODO: strip sensitive headers before send
 SensitiveHeaders = [
@@ -4289,28 +4389,28 @@ SensitiveHeaders = [
 	# headers Clawsmail uses in draft emails:
 	'X-Claws-*', 'S', 'SCF', 'RMID',
 ]
-TechnicalHeaders = [
-	# TODO: other technical headers
+CoreTechnicalHeaders = [
 	HDR_CT,
 	HDR_CTE,
-	HDR_CT,
 	HDR_CD,
 	'Mime-Version',
 ]
+TechnicalHeaders = [] + CoreTechnicalHeaders  # TODO: other technical headers
 EditExcludedHeaders = [
-	'Auto-Submitted',
-	'Delivered-To',  # sensitive?
-	'DKIM-Signature',
-	'Domainkey-Signature',
-	'Message-ID',
-	'Received',
-	'Received-*',
-	'X-Originating-IP',
-	#'X-MS-*',
-	#'X-*',
-]
-EditExcludedHeaders.extend(SensitiveHeaders)
-EditExcludedHeaders.extend(TechnicalHeaders)
+		'Auto-Submitted',
+		'Delivered-To',  # sensitive?
+		'DKIM-Signature',
+		'Domainkey-Signature',
+		'Message-ID',
+		'Received',
+		'Received-*',
+		'X-Originating-IP',
+		#'X-MS-*',
+		#'X-*',
+	] \
+	+ SensitiveHeaders \
+	+ TechnicalHeaders
+
 AddressbookHeaders = [
 	'From',
 	'Reply-To',
@@ -4319,13 +4419,7 @@ AddressbookHeaders = [
 	'Cc',
 	'Bcc',
 ]
-CoreTechnicalHeaders = [
-	HDR_CT,
-	HDR_CTE,
-	HDR_CD,
-	'MIME-Version',
-]
-ValidatorHeaders = {
+HeaderValidators = CaseInsensitiveDict({
 	'From': VAL_ADDRESS,
 	'Reply-To': VAL_ADDRESS,
 	HDR_DNT: VAL_ADDRESS,
@@ -4336,9 +4430,10 @@ ValidatorHeaders = {
 	'Importance': VAL_IMPORTANCE,
 	'Priority': VAL_PRIORITY,
 	'Precedence': VAL_PRECEDENCE,
-}
+})
 for h in DateTimeHeaders:
-	ValidatorHeaders[h] = VAL_DATE
+	HeaderValidators[h] = VAL_DATE
+del h
 AutocompletionListSizeLimitOnEmptyInput = 10
 AutocompletionHeaders = {
 	'Importance': Importances,
@@ -4347,21 +4442,36 @@ AutocompletionHeaders = {
 }
 # obfuscate these headers on encrypted messages:
 HeadersObfuscate = [
-	'Subject',
+	HDR_SUBJ,
 	'Thread-Topic',
 ]
 DontLeakHeaders = [
 	'Bcc',
 ]
+# RFC 2822 sect 3.6
+SingletonHeaders = [
+	'Date',
+	'From',
+	'Sender',
+	'Reply-To',
+	'To',
+	'Cc',
+	'Bcc',
+	HDR_MID,
+	'In-Reply-To',
+	HDR_REF,
+	HDR_SUBJ,
+]
+# SemiSingletonHeaders are shown as separate headers on the UI but clashed into one in the raw email.
+SemiSingletonHeaders = [ HDR_REF ] + RecipientHeaders
 MultiRecipientsMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
 AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
 
 NewEmail = None
-PREAMBLE = _("This is a MIME multipart Email.")
 
 class PropertyStoreClass(object): pass
-UserConfig = PropertyStoreClass()
-UserConfig.show_importance_headers = False
+Global = PropertyStoreClass()
+Global.show_importance_headers = False
 
 
 Timers = {}
@@ -4393,7 +4503,6 @@ argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
 argparser.add_argument('--attach', '--attachment', metavar='FILE', action='append', help=_("Attachment file's path, repeatable"))
-argparser.add_argument('--localedir', metavar='DIR', help=_("L10n base directory"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
 argparser.add_argument('--header', metavar='STRING', action='append', help=_("Add custom header(s) to the new Email"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))
@@ -4409,14 +4518,10 @@ if not cliArgs.compose and not cliArgs.FILE:
 	warnx(_("Either compose mode or FILE is needed."))
 	os._exit(1)
 
-if cliArgs.localedir:
-	gettext.bindtextdomain(PROGNAME, os.path.abspath(cliArgs.localedir))
 
 openerargs = cliArgs.opener.split()
 cliArgs.opener, cliArgs.opener_args = openerargs[0], openerargs[1:]
 
-if xattr is None:
-	warnx(_("Notice: no module xattr loaded"))
 if hasattr(magic, 'open'):
 	Magic = magic.open(magic.MAGIC_MIME_TYPE)
 	Magic.load()
@@ -4432,24 +4537,24 @@ gtk.gdk.threads_init()
 
 ### Build GUI ###
 
-gemlvtk.add_gtk_icon_to_stock('mail-attachment', _("Attach"))
+gui_toolkits.add_gtk_icon_to_stock('mail-attachment', _("Attach"))
 
-win_main = gemlvtk.Window()
+win_main = gui_toolkits.Window()
 win_main.set_default_size(int(Props['ui/view/width'] or 832), int(Props['ui/view/height'] or 450))
 win_main.connect('configure-event', on_window_configure)
 start_evt = win_main.connect('map-event', win_main_show)
 win_main.connect('delete-event', lambda a,b: act_quit())
-gemlvtk.add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
-gemlvtk.add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
-gemlvtk.add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
-gemlvtk.add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
-gemlvtk.add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
-gemlvtk.add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
-gemlvtk.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_MSG))
-gemlvtk.add_key_binding(win_main, '<Control><Shift>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_BODY))
-gemlvtk.add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
-gemlvtk.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
-gemlvtk.add_key_binding(win_main, '<Control>a', lambda *_x: act_addressbook())
+gui_toolkits.add_key_binding(win_main, '<Control>q', lambda a,b,c,d: act_quit())
+gui_toolkits.add_key_binding(win_main, '<Control>s', lambda a,b,c,d: act_save())
+gui_toolkits.add_key_binding(win_main, '<Control>o', lambda a,b,c,d: act_open())
+gui_toolkits.add_key_binding(win_main, '<Control>n', lambda a,b,c,d: act_compose())
+gui_toolkits.add_key_binding(win_main, '<Control><Shift>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY))
+gui_toolkits.add_key_binding(win_main, '<Control>r', lambda a,b,c,d: act_reply(COMPOSE_REPLY_ALL))
+gui_toolkits.add_key_binding(win_main, '<Control>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_MSG))
+gui_toolkits.add_key_binding(win_main, '<Control><Shift>f', lambda a,b,c,d: act_reply(COMPOSE_FORWARD_BODY))
+gui_toolkits.add_key_binding(win_main, '<Control>u', lambda a,b,c,d: act_view_source())
+gui_toolkits.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_headers(not panel_view_header.get_data('all-headers')))
+gui_toolkits.add_key_binding(win_main, '<Alt>a', lambda *_x: act_addressbook())
 
 box_main = gtk.VBox(False, 5)
 toolbar = gtk.Toolbar()
@@ -4460,10 +4565,10 @@ panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
-spanel_view_subject = gemlvtk.Scrollable(panel_view_subject)
+spanel_view_subject = gui_toolkits.Scrollable(panel_view_subject)
 panel_body = gtk.HPaned()
 spanel_parts = gtk.ScrolledWindow()
-Parts = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)
+Parts = gui_toolkits.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, gobject.TYPE_PYOBJECT)  # update COL_PARTS_* constants if changed
 panel_parts = gtk.TreeView(Parts)
 selection_parts = panel_parts.get_selection()
 panel_right = gtk.VBox()
@@ -4473,9 +4578,9 @@ panel_btnbox2 = gtk.VBox()
 panel_btnbox3 = gtk.HBox()
 lbl_right = gtk.Label()
 btnbox_right = gtk.VBox(True, 10)
-btn_open = gemlvtk.StockButton(stock=gtk.STOCK_OPEN)
-btn_save = gemlvtk.StockButton(stock=gtk.STOCK_SAVE)
-btn_save_struct = gemlvtk.StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
+btn_open = gui_toolkits.StockButton(stock=gtk.STOCK_OPEN)
+btn_save = gui_toolkits.StockButton(stock=gtk.STOCK_SAVE)
+btn_save_struct = gui_toolkits.StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView()
@@ -4541,6 +4646,7 @@ panel_parts.connect('button-press-event', on_panel_parts_button_press_event)
 panel_parts.connect('drag-begin', drag_part_begin)
 panel_parts.connect('drag-data-get', drag_part_data)
 panel_parts.connect('drag-end', drag_part_end)
+panel_parts.connect('row-expanded', user_try_expand_panel_parts_row)
 selection_parts.set_mode(gtk.SELECTION_MULTIPLE)
 selection_parts.connect('changed', on_select_parts)
 lbl_content_location.set_alignment(0, 0)
@@ -4613,33 +4719,34 @@ btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
 ### Build Composer GUI ###
 
-win_comp = gemlvtk.Window()
+win_comp = gui_toolkits.Window()
 win_comp.set_default_size(int(Props['ui/composer/width'] or win_main.get_default_size()[0]), int(Props['ui/composer/height'] or win_main.get_default_size()[1]))
 win_comp.connect('configure-event', on_window_configure)
-win_comp.connect('delete-event', lambda a,b: act_close_edit())
-gemlvtk.add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda a,b,c,d: act_close_edit())
-gemlvtk.add_key_binding(win_comp, '<Control>s', lambda a,b,c,d: act_save_edit())
-gemlvtk.add_key_binding(win_comp, '<Control><Shift>s', lambda a,b,c,d: act_save_edit(True))
-gemlvtk.add_key_binding(win_comp, 'F4', lambda a,b,c,d: act_edit_external())
-gemlvtk.add_key_binding(win_comp, '<Control>h', lambda a,b,c,d: act_tgl_comp_hdr())
-gemlvtk.add_key_binding(win_comp, '<Control>a', lambda *_x: act_addressbook())
+win_comp.connect('delete-event', lambda *_x: act_close_edit())
+gui_toolkits.add_key_binding(win_comp, '<Control>'+('q' if cliArgs.compose else 'w'), lambda *_x: act_close_edit())
+gui_toolkits.add_key_binding(win_comp, '<Control>s', lambda *_x: act_save_edit())
+gui_toolkits.add_key_binding(win_comp, '<Control><Shift>s', lambda *_x: act_save_edit(True))
+gui_toolkits.add_key_binding(win_comp, 'F4', lambda *_x: act_edit_external())
+gui_toolkits.add_key_binding(win_comp, '<Control>h', lambda *_x: act_toggle_composer_headers())
+gui_toolkits.add_key_binding(win_comp, '<Alt>a', lambda *_x: act_addressbook())
 
 box_compose = gtk.VBox()
 tb_compose = gtk.Toolbar()
 panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
-spanel_comp_header = gtk.ScrolledWindow()
+entry_subject = gtk.Entry()
+composer_headers = GemlvComposerHeadersContainer(subject_field = entry_subject)
+spanel_comp_header = gui_toolkits.Scrollable(composer_headers)
 menu_add_header = gtk.Menu()
-panel_comp_header = gtk.VBox(False, 0)
-UnionHeadersStore = gtk.ListStore(str)
+CustomHeadersStore = gtk.ListStore(str)
+menu_composer_attachments = gtk.Menu()
 spanel_attachments = gtk.ScrolledWindow()
-Attachments = gtk.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)
-Attachments.set_data('row-changed-signal-handler-id', Attachments.connect('row-changed', on_composer_attachments_row_changed))
+Attachments = gui_toolkits.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
+connect_loopless_signal(Attachments, 'row-changed', on_composer_attachments_row_changed)
 panel_attachments = gtk.TreeView(Attachments)
 panel_edit = gtk.VBox()
 panel_subject = gtk.HBox(False, 5)
 panel_subject.set_border_width(4)
-entry_subject = gtk.Entry()
 frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
 composer_text_buffer = TextBuffer()
@@ -4651,7 +4758,6 @@ box_compose.pack_start(tb_compose, False, True)
 box_compose.pack_start(panel_compose, True, True)
 panel_compose.pack1(panel_upper, True, True)
 panel_upper.pack1(spanel_comp_header, True, True)
-spanel_comp_header.add_with_viewport(panel_comp_header)
 panel_upper.pack2(spanel_attachments, False, True)
 spanel_attachments.add_with_viewport(panel_attachments)
 panel_attachments.set_headers_visible(False)
@@ -4668,8 +4774,8 @@ win_comp.set_icon_name('mail-message-new')
 win_comp.set_geometry_hints(min_width=132, min_height=200)
 tb_compose.set_style(gtk.TOOLBAR_BOTH)
 spanel_comp_header.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
+spanel_comp_header.set_shadow_type(gtk.SHADOW_IN)
 spanel_comp_header.connect('button-press-event', open_comp_hdr_menu)
-panel_comp_header.set_border_width(4)
 spanel_attachments.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
 spanel_attachments.drag_dest_set(0, [], 0)
 #spanel_attachments.drag_dest_set(gtk.DEST_DEFAULT_MOTION | gtk.DEST_DEFAULT_HIGHLIGHT, [('text/uri-list', 0, 0), ('GTK_TEXT_BUFFER_CONTENTS', 0, 0)], gtk.gdk.ACTION_COPY)
@@ -4682,6 +4788,7 @@ panel_attachments.connect('drag-data-received', drop_attachment_reorder_data)
 panel_attachments.connect('drag-drop', drop_attachment_reorder_drop)
 panel_attachments.connect('focus-out-event', lambda w, e: w.get_selection().unselect_all())
 panel_attachments.connect('key-press-event', on_keypress_attachments)
+panel_attachments.connect('button-release-event', on_composer_attachments_clicked)
 panel_upper.set_position(int(Props['ui/composer/headers/width'] or (win_comp.get_default_size()[0] - 242)))
 panel_upper.connect('notify::position', lambda paned, pos: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/headers/width', paned.get_position())))
 panel_compose.set_position(int(Props['ui/composer/headers/height'] or 125))
@@ -4698,22 +4805,38 @@ frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 
+# context menu on headers panel (composer mode)
 for name in SenderHeaders:
 	mi = gtk.CheckMenuItem(_("Specify %s") % (_(name)))
 	mi.set_data('chname', name)
-	mi.connect('toggled', act_comp_hdr_menuitem)
+	connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked)
 	menu_add_header.append(mi)
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
-mi.connect('activate', act_comp_hdr_menuitem, 'To')
+mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
+connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To')
 menu_add_header.append(mi)
 menu_add_header.append(gtk.SeparatorMenuItem())
-mi = gemlvtk.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
-mi.connect('activate', act_comp_hdr_menuitem, '')
+mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
+connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, '')
 menu_add_header.append(mi)
 menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
-menuitem_all_comp_hdr.connect('toggled', act_all_comp_hdr)
+connect_loopless_signal(menuitem_all_comp_hdr, 'toggled', act_composer_header_menuitem_all_clicked)
 menu_add_header.append(menuitem_all_comp_hdr)
 menu_add_header.show_all()
+
+# context menu on attachments panel (composer mode)
+menuitem_comp_att_open_mem = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
+menuitem_comp_att_open_mem.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_memory)
+menu_composer_attachments.append(menuitem_comp_att_open_mem)
+menuitem_comp_att_open_disk = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
+menuitem_comp_att_open_disk.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
+menu_composer_attachments.append(menuitem_comp_att_open_disk)
+menuitem_comp_att_rename = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
+menuitem_comp_att_rename.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
+menu_composer_attachments.append(menuitem_comp_att_rename)
+menuitem_comp_att_detach = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
+menuitem_comp_att_detach.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_detach)
+menu_composer_attachments.append(menuitem_comp_att_detach)
+menu_composer_attachments.show_all()
 
 toolbuttons = [
 	(_("Send"), 'mail-send', _("Send")+'\n'+_("Right click:")+' '+_("Save As in ready-to-send format"), act_send, act_send_to_file),
@@ -4732,22 +4855,21 @@ tvc = gtk.TreeViewColumn()
 cr_txt = gtk.CellRendererText()
 cr_txt.set_alignment(1, 0)
 tvc.pack_start(cr_txt, True)
-tvc.add_attribute(cr_txt, 'text', 4)
+tvc.add_attribute(cr_txt, 'text', COL_ATTACHMENTS_SIZE_LABEL)
 panel_attachments.append_column(tvc)
 
 
-for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
-	UnionHeadersStore.append([h])
+[CustomHeadersStore.append([h]) for h in AdvancedHeaders]
 
 toolbuttons = [
-	(None, gemlvtk.LabelsToolItem(), None, None, None),
+	(None, gui_toolkits.LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, gemlvtk.StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
-	(None, gemlvtk.StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
-	(None, gemlvtk.StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
+	(None, gui_toolkits.StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
+	(None, gui_toolkits.StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
+	(None, gui_toolkits.StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
-	(_("Unimportant"), gemlvtk.StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
-	(_("Important"), gemlvtk.StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
+	(_("Unimportant"), gui_toolkits.StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
+	(_("Important"), gui_toolkits.StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, _("Edit with External Program"), act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),
@@ -4755,9 +4877,9 @@ toolbuttons = [
 ]
 tb_comp_label, x_, toggle_encrypt, toggle_sign, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
 = load_toolitems(tb_comp_controls, toolbuttons)
-toggle_rqdn.connect('toggled', on_toggled)
-toggle_unimportant.connect('toggled', on_toggled)
-toggle_important.connect('toggled', on_toggled)
+connect_loopless_signal(toggle_rqdn, 'toggled', on_toggled)
+connect_loopless_signal(toggle_unimportant, 'toggled', on_toggled)
+connect_loopless_signal(toggle_important, 'toggled', on_toggled)
 btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, None)
 
 
@@ -4773,43 +4895,70 @@ if cliArgs.compose:
 			fh.close()
 		except RuntimeError:
 			sys.exit(1)
+		del fh
 		
 		# Import headers.
 		supersedes = []
-		for hname, hval_mimeencoded in edit_eml._headers:
-			hname = headercase(hname)
-			hval = decode_mime_header(hval_mimeencoded, eml=edit_eml)
-			if hname == HDR_MID:
-				supersedes.append(hval)
-			elif hname == 'Subject':
-				set_composer_subject(hval)
-			if any(fnmatch(hname, headercase(hdr)) for hdr in EditExcludedHeaders):
+		for header in edit_eml.headers.items:
+			if header.name == HDR_MID:
+				supersedes.append(header.value.decoded)
+			elif header.name == HDR_SUBJ:
+				composer_headers.set_single(HDR_SUBJ, header.value.decoded)
+			elif any(wildcardmatch(header.name, exclude_header) for exclude_header in EditExcludedHeaders):
 				# Do not include these headers in an incompleted email.
-				warnx("Skip header '%s' in email editing." % (hname,))
-				pass
+				warnx("Skip header '%s' in email editing." % (header.name,))
 			else:
-				add_composer_header(hname, hval)
-		reset_composer_headers('Supersedes', [', '.join(supersedes)])
+				if header.name in SemiSingletonHeaders:
+					composer_headers.add_multi(header.name, getaddresslines([header.value.encoded]))
+				else:
+					composer_headers.add(header.name, header.value.decoded)
+		if supersedes:
+			composer_headers.set('Supersedes', ', '.join(supersedes))
+		del header
+		del supersedes
 		
-		body_found = False
+		Global.body_found = False
+		Global.external_attachments = []
 		def detect_body_part(part):
-			if not body_found and part.get_content_type() == MIMETYPE_TEXT:
-				set_composer_text(decode_readably(part.get_payload(decode=True), part))
+			if not Global.body_found and part.content_type == MIMETYPE_TEXT:
+				set_composer_text(decode_readably(part.payload_decoded, part))
+				Global.body_found = True
 				# Prevent this part to be treated as attachment. This is the body part.
 				return False
+			# for those attachments, of which payload data is not there, but a link to a local file is noted
+			# in the headers, remove the header and mark the local file the source of this attachment data.
+			# gemlv makes email files like this when saving draft in the background while editing emails.
+			if part.header['Content-Location'].nonempty and part.payload_encoded == '':
+				cloc_uri = part.header['Content-Location'].decoded
+				if cloc_uri.startswith('file:'):
+					Global.external_attachments.append(part)
+					try:
+						cloc_path = file_uri_to_path(str(cloc_uri))
+					except Exception as e:
+						traceback.print_exc()
+						save_exception_traceback(e, traceback.format_exc())
+						display_error(e)
+					else:
+						part._ll_email.payload_data_origin_path = cloc_path
+						del part.headers['Content-Location']
 			# Attach this part.
 			NewEmail.attach(part)
 			# Allow this part to be appeared in attachments panel.
 			return True
 		
 		# Import attachments.
-		parts = edit_eml.get_payload(decode=False)
-		if type(parts) == list:
-			for part in parts:
+		if edit_eml.is_multipart():
+			for part in edit_eml.parts:
 				add_already_attached_parts(None, part, detect_body_part)
+			if Global.external_attachments:
+				external_attachments_str = list2text(["- %s [%s] %s" % (part.filename, part.content_type, part._ll_email.payload_data_origin_path) for part in Global.external_attachments])
+				display_info_box_async(_("The following attachments' data is not embedded in the email, but references to files on the disk are present.") + '\n' +\
+					_("You may re-attach those files from disk and remove these empty ones.") + '\n' +\
+					_("Double check what do you attach, especially if the email file comes from a party not fully trusted."), \
+					external_attachments_str, title=_("External Attachments"))
 		else:
 			# Not a multipart email, set body to payload.
-			set_composer_text(decode_readably(edit_eml.get_payload(decode=True), edit_eml))
+			set_composer_text(decode_readably(edit_eml.payload_decoded, edit_eml))
 	else:
 		# Open a clear composer window.
 		add_composer_agent_headers()
@@ -4821,24 +4970,28 @@ if cliArgs.compose:
 	if cliArgs.mailto:
 		mailto = parse_mailto(cliArgs.mailto)
 		add_composer_mailto(mailto)
+		del mailto
 	if getattr(cliArgs, 'from'):
-		reset_composer_headers('From', [getattr(cliArgs, 'from')])
+		composer_headers.set_multi('From', [getattr(cliArgs, 'from')])
 	if cliArgs.to:
-		add_composer_headers('To', cliArgs.to)
+		composer_headers.add_multi('To', cliArgs.to)
 	if cliArgs.cc:
-		add_composer_headers('Cc', cliArgs.cc)
+		composer_headers.add_multi('Cc', cliArgs.cc)
 	if cliArgs.bcc:
-		add_composer_headers('Bcc', cliArgs.bcc)
-	if len(get_composer_headers(RecipientHeaders)) < 1:
+		composer_headers.add_multi('Bcc', cliArgs.bcc)
+	if len(composer_headers.multi_value[RecipientHeaders]) < 1:
 		# Add an empty To header unless any recipient was given.
-		add_composer_header('To')
+		composer_headers.add('To', '')
 	if cliArgs.subject:
-		set_composer_subject(cliArgs.subject)
+		composer_headers.set_single(HDR_SUBJ, cliArgs.subject)
 	if cliArgs.header:
 		for header in cliArgs.header:
 			if header.find(':') == -1: header += ':'
 			hname, hval = re.split(': ?', header, 1)
-			add_composer_headers(headercase(hname), [hval])
+			composer_headers.add(gemlv.email.Header(hname).name, hval)
+			del hname
+			del hval
+		del header
 	if cliArgs.message:
 		set_composer_text(cliArgs.message)
 	if cliArgs.attach:
@@ -4846,7 +4999,7 @@ if cliArgs.compose:
 			attach_path(path, path)
 		del path
 	on_after_save_draft()
-	if any(bool(x) for x in get_composer_headers(HDR_XSD)):
+	if compact(composer_headers.multi_value[HDR_XSD]):
 		win_comp.set_data('email-sent', True)
 	panel_edit_message.grab_focus()
 else:
