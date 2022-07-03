@@ -2,6 +2,7 @@
 
 import os
 import gemlv.utils
+from gemlv.sysutils import mkdir
 
 def get_singlefile_path():
 	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
@@ -54,3 +55,8 @@ def add(section, address_line=None):
 		path = os.path.join(get_directory_path(), section)
 		with open(path, 'a') as fh:
 			fh.write(address_line.addressline+'\n')
+
+def create(section):
+	path = os.path.join(get_directory_path(), section)
+	mkdir(os.path.dirname(path))
+	open(path, 'a').close()

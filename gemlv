@@ -3640,6 +3640,10 @@ def act_addressbook():
 	win.connect('items-edit', on_edit)
 	win.connect('close', on_close)
 	
+	if not gemlv.addressbook.get_paths():
+		gemlv.addressbook.create(section='gemlv.auto')
+		gemlv.addressbook.create(section='gemlv.manual')
+	
 	gemlv.addressbook.load(
 		callback = lambda addr, addresslist: addresslist.append([addr, glib.markup_escape_text(addr)]), 
 		error_handler = lambda e: display_error(e), 
