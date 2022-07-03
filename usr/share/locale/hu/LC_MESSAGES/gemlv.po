@@ -527,8 +527,8 @@ msgstr "Külső csatolmányok"
 msgid "The following attachments' data is not embedded in the email, but references to files on the disk are present."
 msgstr "A lenti csatolmányok adattartalma nincs az emailbe foglalva, de vannak hivatkozások lemezen lévő fájlokhoz."
 
-msgid "You may re-attach those files from disk and remove these empty ones."
-msgstr "Újracsatolhatod azokat a fájlokat, ezen üreseket pedig lecsatolhatod."
+msgid "You may re-attach those files from disk manually and remove these empty ones."
+msgstr "Újracsatolhatod azokat a fájlokat kézzel, ezen üreseket pedig lecsatolhatod."
 
 msgid "Double check what do you attach, especially if the email file comes from a party not fully trusted."
 msgstr "Ellenőrizd mit csatolsz be, kiváltképp ha az email fájl olyan féltől származik ami nem teljesen megbízható."

@@ -4984,7 +4984,7 @@ if cliArgs.compose:
 			if Global.external_attachments:
 				external_attachments_str = list2text(["- %s [%s] %s" % (part.filename, part.content_type, part._ll_email.payload_data_origin_path) for part in Global.external_attachments])
 				display_info_box_async(_("The following attachments' data is not embedded in the email, but references to files on the disk are present.") + '\n' +\
-					_("You may re-attach those files from disk and remove these empty ones.") + '\n' +\
+					_("You may re-attach those files from disk manually and remove these empty ones.") + '\n' +\
 					_("Double check what do you attach, especially if the email file comes from a party not fully trusted."), \
 					external_attachments_str, title=_("External Attachments"))
 		else:
