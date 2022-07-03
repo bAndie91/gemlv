@@ -110,6 +110,7 @@ from gemlv.pythonutils import CaseInsensitiveString
 from gemlv.pythonutils import compact
 import gemlv.gui_toolkits as gui_toolkits
 from gemlv.gui_toolkits import connect_loopless_signal
+from gemlv.eventimage import EventImage
 from gemlv.constants import *
 import gemlv.mime as mime
 from gemlv.profilepicture import load_gravatar
@@ -1283,6 +1284,12 @@ def on_press_button(btn, evt, func):
 	if evt.type == gtk.gdk.BUTTON_PRESS:
 		if evt.button == 3 or (evt.button == 1 and evt.state & gtk.gdk.SHIFT_MASK):
 			act_button(func)
+	return False
+
+def pass_right_click(widget, event, func, *user_params):
+	if event.type == gtk.gdk.BUTTON_PRESS:
+		if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+			return func(event, *user_params)
 	return False
 
 def open_comp_hdr_menu(widget, event):
@@ -4304,6 +4311,24 @@ def on_edit_message(tb):
 	if tb.get_modified():
 		set_unsaved()
 
+def on_avatar_save(mi):
+	filename = avatar_image.get_data('source') + '.png'
+	filename = choose_save_file(filename, ask_overwrite=True)
+	if filename:
+		try:
+			avatar_image.pixbuf.save(filename, 'png')
+		except Exception as e:
+			save_exception_traceback(e, traceback.format_exc())
+			display_error(e)
+
+def on_context_menu_on_avatar(event):
+	avatar_menu = gtk.Menu()
+	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_SAVE)
+	mi.connect('activate', on_avatar_save)
+	avatar_menu.append(mi)
+	avatar_menu.show_all()
+	avatar_menu.popup(None, None, None, event.button, event.time)
+
 
 
 ### Main ###
@@ -4563,6 +4588,7 @@ panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
 panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
+avatar_image = EventImage()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
 spanel_view_subject = gui_toolkits.Scrollable(panel_view_subject)
@@ -4595,7 +4621,7 @@ panel_view.pack1(panel_view_upper, False, True)
 panel_view_upper.pack_start(panel_view_headerbox, True, True)
 panel_view_headerbox.pack_start(spanel_view_header, True, True)
 panel_view_headerbox.pack_start(panel_view_avatar, False, False)
-panel_view_avatar.pack_start(gtk.Image(), False, False)
+panel_view_avatar.pack_start(avatar_image, False, False)
 spanel_view_header.add_with_viewport(panel_view_header)
 panel_view_upper.pack_start(spanel_view_subject, False, True)
 panel_view.pack2(panel_body, True, True)
@@ -4631,7 +4657,8 @@ panel_view_header.set_justify(gtk.JUSTIFY_LEFT)
 panel_view_header.set_selectable(True)
 panel_view_header.connect('populate-popup', populate_header_menu)
 panel_view_header.connect('scroll-event', on_scroll_on_button_font, panel_view_header, gtk.gdk.CONTROL_MASK)
-panel_view_avatar.children()[0].set_padding(6, 1)
+avatar_image.set_padding(6, 1)
+avatar_image.connect('button-press-event', pass_right_click, on_context_menu_on_avatar)
 panel_view_subject.set_selectable(True)
 panel_view_subject.set_padding(5, 4)
 panel_view_subject.set_alignment(0, 0)

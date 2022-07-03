@@ -31,4 +31,5 @@ def load_gravatar(email_address, gtk_container, gemlv_props):
 			pxb = loader.get_pixbuf()
 			img = gtk_container.children()[0]
 			img.set_from_pixbuf(pxb)
+			img.set_data('source', email_address)
 			gtk_container.show_all()
