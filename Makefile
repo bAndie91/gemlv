@@ -26,6 +26,7 @@ install:
 	done
 	
 	git describe --tags > /usr/share/doc/gemlv/VERSION
+	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
 
 locales:
 	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
@@ -50,6 +51,7 @@ uninstall:
 	
 	[ ! -e /usr/share/doc/gemlv/LICENSE ] || rm -v /usr/share/doc/gemlv/LICENSE
 	[ ! -e /usr/share/doc/gemlv/VERSION ] || rm -v /usr/share/doc/gemlv/VERSION
+	[ ! -e /usr/share/doc/gemlv/COMMIT ]  || rm -v /usr/share/doc/gemlv/COMMIT
 	[ ! -e /usr/share/doc/gemlv/ ] || rmdir -v /usr/share/doc/gemlv/
 	
 	rm -v /usr/share/locale/*/LC_MESSAGES/gemlv.mo
