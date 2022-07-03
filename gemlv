@@ -1576,7 +1576,7 @@ class GemlvComposerHeader(gtk.HBox):
 		self.hntype = GemlvComposerHeader.get_hntype(chname)
 		
 		if self.hntype == self.HNTYPE_CUSTOM:
-			self.wdg_name = gui_toolkits.ComboBoxEntry(UnionHeadersStore, 0)
+			self.wdg_name = gui_toolkits.ComboBoxEntry(CustomHeadersStore, 0)
 			self.wdg_name.connect('changed', self.on_name_changed)
 		elif self.hntype == self.HNTYPE_MENU:
 			self.wdg_name = gtk.Button()
@@ -1880,6 +1880,10 @@ class GemlvComposerHeader(gtk.HBox):
 			self.set_autocomplete_list(gemlv.addressbook.get_full())
 		elif name in AutocompletionHeaders.keys():
 			self.set_autocomplete_list(AutocompletionHeaders[name])
+		
+		if self.hntype == self.HNTYPE_CUSTOM:
+			self.btn_add.set_sensitive(name not in SingletonHeaders)
+		
 		self.on_changed()
 	
 	@property
@@ -4361,6 +4365,7 @@ TheEmail = None
 PartPrimary = None
 PartSecondary = None
 FileChooserLastFolder = os.getcwd()
+
 OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
 SenderHeaders = ['From', 'Reply-To', 'Organization']
 RecipientHeaders = ['To', 'Cc', 'Bcc']
@@ -4390,20 +4395,18 @@ CoreTechnicalHeaders = [
 	HDR_CD,
 	'Mime-Version',
 ]
-TechnicalHeaders = [] \
-	+ CoreTechnicalHeaders
-	# TODO: other technical headers
+TechnicalHeaders = [] + CoreTechnicalHeaders  # TODO: other technical headers
 EditExcludedHeaders = [
-	'Auto-Submitted',
-	'Delivered-To',  # sensitive?
-	'DKIM-Signature',
-	'Domainkey-Signature',
-	'Message-ID',
-	'Received',
-	'Received-*',
-	'X-Originating-IP',
-	#'X-MS-*',
-	#'X-*',
+		'Auto-Submitted',
+		'Delivered-To',  # sensitive?
+		'DKIM-Signature',
+		'Domainkey-Signature',
+		'Message-ID',
+		'Received',
+		'Received-*',
+		'X-Originating-IP',
+		#'X-MS-*',
+		#'X-*',
 	] \
 	+ SensitiveHeaders \
 	+ TechnicalHeaders
@@ -4735,7 +4738,7 @@ entry_subject = gtk.Entry()
 composer_headers = GemlvComposerHeadersContainer(subject_field = entry_subject)
 spanel_comp_header = gui_toolkits.Scrollable(composer_headers)
 menu_add_header = gtk.Menu()
-UnionHeadersStore = gtk.ListStore(str)
+CustomHeadersStore = gtk.ListStore(str)
 menu_composer_attachments = gtk.Menu()
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gui_toolkits.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
@@ -4856,9 +4859,7 @@ tvc.add_attribute(cr_txt, 'text', COL_ATTACHMENTS_SIZE_LABEL)
 panel_attachments.append_column(tvc)
 
 
-for h in SenderHeaders + RecipientHeaders + PopularHeaders + AdvancedHeaders:
-	UnionHeadersStore.append([h])
-del h
+[CustomHeadersStore.append([h]) for h in AdvancedHeaders]
 
 toolbuttons = [
 	(None, gui_toolkits.LabelsToolItem(), None, None, None),
