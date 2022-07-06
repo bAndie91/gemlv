@@ -13,6 +13,7 @@ install:
 	cp -v --no-preserve=ownership gemlv-report /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-spam /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-ham /usr/bin/
+	cp -v --no-preserve=ownership -r lib/gemlv /usr/lib/python2.7/gemlv
 	
 	mkdir -p /etc/gemlv
 	cp -v --no-preserve=ownership filters.conf /etc/gemlv/
@@ -45,6 +46,7 @@ uninstall:
 	[ ! -e /usr/bin/gemlv-report ] || rm -v /usr/bin/gemlv-report
 	[ ! -e /usr/bin/gemlv-report-spam ] || rm -v /usr/bin/gemlv-report-spam
 	[ ! -e /usr/bin/gemlv-report-ham ] || rm -v /usr/bin/gemlv-report-ham
+	rm -v -r /usr/lib/python2.7/gemlv/
 	
 	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
 	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
