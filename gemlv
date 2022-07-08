@@ -2182,12 +2182,34 @@ def add_composer_mailto(mailto):
 			else:
 				composer_headers.add(header, mailto[field])
 
+def cb_addressbook_load_first_hit(current, userdata):
+	al = AddressLine(MimeDecoded(current))
+	if al.email == userdata['stop_at_email'] and al.realname.strip():
+		userdata['result'] = al
+		return True
+
 def guess_my_addressline():
 	"guess what is the user's address line to which the currently opened email is sent"
 	if TheEmail is None: return AddressLine('')
 	addr = TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
-	realname = gemlv.utils.get_gecos_name()
-	# TODO: consult addressbook for a known realname part
+	realname = None
+	# lookup addr email address in the current email and take the associated realname if any
+	for hname in RecipientHeaders + OriginatorHeaders:
+		for addrline in getaddresslines(TheEmail.headers[hname].encoded):
+			if addrline.email == addr and addrline.realname.strip():
+				realname = addrline.realname
+				break
+		if realname is not None:
+			break
+	# lookup addr email address in the user's addressbook and take realname from there
+	if realname is None:
+		abookdata = {'stop_at_email': addr}
+		gemlv.addressbook.load(callback = cb_addressbook_load_first_hit, userdata = abookdata, gettext = _)
+		if 'result' in abookdata:
+			realname = abookdata['result'].realname
+	# last resort: take realname from the system
+	if realname is None:
+		realname = gemlv.utils.get_gecos_name()
 	return AddressLine((MimeDecoded(realname), addr))
 
 def guess_reply_addressline():

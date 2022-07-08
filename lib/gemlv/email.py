@@ -300,6 +300,7 @@ class HeaderList(list):
 		raise NotImplementedError
 
 class PluralHeaderAccessor(HeaderAccessor):
+	"access multiple headers with the same name (eg. Received)"
 	def __getitem__(self, headername):
 		return HeaderList([Header(headername, MimeEncoded(encoded_value), self._hl_email) \
 			for encoded_value in self._ll_email.get_all(headername, [])])

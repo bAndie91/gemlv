@@ -24,17 +24,31 @@ def get_paths():
 	return files
 
 def load(callback, userdata = None, error_handler = None, gettext = str):
+	"""
+	callback is a function.
+	arguments of the callback function:
+	- next line from the address book (string)
+	- userdata object
+	if the callback returns True then the loading process stops.
+	other return values does not stop the loading process.
+	"""
 	if error_handler is None:
 		import gemlv.sysutils
 		error_handler = lambda e: gemlv.sysutils.warnx(str(e))
 	abook_files = get_paths()
 	if abook_files:
+		stop = False
 		for abook_path in abook_files:
 			try:
 				for ln in open(abook_path, 'r'):
-					callback(ln.strip(), userdata)
+					cb_resp = callback(ln.strip(), userdata)
+					if cb_resp is True:
+						stop = True
+						break
 			except IOError as e:
 				error_handler(e)
+			if stop:
+				break
 	else:
 		e = gettext("There is no addressbook file. Create one in ~/Mail/.addressbook.d/ directory.")
 		error_handler(e)
