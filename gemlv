@@ -4409,14 +4409,16 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 ]
-# sensitive headers are stripped on opening an email for edit
-# TODO: strip sensitive headers before send
+# sensitive headers are stripped on opening an email for edit.
+# user-provided headers which are deemed sensitive are kept on sending.
 SensitiveHeaders = [
 	# TODO: other sensitive headers
 	'X-getmail-retrieved-from-mailbox',
 	'X-GMAIL-LABELS',
 	# headers Clawsmail uses in draft emails:
 	'X-Claws-*', 'S', 'SCF', 'RMID',
+	# Delivered-TO header may leak internal email address:
+	'Delivered-To',
 ]
 CoreTechnicalHeaders = [
 	HDR_CT,
@@ -4427,7 +4429,6 @@ CoreTechnicalHeaders = [
 TechnicalHeaders = [] + CoreTechnicalHeaders  # TODO: other technical headers
 EditExcludedHeaders = [
 		'Auto-Submitted',
-		'Delivered-To',  # sensitive?
 		'DKIM-Signature',
 		'Domainkey-Signature',
 		'Message-ID',
