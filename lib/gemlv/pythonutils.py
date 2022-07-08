@@ -116,6 +116,9 @@ class MultikeyUnionlistDict(dict):
 		else:
 			return super(MultikeyUnionlistDict, self).__getitem__(key)
 
+def strip_list(alist):
+	return [x.strip() for x in alist]
+
 def compact(alist):
 	return filter(None, alist)
 

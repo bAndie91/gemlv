@@ -108,6 +108,7 @@ from gemlv.pythonutils import MultikeyUnionlistDict
 from gemlv.pythonutils import CaseInsensitiveDict
 from gemlv.pythonutils import CaseInsensitiveString
 from gemlv.pythonutils import compact
+from gemlv.pythonutils import strip_list
 import gemlv.gui_toolkits as gui_toolkits
 from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
@@ -2974,7 +2975,7 @@ def prepare_to_send():
 	err_msgs = []
 	if not composer_headers.value[HDR_SUBJ]:
 		err_msgs.append(SYMBOL_BULLET + ' ' + _("No Subject."))
-	if len(filter(lambda x: len(x.strip()), composer_headers.multi_value[RecipientHeaders])) < 1:
+	if not compact(strip_list(composer_headers.multi_value[RecipientHeaders])):
 		err_msgs.append(SYMBOL_BULLET + ' ' + _("No any Recipient."))
 	if toggle_rqdn.get_active() and not compact(composer_headers.multi_value[(HDR_DNT, 'From', 'Reply-To')]):
 		err_msgs.append(SYMBOL_BULLET + ' ' + _("Disposition Notification requested but no address given.") + ' ' + _(MSG_NO_ADDRESS_FOR_DNT))
@@ -3215,7 +3216,7 @@ def build_newemail(with_attachment_data=True):
 		del result_eml.headers[hname]
 	
 	for hname in SemiSingletonHeaders:
-		hval = ', '.join(composer_headers.multi_value[hname])
+		hval = ', '.join(compact(strip_list(composer_headers.multi_value[hname])))
 		if hval:
 			result_eml.headers.append(gemlv.email.Header(hname, MimeDecoded(hval)))
 	
