@@ -512,6 +512,9 @@ msgstr "Csatolmány megnyitása"
 msgid "Open original file"
 msgstr "Eredeti fájl megnyitása"
 
+msgid "Open original directory"
+msgstr "Eredeti könyvtár megnyitása"
+
 msgid "Rename"
 msgstr "Átnevezés"
 

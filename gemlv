@@ -3721,6 +3721,13 @@ def act_composer_attachment_menu_open_from_disk(opts):
 		return
 	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
 
+def act_composer_attachment_menu_open_dir(opts):
+	if not opts.original_path:
+		display_error(_("Source file not known."))
+		return
+	original_dir = os.path.dirname(opts.original_path)
+	run_async(cliArgs.opener, cliArgs.opener_args + [original_dir], None)
+
 def act_composer_attachment_menu_rename(opts):
 	tvc = panel_attachments.get_data('edit-treeviewcolumn')
 	cr = panel_attachments.get_data('edit-cellrenderer')
@@ -4899,6 +4906,9 @@ menu_composer_attachments.append(menuitem_comp_att_open_mem)
 menuitem_comp_att_open_disk = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
 menuitem_comp_att_open_disk.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
 menu_composer_attachments.append(menuitem_comp_att_open_disk)
+menuitem_comp_att_open_dir = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_DIRECTORY, label=_("Open original directory"))
+menuitem_comp_att_open_dir.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_dir)
+menu_composer_attachments.append(menuitem_comp_att_open_dir)
 menuitem_comp_att_rename = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
 menuitem_comp_att_rename.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
 menu_composer_attachments.append(menuitem_comp_att_rename)
