@@ -14,7 +14,7 @@ import locale
 import gettext
 from gemlv.sysutils import warnx
 try:
-	import better_exchook
+	import better_exchookk
 except ImportError:
 	pass
 else:
@@ -299,7 +299,10 @@ def timer2_flush():
 		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 
-def save_exception_traceback(exc_obj, traceback_str):
+def save_exception_traceback(exc_obj, stack, traceback_str):
+	stack = stack[:-1]
+	traceback_str_1st_line, traceback_str_rest_lines = traceback_str.split('\n', 1)
+	traceback_str = traceback_str_1st_line + '\n' + ''.join(traceback.format_list(stack)) + traceback_str_rest_lines
 	if hasattr(exc_obj, 'traceback_str'):
 		exc_obj.traceback_str += traceback_str
 	else:
@@ -639,7 +642,7 @@ def replace_pgp_encrypted_part(model, iterator):
 		decrypt = gpg.decrypt(encrypted_data)
 	except Exception as e:
 		traceback.print_exc()
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(e)
 		decrypt = PropertyStoreClass()
 		decrypt.ok = False
@@ -911,17 +914,25 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			set_content_text(text)
 			loaded_text = text
 		else:
+			load_content_ok = False
 			if eml.content_type.main == 'image':
 				image_data = eml.payload_decoded
 				exif_info = load_exif_metadata(image_data)
 				loader = gtk.gdk.PixbufLoader()
-				loader.write(image_data)
-				loader.close()
-				pxb = loader.get_pixbuf()
-				pxb = exif_transforms(pxb, exif_info)
-				panel_content_image.set_data('last-alloc', None)
-				panel_content_image.set_data('pixbuf', pxb)
-				panel_content_image.show()
+				try:
+					loader.write(image_data)
+				except Exception as e:
+					save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+					display_error(e)
+				else:
+					pxb = loader.get_pixbuf()
+					pxb = exif_transforms(pxb, exif_info)
+					panel_content_image.set_data('last-alloc', None)
+					panel_content_image.set_data('pixbuf', pxb)
+					load_content_ok = True
+					panel_content_image.show()
+				finally:
+					loader.close()
 #			elif eml.content_type.main == 'audio':
 #				TODO: add embedded audio player
 			else:
@@ -933,11 +944,14 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 					label += '\n' + _("Content Description by sender") + ": %s%s%s" % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
 				label += '\n' + _("Size") + ": %s" % human_size(eml.size_decoded_approx)
 				lbl_right.set_markup(label)
+				load_content_ok = True
 				
 				panel_btnbox.show()
 				btn_open.show()
 				btn_save.set_label(gtk.stock_lookup(gtk.STOCK_SAVE)[1])
-			spanel_content.hide()
+			
+			if load_content_ok:
+				spanel_content.hide()
 	else:
 		cmd, args, binary = filt[:]
 		if binary:
@@ -1998,7 +2012,7 @@ def act_add_to_addressbook_manual(address_line):
 	try:
 		gemlv.addressbook.add(section='gemlv.manual', address_line=address_line)
 	except Exception as e:
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(e)
 		raise
 	else:
@@ -2443,7 +2457,7 @@ def open_payload_as_temp_file(eml):
 		except Exception as e:
 			e.filename = tmppath
 			traceback.print_exc()
-			save_exception_traceback(e, traceback.format_exc())
+			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 			display_error(e, async=True, icon=gtk.MESSAGE_WARNING)
 	except OSError as e:
 		os.unlink(tmppath)
@@ -3018,7 +3032,7 @@ def prepare_to_send():
 		if e.status == 'invalid recipient':
 			# TODO: choose GPG recipients
 			pass
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(e)
 		raise CanNotPrepareEmailToSend()
 	
@@ -3031,7 +3045,7 @@ def act_send_to_file():
 		return
 	except Exception as e:
 		traceback.print_exc()
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(e)
 		return
 	
@@ -3049,7 +3063,7 @@ def act_send():
 	except (EmailPreparationCanceled, CanNotPrepareEmailToSend) as e:
 		return
 	except Exception as e:
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(e)
 		return
 	
@@ -3404,7 +3418,7 @@ def gpg_encrypt_email(eml):
 	try:
 		crypt = gpg.encrypt(email_to_encrypt.as_string(), recipients, always_trust=True, extra_args=extra_args)
 	except Exception as e:
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		display_error(_("Encryption error"), str(e))
 		raise
 	if not crypt.ok:
@@ -4275,10 +4289,10 @@ def act_edit_external():
 		xattr.set(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
 	except IOError as e:
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		err = e
 	except OSError as e:
-		save_exception_traceback(e, traceback.format_exc())
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 		e.filename = tmppath
 		err = e
 	if err is not None:
@@ -4345,7 +4359,7 @@ def on_avatar_save(mi):
 		try:
 			avatar_image.pixbuf.save(filename, 'png')
 		except Exception as e:
-			save_exception_traceback(e, traceback.format_exc())
+			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 			display_error(e)
 
 def on_context_menu_on_avatar(event):
@@ -4991,7 +5005,7 @@ if cliArgs.compose:
 						cloc_path = file_uri_to_path(str(cloc_uri))
 					except Exception as e:
 						traceback.print_exc()
-						save_exception_traceback(e, traceback.format_exc())
+						save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 						display_error(e)
 					else:
 						part._ll_email.payload_data_origin_path = cloc_path
