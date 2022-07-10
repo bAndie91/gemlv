@@ -559,7 +559,7 @@ def load_file(filename):
 		if addr:
 			senderaddr = addr
 			break
-	threading.Thread(target=load_avatar, args=(senderaddr, panel_view_avatar, Props['avatar/url_templates.json'] or default_avatar_url_templates)).start()
+	threading.Thread(target=load_avatar, args=(senderaddr, panel_view_avatar, Props['avatar/url_templates.json'])).start()
 	
 	if TheEmail.header[HDR_DNT].nonempty:
 		if xattr.get(filename, XATTR_MDNSENT) is None:

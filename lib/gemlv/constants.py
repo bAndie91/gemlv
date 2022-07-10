@@ -69,11 +69,3 @@ SYMBOL_BULLET = '•'
 SYMBOL_EMAIL = '✉'
 SYMBOL_WEB = '☛'
 
-default_avatar_url_templates = [
-	'https://{avatars_sec_host}/avatar/{email:md5}',
-	'https://{avatars_sec_host}/avatar/{email:lower:md5}',
-	'http://{avatars_host}/avatar/{email:md5}',
-	'http://{avatars_host}/avatar/{email:lower:md5}',
-	'https://www.gravatar.com/avatar/{email:md5}?default=404&size=64&rating=G',
-	'https://www.gravatar.com/avatar/{email:lower:md5}?default=404&size=64&rating=G',
-]

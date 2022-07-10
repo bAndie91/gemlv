@@ -10,7 +10,19 @@ from gemlv.pythonutils import uniq
 
 multi_url_host_delimiter = ' '
 
-class RunAndCache(object):
+default_avatar_url_templates = [
+	'https://{avatars_sec_host}/avatar/{email:md5}',
+	'https://{avatars_sec_host}/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}',
+	'https://{avatars_sec_host}/avatar/{email:lower:md5}',
+	'http://{avatars_host}/avatar/{email:md5}',
+	'http://{avatars_host}/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}',
+	'http://{avatars_host}/avatar/{email:lower:md5}',
+	'https://www.gravatar.com/avatar/{email:md5}?default=404&size=64&rating=G',
+	'https://www.gravatar.com/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default=404&size=64&rating=G',
+	'https://www.gravatar.com/avatar/{email:lower:md5}?default=404&size=64&rating=G',
+]
+
+class LazyLoad(object):
 	def __init__(self, func, *args, **kwargs):
 		self.func = func
 		self.args = args
@@ -39,14 +51,47 @@ class UnknownTemplateVariable(Exception):
 class UnknownTemplateFunction(Exception):
 	pass
 
+def tvar(name, tmpl_vars):
+	if name.startswith('"') and name.endswith('"'):
+		return name[1:-1]
+	return str(tmpl_vars[name])
+
 def template_replacer(expr, tmpl_vars):
+	"""
+	this is a half-baked template language.
+	template expressions are enclosed in curly brackets.
+	all template expression consists of:
+	
+	- optional variable assignment, which is a variable name followed by an equal sign
+	  - if there is an assignment, the template expression evaluates to an empty string
+	- actual variable name, of which value is substituted in
+	  - if there is a double-quote-enclosed string instead of a variable name, then the string is returned verbatim
+	  - variable names (or double-quoted literals) can be concatenated by plus sign, so then the concatenated values are taken
+	- zero or more filter keywords, preceeded by a colon per each
+	  - filters are applied to the resulting value in chain
+	  - valid filter keywords: lower, upper, md5, localpart, domainpart
+	
+	syntax roughly:
+	
+	[ASSIGN_VAR "="] <VAR | "LITERAL"> [+ <VAR | "LITERAL"> [+ <VAR | "LITERAL"> ...]] [: FILTER [: FILTER ...]]
+	"""
+	
 	expr = expr.split(':')
 	var = expr[0]
 	filters = expr[1:]
+	if '=' in var:
+		lvalue, var = var.split('=', 1)
+	else:
+		lvalue = None
+	
 	try:
-		result = str(tmpl_vars[var])
+		if '+' in var:
+			result = ''.join([tvar(x, tmpl_vars) for x in var.split('+')])
+		else:
+			result = tvar(var, tmpl_vars)
 	except KeyError:
 		raise UnknownTemplateVariable(var)
+	
 	for fltr in filters:
 		if fltr == 'lower':
 			result = result.lower()
@@ -60,14 +105,20 @@ def template_replacer(expr, tmpl_vars):
 			result = result.rsplit('@', 1)[1]
 		else:
 			raise UnknownTemplateFunction(fltr)
-	return result
+	if lvalue is not None:
+		tmpl_vars[lvalue] = result
+		return ''
+	else:
+		return result
 
-def load_avatar(email_address, gtk_container, url_templates):
+def load_avatar(email_address, gtk_container, url_templates=None):
+	if url_templates is None:
+		url_templates = default_avatar_url_templates
 	email_domain = email_address.rsplit('@', 1)[1]
 	tmpl_vars = {
 		'email': email_address,
-		'avatars_host': RunAndCache(libravatar_servers, '_avatars._tcp.' + email_domain),
-		'avatars_sec_host': RunAndCache(libravatar_servers, '_avatars-sec._tcp.' + email_domain),
+		'avatars_host': LazyLoad(libravatar_servers, '_avatars._tcp.' + email_domain),
+		'avatars_sec_host': LazyLoad(libravatar_servers, '_avatars-sec._tcp.' + email_domain),
 	}
 	avatar_ok = False
 	urls_tried = []
