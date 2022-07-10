@@ -36,8 +36,6 @@ class LazyLoad(object):
 def libravatar_servers(srv_name):
 	import dns.resolver
 	import dns.exception
-	dns.resolver.get_default_resolver()
-	dns.resolver.default_resolver.port = 254
 	try:
 		answer = dns.resolver.query(srv_name, 'SRV')
 	except dns.exception.DNSException:
