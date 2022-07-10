@@ -51,11 +51,11 @@ Email viewer and composer for local emails in GTK
 	- set [Autocrypt](https://autocrypt.org) header
 		- remove UIDs from the gpg public key which are not disclosed in the current email, so protecting these email addresses from leakage
 	- sign and encrypt headers too (headers repeated both in the encapsulated email and in a `text/rfc822-headers` MIME part)
-- [Gravatar](http://www.gravatar.com/) support
-	- you can configure the url to fetch an avatar picture for en email address:
-		- files in precedence: `~/.config/gemlv/prop/avatar/url_template`, `/etc/gemlv/prop/avatar/url_template`
-		- content: `https://www.gravatar.com/avatar/{email_md5}?default=404&size=64&rating=G`
-		- template vars: `email`, `email_md5`
+- [Libravatar](https://www.libravatar.org/) and [Gravatar](http://www.gravatar.com/) support
+	- you can configure the URLs to fetch the avatar picture of the email sender:
+		- files in precedence: `~/.config/gemlv/prop/avatar/url_templates.json`, `/etc/gemlv/prop/avatar/url_templates.json`
+		- mini template-language to access email address, libravatar hostnames, lower-case, upper-case, hash, ...
+	- save avatar picture with the source URL in xattributes
 - remember UI elements size and position
 - button to unsubscribe from newsletters, mailing lists
 - report as spam/ham
