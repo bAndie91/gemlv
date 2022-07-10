@@ -122,6 +122,12 @@ def strip_list(alist):
 def compact(alist):
 	return filter(None, alist)
 
+def uniq(alist):
+	result = []
+	for x in alist:
+		if x not in result: result.append(x)
+	return result
+
 class CaseInsensitiveString(str):
 	def __repr__(self):
 		return '%s(%s)' % (self.__class__.__name__, str.__repr__(self))

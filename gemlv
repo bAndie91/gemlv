@@ -114,7 +114,7 @@ from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
 from gemlv.constants import *
 import gemlv.mime as mime
-from gemlv.profilepicture import load_gravatar
+from gemlv.profilepicture import load_avatar
 
 
 ### helper classes, functions ###
@@ -173,11 +173,11 @@ class cfgparser(object):
 			fh.close()
 
 class PropertyTree(dict):
-	def __init__(self, *args):
-		super(self.__class__, self).__init__(*args)
+	def __init__(self, appname):
+		super(self.__class__, self).__init__()
 		self.savedprops = {}
 		self.write_delay = 1.2
-		self.APPNAME = 'gemlv'
+		self.APPNAME = appname
 	def _read(self, propname):
 		propvalue = super(self.__class__, self).get(propname)
 		if propvalue is None:
@@ -186,6 +186,8 @@ class PropertyTree(dict):
 				if os.path.exists(path):
 					with open(path, 'r') as f:
 						propvalue = f.read()
+						if propname.endswith('.json'):
+							propvalue = json.loads(propvalue)
 					break
 		return propvalue
 	def __getitem__(self, propname):
@@ -203,11 +205,14 @@ class PropertyTree(dict):
 		timer2_once(self.write_delay, self._write_all, reschedule=False)
 	def _write_all(self):
 		for propname, propvalue in self.iteritems():
-			propvalue = str(propvalue)
 			if self.savedprops.get(propname) != propvalue:
 				propfile = os.path.join(xdg.BaseDirectory.save_config_path(self.APPNAME), 'prop', propname)
 				mkdir(os.path.dirname(propfile))
-				open(propfile, 'w').write(propvalue)
+				if propname.endswith('.json'):
+					propvalue_ondisk = json.dumps(propvalue)
+				else:
+					propvalue_ondisk = str(propvalue)
+				open(propfile, 'w').write(propvalue_ondisk)
 				self.savedprops[propname] = propvalue
 
 class pipereader(object):
@@ -554,7 +559,7 @@ def load_file(filename):
 		if addr:
 			senderaddr = addr
 			break
-	threading.Thread(target=load_gravatar, args=(senderaddr, panel_view_avatar, Props)).start()
+	threading.Thread(target=load_avatar, args=(senderaddr, panel_view_avatar, Props['avatar/url_templates.json'] or default_avatar_url_templates)).start()
 	
 	if TheEmail.header[HDR_DNT].nonempty:
 		if xattr.get(filename, XATTR_MDNSENT) is None:
@@ -4371,9 +4376,12 @@ def on_edit_message(tb):
 def on_avatar_save(mi):
 	filename = avatar_image.get_data('source') + '.png'
 	filename = choose_save_file(filename, ask_overwrite=True)
+	url = avatar_image.get_data('source-url')
 	if filename:
 		try:
 			avatar_image.pixbuf.save(filename, 'png')
+			if url is not None:
+				xattr.set(open(filename, 'r'), {'user.xdg.origin.url': url}, filename)
 		except Exception as e:
 			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 			display_error(e)
@@ -4559,7 +4567,7 @@ Global.show_importance_headers = False
 
 Timers = {}
 Timers2 = {}  # TODO: move timer* to timer2*
-Props = PropertyTree()
+Props = PropertyTree(PROGNAME)
 gpg = gnupg.GPG(use_agent=True)
 gpg.encoding = 'utf-8'
 class GnuPGError(Exception):
