@@ -66,6 +66,8 @@ def encode_header(header_value, **make_header_params):
 	prev_word = None
 	prev_chunk = None
 	for word in header_value.split(separator):
+		if isinstance(word, unicode):
+			word = word.encode('UTF-8')
 		try:
 			if prev_chunk is not None and word == '':
 				# two or more spaces follow a non-ascii-only word, this might result

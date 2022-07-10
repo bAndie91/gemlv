@@ -2601,7 +2601,16 @@ def save_to_file(eml, filename, ask_overwrite=True, consider_preamble=False):
 			messageid = eml.header[HDR_MID].decoded
 			if not messageid and TheEmail is not None:
 				messageid = TheEmail.header[HDR_MID].decoded
-			xattr.set(fh, {XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded, XATTR_TYPE: mimetype, XATTR_ORIGIN: messageid}, filename)
+			xattrs = {
+				XATTR_CHARSET: eml.header[HDR_CT].param['charset'].decoded,
+				XATTR_TYPE: mimetype,
+				XATTR_ORIGIN: messageid,
+			}
+			if eml.header['From'].decoded:
+				xattrs[XATTR_FROM] = eml.header['From'].decoded
+			if eml.header[HDR_SUBJ].decoded:
+				xattrs[XATTR_SUBJECT] = eml.header[HDR_SUBJ].decoded
+			xattr.set(fh, xattrs, filename)
 			fh.flush()
 			moddatetime = eml.header[HDR_CD].param['modification-date'].decoded
 			posixmode = eml.header[HDR_CD].param['posix-mode'].decoded
