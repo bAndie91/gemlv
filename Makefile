@@ -13,7 +13,8 @@ install:
 	cp -v --no-preserve=ownership gemlv-report /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-spam /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-ham /usr/bin/
-	cp -v --no-preserve=ownership -r lib/gemlv /usr/lib/python2.7/gemlv
+	mkdir -p /usr/lib/python2.7/gemlv
+	cp -v --no-preserve=ownership -r lib/gemlv/* /usr/lib/python2.7/gemlv/
 	
 	mkdir -p /etc/gemlv
 	cp -v --no-preserve=ownership filters.conf /etc/gemlv/
