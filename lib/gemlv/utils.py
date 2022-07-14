@@ -89,7 +89,7 @@ def decode_mimetext(encoded_text):
 	"""
 	if encoded_text is None:
 		return encoded_text
-	plain_str = ' '.join([chunk_str.decode(encoding or 'ascii', 'replace') for chunk_str, encoding in email.Header.decode_header(encoded_text)])
+	plain_str = ' '.join([chunk_str.decode(encoding or 'utf-8', 'replace') for chunk_str, encoding in email.Header.decode_header(encoded_text)])
 	return MimeDecoded(plain_str)
 
 def get_gecos_name():
