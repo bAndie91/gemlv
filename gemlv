@@ -14,7 +14,7 @@ import locale
 import gettext
 from gemlv.sysutils import warnx
 try:
-	import better_exchookk
+	import better_exchook
 except ImportError:
 	pass
 else:
@@ -4470,8 +4470,8 @@ AdvancedHeaders = [
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
 ]
-# sensitive headers are stripped on opening an email for edit.
-# user-provided headers which are deemed sensitive are kept on sending.
+# sensitive headers are removed from the email when forwarding.
+# user-provided headers which are deemed sensitive are kept when being sent.
 SensitiveHeaders = [
 	# TODO: other sensitive headers
 	'X-getmail-retrieved-from-mailbox',
@@ -4480,6 +4480,8 @@ SensitiveHeaders = [
 	'X-Claws-*', 'S', 'SCF', 'RMID',
 	# Delivered-TO header may leak internal email address:
 	'Delivered-To',
+	# X-Sent-Date and X-Queue-ID are removed just before send, so no need to remove from the email under editing.
+	#HDR_XQID, HDR_XSD,
 ]
 CoreTechnicalHeaders = [
 	HDR_CT,
@@ -4488,6 +4490,7 @@ CoreTechnicalHeaders = [
 	'Mime-Version',
 ]
 TechnicalHeaders = [] + CoreTechnicalHeaders  # TODO: other technical headers
+# EditExcludedHeaders are removed from the email when opening for edit.
 EditExcludedHeaders = [
 		'Auto-Submitted',
 		'DKIM-Signature',
@@ -5122,7 +5125,3 @@ if Timers2.keys():
 timer2_flush()
 if len(threading.enumerate()) > 1:
 	warnx(_("Waiting background threads to complete."))
-
-# TODO: make .set_label and .set_text consistent on gtk.Label()s
-
-# FIXME: empty Supersedes; 2 Subject; dont send HDR_XSD/QUEUEID, dont load CORE HEADERS

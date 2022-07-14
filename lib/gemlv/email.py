@@ -20,9 +20,9 @@ class PayloadTypeError(Exception):
 
 class Header(object):
 	def __init__(self, name, value=None, email=None):
-		self.mixedcase_name = name
+		self.raw_name = name
 		# TODO: respect de-facto letter-case conventions, eg: DKIM-Signature, MIME-Version, …
-		self.name = re.sub(r'\b(.)', lambda m: m.group(1).upper(), self.mixedcase_name.lower())
+		self.name = re.sub(r'\b(.)', lambda m: m.group(1).upper(), self.raw_name.lower())
 		self._hl_email = email  # the high level gemlv.Email object
 		if self._hl_email:
 			self._ll_email = self._hl_email._ll_email  # the low level email object

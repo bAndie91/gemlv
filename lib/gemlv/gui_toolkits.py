@@ -27,6 +27,15 @@ class LabelsToolItem(gtk.ToolItem):
 		self.box = gtk.HBox()
 		self.add(self.box)
 	def set_labels(self, labels):
+		"""
+		sets multiple labels separated by a separator widget.
+		parameter: labels
+		  list of labels, each label is either a string, or a dict.
+		  if string, then set it literally (no pango markup);
+		  if dict, 2 keys considered:
+		    key 'markup': set it as pango markup text,
+		    key 'text': set it as literal text.
+		"""
 		for label in self.box.get_children():
 			label.destroy()
 		first = True
@@ -40,7 +49,7 @@ class LabelsToolItem(gtk.ToolItem):
 				if piece.has_key('markup'):
 					label.set_markup(piece['markup'])
 				elif piece.has_key('text'):
-					label.set_markup(piece['text'])
+					label.set_text(piece['text'])
 			self.box.pack_start(label, True, False)
 			first = False
 		self.box.show_all()
