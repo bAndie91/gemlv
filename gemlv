@@ -3116,7 +3116,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	recipients_addr = getaddresslines(recipients_flat)
 	
 	sendmail_envs = {
-		'FROM': get_email_address_from_headers('From', email_to_send),
+		'FROM': AddressLine(email_to_send.header['From'].decoded).email,
 		'RCPT': ','.join(map(lambda al: al.email, recipients_addr)),
 	}
 	
