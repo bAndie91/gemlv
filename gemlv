@@ -915,8 +915,13 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	
 	if filt is None:
 		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
-			text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
-			set_content_text(text)
+			try:
+				text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
+				set_content_text(text)
+			except Exception as e:
+				save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+				display_error(e)
+				raise
 			loaded_text = text
 		else:
 			load_content_ok = False
@@ -959,13 +964,24 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				spanel_content.hide()
 	else:
 		cmd, args, binary = filt[:]
-		if binary:
-			content = get_content_any(eml)
-		else:
-			content = get_content_readably(eml)
+		try:
+			if binary:
+				content = get_content_any(eml)
+			else:
+				content = get_content_readably(eml)
+		except Exception as e:
+			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+			display_error(e)
+			raise
+		
 		if cmd == '':
 			panel_content.set_data('view-unfiltered', True)
-			set_content_text(content) or clear_content(_("Loading failed"))
+			try:
+				set_content_text(content)
+			except Exception as e:
+				save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+				display_error(e)
+				clear_content(_("Loading failed"))
 			loaded_text = content
 		else:
 			bufr = panel_content.get_buffer()
@@ -978,6 +994,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		panel_btnbox.hide()
 		panel_content_image.hide()
 		spanel_content.show()
+	
 	if spanel_content.get_data('-loaded-part') != eml:
 		spanel_content.get_vadjustment().set_value(0.0)
 	spanel_content.set_data('-loaded-part', eml)

@@ -34,6 +34,10 @@ class LazyLoad(object):
 		return self.result
 
 def libravatar_servers(srv_name):
+	"""
+	returns the given SRV record's target domain and port number in TARGET:PORT format,
+	delimited by space if there are more than one.
+	"""
 	import dns.resolver
 	import dns.exception
 	try:
@@ -103,6 +107,7 @@ def template_replacer(expr, tmpl_vars):
 			result = result.rsplit('@', 1)[1]
 		else:
 			raise UnknownTemplateFunction(fltr)
+	
 	if lvalue is not None:
 		tmpl_vars[lvalue] = result
 		return ''
