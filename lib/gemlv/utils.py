@@ -26,7 +26,7 @@ def _fix_unquoted_comma(s):
 			return m.group(0)
 		else:
 			return '%s "%s" %s' % (m.group(1), probably_realname_norm, m.group(3))  # @notranslate
-	return re.sub('(^|,)(.+)(<)', repl, s)
+	return re.sub('(^|,)([^@]+?)(<)', repl, s)
 
 def _getaddresses(array):
 	return filter(lambda a: a[1] != '', email.utils.getaddresses(map(_fix_unquoted_comma, array)))
