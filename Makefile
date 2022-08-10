@@ -1,5 +1,5 @@
 
-install:
+install: locales
 	cp -v --no-preserve=ownership usr/share/applications/gemlv.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/applications/gemlv-compose.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/menu/gemlv /usr/share/menu/
@@ -13,6 +13,8 @@ install:
 	cp -v --no-preserve=ownership gemlv-report /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-spam /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-ham /usr/bin/
+	mkdir -p /usr/libexec/gemlv
+	cp -v --no-preserve=ownership scan-participants /usr/libexec/gemlv/
 	mkdir -p /usr/lib/python2.7/gemlv
 	cp -v --no-preserve=ownership -r lib/gemlv/* /usr/lib/python2.7/gemlv/
 	
@@ -21,11 +23,6 @@ install:
 	
 	mkdir -p /usr/share/doc/gemlv
 	cp -v --no-preserve=ownership LICENSE /usr/share/doc/gemlv/
-	
-	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
-	do echo /"$${f%.*}".mo;\
-	  msgfmt -o /"$${f%.*}".mo "$$f"; \
-	done
 	
 	git describe --tags > /usr/share/doc/gemlv/VERSION
 	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
@@ -47,6 +44,8 @@ uninstall:
 	[ ! -e /usr/bin/gemlv-report ] || rm -v /usr/bin/gemlv-report
 	[ ! -e /usr/bin/gemlv-report-spam ] || rm -v /usr/bin/gemlv-report-spam
 	[ ! -e /usr/bin/gemlv-report-ham ] || rm -v /usr/bin/gemlv-report-ham
+	[ ! -e /usr/libexec/gemlv/scan-participants ] || rm -v /usr/libexec/gemlv/scan-participants
+	rmdir -v /usr/libexec/gemlv || true
 	rm -v -r /usr/lib/python2.7/gemlv/
 	
 	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
