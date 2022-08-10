@@ -39,8 +39,7 @@ for kind in 'our', 'their':
 	headers = []
 	for hdr in getattr(cliArgs, kind):
 		headers.extend(Email.get_all(hdr, []))
-	addresses[kind] = gemlv.utils.getaddresses(headers)
-	addresses[kind] = map(lambda x: x[1], addresses[kind])
+	addresses[kind] = [al.email for al in gemlv.utils.getaddresslines(headers)]
 
 if len(addresses['our']) == 0:
 	err(3, "No \"our\" address found.")
