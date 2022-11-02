@@ -5015,6 +5015,7 @@ if cliArgs.compose:
 		
 		# Import headers.
 		supersedes = []
+		header = None
 		for header in edit_eml.headers.items:
 			if header.name == HDR_MID:
 				supersedes.append(header.value.decoded)
