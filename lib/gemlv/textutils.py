@@ -36,3 +36,9 @@ def wildcardmatch(subject, pattern):
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
 
+def noaccent(s):
+	# from unidecode import unidecode; return unidecode(s)
+	import unicodedata
+	# Nonspacing_Mark = 'Mn'
+	# ... if unicodedata.category(c) != Nonspacing_Mark
+	return ''.join([c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c)])

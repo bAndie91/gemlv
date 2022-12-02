@@ -87,6 +87,7 @@ from gemlv.textutils import list2text
 from gemlv.textutils import human_size
 from gemlv.textutils import shorturl
 from gemlv.textutils import truish
+from gemlv.textutils import noaccent
 import gemlv.addressbook
 from gemlv.sysutils import futimes
 from gemlv.sysutils import recursive_rm
@@ -1696,22 +1697,25 @@ class GemlvComposerHeader(gtk.HBox):
 							item[column['is_match']] = True
 							item[column['order']] = 0
 				else:
-					hits = fuzzywuzzy.process.extract(userinput.decode('utf-8'), [item[column['text']] for item in ac_model], limit=None, scorer=fuzzywuzzy.fuzz.partial_token_set_ratio)
-					hits = dict(hits)
+					suggestion_hits = fuzzywuzzy.process.extract(userinput.decode('utf-8'), [item[column['text']] for item in ac_model], limit=None, scorer=fuzzywuzzy.fuzz.partial_token_set_ratio)
+					suggestion_hits = dict(suggestion_hits)
 					# Highlight meaningful substrings
 					for item in ac_model:
-						text = item[column['text']]
-						item[column['is_match']] = text in hits.keys() and hits[text] > 0
-						item[column['order']] = 100 - hits.get(text, 0)
-						if hits.get(text):
+						suggestion_text = item[column['text']]
+						item[column['is_match']] = suggestion_text in suggestion_hits.keys() and suggestion_hits[suggestion_text] > 0
+						item[column['order']] = 100 - suggestion_hits.get(suggestion_text, 0)
+						if suggestion_hits.get(suggestion_text):
 							# Generate markup string highlighting the matched substrings
+							suggestion_text_u = suggestion_text.decode('UTF-8')
+							suggestion_text_norm = noaccent(suggestion_text_u)
 							highlight_ranges = []
 							for userinput_word in userinput.split():
 								for substr_length in [x+1 for x in reversed(range(len(userinput_word)))]:
 									if substr_length <= 1: break
 									substr_found = False
 									search_substr = userinput_word[0:substr_length]
-									for match in re.finditer(re.escape(search_substr), text, re.I | re.U):
+									search_substr_norm = noaccent(search_substr.decode('UTF-8'))
+									for match in re.finditer(re.escape(search_substr_norm), suggestion_text_norm, re.I | re.U):
 										highlight_ranges.append(match.regs[0])  # tuple: starting and end char positions
 										substr_found = True
 									if substr_found: break  # longest (left-anchored) substring of the current word is found, got to next word
@@ -1721,17 +1725,17 @@ class GemlvComposerHeader(gtk.HBox):
 							last_range_end = 0
 							for hl_range in sorted_list_uniq(highlight_ranges):
 								start, end = hl_range[:]
-								label_markup += glib.markup_escape_text(text[last_range_end:start])
-								label_markup += PMU_AUTOCOMPLETION_MATCH % glib.markup_escape_text(text[start:end])
+								label_markup += glib.markup_escape_text(suggestion_text_u[last_range_end:start])
+								label_markup += PMU_AUTOCOMPLETION_MATCH % glib.markup_escape_text(suggestion_text_u[start:end])
 								last_range_end = end
-							label_markup += glib.markup_escape_text(text[last_range_end:])
+							label_markup += glib.markup_escape_text(suggestion_text_u[last_range_end:])
 							item[column['markup']] = label_markup
 						else:
-							item[column['markup']] = glib.markup_escape_text(text)
+							item[column['markup']] = glib.markup_escape_text(suggestion_text)
 			else:
 				for item in ac_model:
-					text = item[column['text']]
-					item[column['order']] = text.find(userinput)
+					suggestion_text = item[column['text']]
+					item[column['order']] = suggestion_text.find(userinput)
 		
 		if fuzzywuzzy is not None:
 			return ac_model.get_value(treeiter, column['is_match'])
