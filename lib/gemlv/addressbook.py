@@ -56,9 +56,9 @@ def load(callback, userdata = None, error_handler = None, gettext = str):
 	return True
 
 def get_full():
-	abook = []
-	load(callback = lambda addr, abook: abook.append(addr), userdata=abook)
-	return abook
+	abook = {}
+	load(callback = lambda addr, abook: abook.__setitem__(addr, True), userdata=abook)
+	return abook.keys()
 
 def add(section, address_line=None):
 	"add the given address line to the addressbook unless an entry with the same realname and email address is already there (in any addressbook section)"
