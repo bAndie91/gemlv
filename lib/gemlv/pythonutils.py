@@ -197,3 +197,42 @@ class CaseInsensitiveString(str):
 		raise NotImplementedError
 	def translate(self, *p, **kw):
 		raise NotImplementedError
+
+def merge_overlapping_ranges(ranges):
+	"""
+	merges overlapping ranges.
+	identical ranges (ie. perfect overlaps) are kept, so removing duplicated items before (or after) is recommended.
+	takes a list of (start_pos, end_pos) tuples representing a range with starting and end position.
+	changes the input list in place.
+	"""
+	overlaps = True
+	while overlaps:
+		overlaps = False
+		for range_a in ranges:
+			pos_a, end_a = range_a[:]
+			
+			for range_b in ranges:
+				if range_b == range_a: continue
+				pos_b, end_b = range_b[:]
+				
+				# check if range A and range B overlaps
+				if end_b >= pos_a and pos_b <= end_a:
+					ranges.remove(range_a)
+					ranges.remove(range_b)
+					pos_new = min(pos_a, pos_b)
+					end_new = max(end_a, end_b)
+					ranges.append((pos_new, end_new))
+					overlaps = True
+					break
+			
+			if overlaps:
+				# 'ranges' is changed, exit the loop and start over.
+				break
+	return None
+
+def sorted_list_uniq(lst):
+	"filters out repetiotions in an already sorted list. returns a generator."
+	for idx, elem in enumerate(lst):
+		if idx == 0 or elem != last_elem:
+			yield elem
+		last_elem = elem

@@ -22,7 +22,7 @@ PMU_WARN = '<span foreground=\'darkred\' weight=\'bold\'>'
 PMU_WARN_CLOSE = '</span>'
 PMU_SUBJ = '<big>'
 PMU_SUBJ_CLOSE = '</big>'
-PMU_AUTOCOMPLETION_MATCH_CHAR = '<b><u>%s</u></b>'
+PMU_AUTOCOMPLETION_MATCH = '<b><u>%s</u></b>'
 PMU_ADDRESSBOOK_ADDED_ADDRESS = '<i><span color=\'gray30\'>%s</span></i>'
 PMU_ADDRESSBOOK_NOT_ADDED_ADDRESS = '%s'
 

@@ -35,3 +35,4 @@ def wildcardmatch(subject, pattern):
 
 def truish(x):
 	return(str(x).lower() in ['yes', '1', 'true', 'on'])
+
