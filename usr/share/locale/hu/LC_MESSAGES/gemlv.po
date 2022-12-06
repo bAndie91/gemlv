@@ -19,6 +19,9 @@ msgstr "Munkakönyvtár"
 msgid "Loading failed"
 msgstr "Betöltés meghiúsult"
 
+msgid "Load…"
+msgstr "Betöltés…"
+
 msgid "Content type, allegedly:"
 msgstr "Tartalom típusa, állítólagosan:"
 

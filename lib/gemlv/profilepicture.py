@@ -114,7 +114,7 @@ def template_replacer(expr, tmpl_vars):
 	else:
 		return result
 
-def load_avatar(email_address, gtk_container, url_templates=None):
+def load_avatar(email_address, callback, url_templates=None):
 	if url_templates is None:
 		url_templates = default_avatar_url_templates
 	email_domain = email_address.rsplit('@', 1)[1]
@@ -125,6 +125,8 @@ def load_avatar(email_address, gtk_container, url_templates=None):
 	}
 	avatar_ok = False
 	urls_tried = []
+	
+	callback('init')
 	
 	for url_template in url_templates:
 		multi_url = re.sub(r'\{(.+?)\}', lambda match: template_replacer(match.group(1), tmpl_vars), url_template)
@@ -151,13 +153,10 @@ def load_avatar(email_address, gtk_container, url_templates=None):
 					warnx(url + ': ' + str(e))
 				else:
 					pxb = loader.get_pixbuf()
-					img = gtk_container.children()[0]
-					img.set_from_pixbuf(pxb)
-					img.set_data('source', email_address)
-					img.set_data('source-url', url)
-					gtk_container.show_all()
+					callback('load', {'pxb': pxb, 'url': url, 'email_address': email_address})
 					avatar_ok = True
 			if avatar_ok:
 				break
 		if avatar_ok:
 			break
+	callback('finish')

@@ -546,6 +546,20 @@ def email_from_file(filename):
 	eml = email.message_from_file(fh)
 	return gemlv.email.Email(eml), fh
 
+def avatar_loader_callback(stage, result=None):
+	if stage == 'init':
+		panel_view_avatar.show_all()
+		avatar_image.hide()
+	elif stage == 'load':
+		avatar_loading_indicator.hide()
+		avatar_image.set_from_pixbuf(result['pxb'])
+		avatar_image.set_data('source', result['email_address'])
+		avatar_image.set_data('source-url', result['url'])
+		panel_view_avatar.show_all()
+		avatar_loading_indicator.hide()
+	elif stage == 'finish':
+		avatar_loading_indicator.hide()
+
 def load_file(filename):
 	global TheEmail
 	global LeafParts
@@ -562,7 +576,7 @@ def load_file(filename):
 		if addr:
 			senderaddr = addr
 			break
-	threading.Thread(target=load_avatar, args=(senderaddr, panel_view_avatar, Props['avatar/url_templates.json'])).start()
+	threading.Thread(target=load_avatar, args=(senderaddr, avatar_loader_callback, Props['avatar/url_templates.json'])).start()
 	
 	if TheEmail.header[HDR_DNT].nonempty:
 		if xattr.get(filename, XATTR_MDNSENT) is None:
@@ -4682,6 +4696,7 @@ panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
 panel_view_headerbox = gtk.HBox()
 panel_view_header = gtk.Label()
+avatar_loading_indicator = gtk.Label(_("Load…"))
 avatar_image = EventImage()
 panel_view_avatar = gtk.VBox()
 panel_view_subject = gtk.Label(' ')
@@ -4715,6 +4730,7 @@ panel_view.pack1(panel_view_upper, False, True)
 panel_view_upper.pack_start(panel_view_headerbox, True, True)
 panel_view_headerbox.pack_start(spanel_view_header, True, True)
 panel_view_headerbox.pack_start(panel_view_avatar, False, False)
+panel_view_avatar.pack_start(avatar_loading_indicator, False, False)
 panel_view_avatar.pack_start(avatar_image, False, False)
 spanel_view_header.add_with_viewport(panel_view_header)
 panel_view_upper.pack_start(spanel_view_subject, False, True)
