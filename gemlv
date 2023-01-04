@@ -4633,7 +4633,7 @@ argparser.add_argument('--to', metavar='ADDRESS', action='append', help=_("New E
 argparser.add_argument('--cc', metavar='ADDRESS', action='append', help=_("Carbon Copy Recipients, repeatable"))
 argparser.add_argument('--bcc', metavar='ADDRESS', action='append', help=_("Blind Carbon Copy Recipients, repeatable"))
 argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
-argparser.add_argument('--message', metavar='STRING', help=_("Message body"))
+argparser.add_argument('--message', '--body', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
 argparser.add_argument('--attach', '--attachment', metavar='FILE', action='append', help=_("Attachment file's path, repeatable"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))

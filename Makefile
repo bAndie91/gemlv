@@ -15,6 +15,8 @@ install: locales
 	cp -v --no-preserve=ownership gemlv-report-ham /usr/bin/
 	mkdir -p /usr/libexec/gemlv
 	cp -v --no-preserve=ownership scan-participants /usr/libexec/gemlv/
+	mkdir -p /usr/libexec/gemlv/mailto-progs
+	cp -v --no-preserve=ownership mailto-progs/kmail /usr/libexec/gemlv/mailto-progs/
 	mkdir -p /usr/lib/python2.7/gemlv
 	cp -v --no-preserve=ownership -r lib/gemlv/* /usr/lib/python2.7/gemlv/
 	
@@ -45,6 +47,8 @@ uninstall:
 	[ ! -e /usr/bin/gemlv-report-spam ] || rm -v /usr/bin/gemlv-report-spam
 	[ ! -e /usr/bin/gemlv-report-ham ] || rm -v /usr/bin/gemlv-report-ham
 	[ ! -e /usr/libexec/gemlv/scan-participants ] || rm -v /usr/libexec/gemlv/scan-participants
+	[ ! -e /usr/libexec/gemlv/mailto-progs/kmail ] || rm -v /usr/libexec/gemlv/mailto-progs/kmail
+	rmdir -v /usr/libexec/gemlv/mailto-progs || true
 	rmdir -v /usr/libexec/gemlv || true
 	rm -v -r /usr/lib/python2.7/gemlv/
 	

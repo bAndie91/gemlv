@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# this is a KMail-compatible mailto wrapper for Gemlv.
+# it takes the same parameters as KMail but transforms them for Gemlv.
+
+set -e
+set -o pipefail
+set -u
+declare -a args=()
+
+while [ $# -gt 0 ]
+do
+	case "$1" in
+	--cc|--bcc|--subject|--body|--attach)
+		args+=("$1")
+		shift
+		args+=("$1")
+		;;
+	--composer)
+		true;;
+	--)	true;;
+	-*)	echo "$0: unknown parameter: $1" >&2
+		exit -1;;
+	*)	args+=(--to "$1")
+		;;
+	esac
+	shift
+done
+
+exec gemlv-compose "${args[@]}"
