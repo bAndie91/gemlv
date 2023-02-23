@@ -717,8 +717,19 @@ def clear_content(s=''):
 	return bufr
 
 def decode_readably(s, eml):
-	charset = eml.header[HDR_CT].param['charset'].decoded or 'utf-8'
-	return s.decode(charset, 'replace')
+	encodings = []
+	if eml.header[HDR_CT].param['charset'].decoded:
+		encodings.append(eml.header[HDR_CT].param['charset'].decoded)
+	encodings.extend(os.environ.get('FALLBACK_ENCODINGS', '').split(':'))
+	for encoding in encodings:
+		try:
+			s.decode(encoding, 'strict')
+			break
+		except UnicodeDecodeError:
+			encoding = None
+	if encoding is None:
+		encoding = 'utf-8'
+	return s.decode(encoding, 'replace')
 
 def get_content_readably(eml):
 	return decode_readably(get_content_any(eml), eml)
