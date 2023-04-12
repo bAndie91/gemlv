@@ -2382,7 +2382,7 @@ def act_reply(compose_type):
 					composer_headers.add('To', str(reply_addressline))
 					rcpt_addresses.append(reply_addressline.email)
 				for rh in RecipientHeaders:
-					for addressline in [al.email for al in getaddresslines(TheEmail.headers[rh].encoded)] - SubstractableList(skip_addresses):
+					for addressline in [al for al in getaddresslines(TheEmail.headers[rh].encoded) if al.email not in skip_addresses]:
 						composer_headers.add(rh, str(addressline))
 						rcpt_addresses.append(addressline.email)
 				if listaddress.email and listaddress.email not in rcpt_addresses:
