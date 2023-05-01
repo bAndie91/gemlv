@@ -36,7 +36,7 @@ def decode_header(s, eml=None, unfold=True):
 					charset = part.header[HDR_CT].param['charset'].encoded
 					if charset: encodings.append(charset)
 					# TODO: search charset definitions in MIME-encoded texts in each individual header
-			user_fallback_encodings = os.environ.get('FALLBACK_ENCODINGS',)
+			user_fallback_encodings = os.environ.get('FALLBACK_ENCODINGS', 'utf-8')
 			if user_fallback_encodings:
 				encodings.extend(user_fallback_encodings.split(':'))
 			for encoding in encodings:

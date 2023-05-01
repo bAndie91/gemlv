@@ -720,7 +720,7 @@ def decode_readably(s, eml):
 	encodings = []
 	if eml.header[HDR_CT].param['charset'].decoded:
 		encodings.append(eml.header[HDR_CT].param['charset'].decoded)
-	encodings.extend(os.environ.get('FALLBACK_ENCODINGS', '').split(':'))
+	encodings.extend(os.environ.get('FALLBACK_ENCODINGS', 'utf-8').split(':'))
 	for encoding in encodings:
 		try:
 			s.decode(encoding, 'strict')
