@@ -5124,7 +5124,7 @@ if cliArgs.compose:
 		add_composer_mailto(mailto)
 		del mailto
 	if getattr(cliArgs, 'from'):
-		composer_headers.set_multi('From', [getattr(cliArgs, 'from')])
+		composer_headers.set_single('From', getattr(cliArgs, 'from'))
 	if cliArgs.to:
 		composer_headers.add_multi('To', cliArgs.to)
 	if cliArgs.cc:
