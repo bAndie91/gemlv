@@ -18,10 +18,10 @@ Email viewer and composer for local emails in GTK
 
 - display headers
 	- only which are significant for end-users
+	- toggle "show all headers"
 	- highlight email addresses
 	- convert Date to local timezone
 	- Reply-By and Expires headers, show warning if time is over
-	- switch to show all of the headers
 - view plain text message, or a filtered attachment
 	- configure multiple filters for non-text attachments
 	- change font or turn monospace on/off, font zoom, preserve selected font
@@ -46,7 +46,7 @@ Email viewer and composer for local emails in GTK
 		- both attached signature and signature which is embedded in the pgp message
 	- encrypt message and attachments before send (MIME/PGP format)
 		- hide Bcc recipients in the encrypted message
-		- obfuscate headers
+		- obfuscate RFC822 headers and put their cleartext content in an inline `text/rfc822-headers` part (as per IETF draft-autocrypt-lamps-protected-headers-02)
 	- sign email message and attachments (MIME/PGP)
 	- set [Autocrypt](https://autocrypt.org) header
 		- remove UIDs from the gpg public key which are not disclosed in the current email, so protecting these email addresses from leakage
