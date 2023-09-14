@@ -395,14 +395,22 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 	if custom_accept_button_stock is not None:
 		btn_accept_stock = custom_accept_button_stock
 	dlg = gtk.FileChooserDialog(parent=gui_toolkits.get_current_window(), action=action, buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT, btn_accept_stock, gtk.RESPONSE_ACCEPT), title=title)
+	
 	if FileChooserLastFolder is not None: dlg.set_current_folder(FileChooserLastFolder)
 	if filename is not None: dlg.set_current_name(filename)
 	if multifile:
 		dlg.set_select_multiple(True)
 		selected = []
+	
 	btn_cwd = gui_toolkits.StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
+	
+	if custom_accept_button_stock == 'mail-attachment':
+		btn_opn = gui_toolkits.StockButton(label=_("View"), stock=gtk.STOCK_OPEN)
+		dlg.add_action_widget(btn_opn, gtk.RESPONSE_OK)
+		btn_opn.show() 
+	
 	while True:
 		resp = dlg.run()
 		if resp == gtk.RESPONSE_ACCEPT:
@@ -417,6 +425,9 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 			break
 		elif resp == gtk.RESPONSE_NO:
 			dlg.set_current_folder(os.getcwd())
+		elif resp == gtk.RESPONSE_OK:
+			files_to_open = dlg.get_filenames() if multifile else [dlg.get_filename()]
+			run_async(cliArgs.opener, cliArgs.opener_args + files_to_open, None)
 		else:
 			break
 	if dlg.get_current_folder() is not None:
