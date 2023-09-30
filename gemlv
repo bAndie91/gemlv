@@ -1422,7 +1422,7 @@ def composer_maintain_references_headers():
 		composer_headers.add(HDR_REF, references, is_manual_call=False)
 
 def composer_append_to_list_header(name, values, delimiter=' '):
-	for header in reversed(composer_headers.items):
+	for header in reversed(list(composer_headers.items)):
 		if header.name == name:
 			header.value += delimiter + delimiter.join(values)
 			break
@@ -1431,7 +1431,7 @@ def composer_append_to_list_header(name, values, delimiter=' '):
 
 def composer_substract_once_from_list_header(name, values, delimiter=' '):
 	reductor = values[:]
-	for header in reversed(composer_headers.items):
+	for header in reversed(list(composer_headers.items)):
 		newwords = []
 		for word in header.value.split(delimiter):
 			if word in reductor:
@@ -1893,7 +1893,7 @@ class GemlvComposerHeader(gtk.HBox):
 		self.showhide_pick_buttons()
 	
 	def __repr__(self):
-		return '<%s object at 0x%x name=%s value=%s>' % (self.__class__.__name__, id(self), self.name, self.value)
+		return '<%s object at 0x%x name=%s value=%s>' % (self.__class__.__name__, id(self), self.name, repr(self.value))
 	
 	def duplicate(self, _evtwdg=None):
 		self.container.add(self.name, '', below_to=self)
