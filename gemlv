@@ -1608,6 +1608,7 @@ class GemlvComposerHeadersContainer(gtk.VBox):
 		for box in self._headerboxes:
 			if box.name == name:
 				box.value = value
+				box.tick_my_menuitem(True)
 				return box
 		return self.add(name, value)
 	
