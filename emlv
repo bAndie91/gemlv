@@ -45,10 +45,14 @@ import gemlv.addressbook
 from gemlv.constants import *
 import gemlv.mime as mime
 from gemlv.textutils import human_size
+from gemlv.pythonutils import SubstractableList
 
 
 
 
+
+def output_write(s):
+	output.write(str(s))
 
 def td_esc_cb(m):
 	return repr(m.group(0)).replace('\'', '')
@@ -56,26 +60,30 @@ def td_esc_cb(m):
 def td_esc(s):
 	return re.sub(r'[\t\n\r]', td_esc_cb, s)
 
+def print_mime_part_td_header():
+	output_write("INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION\n")
+
 def list_mime_parts(eml, input_file_index):
 	for part_idx, eml in walk_mime_parts(eml, input_file_index):
 		size = human_size(eml.size_decoded_approx)
-		print '\t'.join([part_idx, eml.content_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])
+		output_write('\t'.join([part_idx, eml.content_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])+'\n')
 
-def display_headers(eml):
-	for hname in CommonUserInterestedHeaders:
+def display_headers(eml, extra_headers=[]):
+	headers = CommonUserInterestedHeaders
+	headers.extend(SubstractableList(extra_headers) - CommonUserInterestedHeaders)
+	for hname in headers:
 		hval = eml.header[hname].decoded
 		if hval:
 			hval = hval.strip()
 			hval = hval.replace('\n', '\n\t')
-			print hname+': '+hval
+			output_write(hname+': '+hval+'\n')
 
 def display(eml):
 	if eml.is_multipart():
-		print eml.preamble
-		print eml.epilogue
+		output_write(eml.preamble+'\n'+eml.epilogue)
 	else:
 		# TODO consider get_content_readably()
-		print eml.payload_decoded
+		output_write(eml.payload_decoded)
 	
 	# TODO support filters
 
@@ -92,40 +100,49 @@ def walk_mime_parts(eml, idx):
 
 
 argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+argparser.description = """Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
+Without -l or -x option, i.e. read-mode, display the first text/plain part as content."""
 argp_mxgroup = argparser.add_mutually_exclusive_group()
-argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in FILE(s) (RFC-822) email file(s).")
-argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part(s) specified by INDEX to stdout.")
-argparser.add_argument('--no-header', '-H', '--body-only', '-b', action='store_true', dest='noheader', help="Don't show common headers when extracting, only the message payload.")
-argparser.add_argument('FILE', nargs='*', help="Process the given FILE(s). Read STDIN if FILE is not given.")
-cliArgs = argparser.parse_args(args=sys.argv[1:])
-
-if cliArgs.extract:
-	cliArgs.noheader = True
-
-if not cliArgs.FILE:
-	cliArgs.FILE.append('/dev/stdin')
-
-if not cliArgs.list and not cliArgs.extract:
-	# read primary part mode
-	cliArgs.extract = []
-	for input_file_index, filename in enumerate(cliArgs.FILE):
-		cliArgs.extract.append('%d.primary' % input_file_index)
+argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
+argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times.")
+argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode.")
+argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
+argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help="Filter the message body through this command.")
+argparser.add_argument('--attachments-filter', '-fa', metavar='COMMAND', help="Filter the table of attachments through this command (in read-mode).")
+argparser.add_argument('FILE', nargs='*', help="Process the given FILEs. Read STDIN if FILE is not given.")
+option = argparser.parse_args(args=sys.argv[1:])
 
 
-if cliArgs.list:
-	print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
-	for idx, filename in enumerate(cliArgs.FILE):
+if not option.list and not option.extract:
+	read_mode = True
+else:
+	read_mode = False
+
+if not option.FILE:
+	option.FILE.append('/dev/stdin')
+
+if not option.list and not option.extract:
+	# "read primary part" mode
+	option.extract = []
+	for input_file_index, filename in enumerate(option.FILE):
+		option.extract.append('%d.primary' % input_file_index)
+
+output = sys.stdout
+
+if option.list:
+	print_mime_part_td_header()
+	for idx, filename in enumerate(option.FILE):
 		eml = load_email(filename)
 		list_mime_parts(eml, str(idx))
 
 else:
-	for idx in cliArgs.extract:
+	for idx in option.extract:
 		indices = idx.split('.')
 		input_file_index = int(indices[0])
-		eml = load_email(cliArgs.FILE[input_file_index])
+		eml = load_email(option.FILE[input_file_index])
 		part = eml
 		
-		if indices[1] == 'primary':
+		if len(indices) == 2 and indices[1] == 'primary':
 			mime_part_indices = []
 			for part_idx, sub_part in walk_mime_parts(part, str(input_file_index)):
 				if sub_part.content_type in ['text/plain']:
@@ -137,7 +154,22 @@ else:
 		for part_idx in map(int, mime_part_indices):
 			part = part.parts[part_idx]
 		
-		if not cliArgs.noheader:
-			display_headers(eml)
-			print ""
+		if read_mode:
+			if option.header_filter:
+				output = os.popen(option.header_filter, 'w')
+			display_headers(eml, extra_headers=option.header)
+			output_write("\n")
+			output = sys.stdout
+		
+		if option.body_filter:
+			output = os.popen(option.body_filter, 'w')
 		display(part)
+		output = sys.stdout
+		
+		if read_mode:
+			if option.attachments_filter:
+				output = os.popen(option.attachments_filter, 'w')
+			print_mime_part_td_header()
+			list_mime_parts(eml, str(input_file_index))
+			output = sys.stdout
+
