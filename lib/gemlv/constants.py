@@ -39,6 +39,27 @@ HDR_XSD = 'X-Sent-Date'
 HDR_XQID = 'X-Queue-ID'
 HDR_SUBJ = 'Subject'
 
+CommonUserInterestedHeaders = [
+	"Return-Path",
+	"X-X-Sender",
+	"X-Sender",
+	"Sender",
+	"From",
+	"Organization",
+	"Reply-To",
+	"Importance",
+	"Priority",
+	"X-Priority",  # @notranslate
+	"X-MSMail-Priority",  # @notranslate
+	"To",
+	"Cc",
+	"Date",
+	"Reply-By",
+	"Expires",
+	"X-Spam",  # @notranslate
+]
+
+
 
 MIMETYPE_OCTETSTREAM = ContentTypeString('application/octet-stream')
 MIMETYPE_EMAIL = ContentTypeString('message/rfc822')

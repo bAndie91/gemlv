@@ -1,5 +1,9 @@
 
-install: locales
+default:
+	@echo "maybe interested in: install, install-libs, locales"
+	@false
+
+install: install-libs locales
 	cp -v --no-preserve=ownership usr/share/applications/gemlv.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/applications/gemlv-compose.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/menu/gemlv /usr/share/menu/
@@ -17,8 +21,6 @@ install: locales
 	cp -v --no-preserve=ownership scan-participants /usr/libexec/gemlv/
 	mkdir -p /usr/libexec/gemlv/mailto-progs
 	cp -v --no-preserve=ownership mailto-progs/kmail /usr/libexec/gemlv/mailto-progs/
-	mkdir -p /usr/lib/python2.7/gemlv
-	cp -v --no-preserve=ownership -r lib/gemlv/* /usr/lib/python2.7/gemlv/
 	
 	mkdir -p /etc/gemlv
 	cp -v --no-preserve=ownership filters.conf /etc/gemlv/
@@ -28,6 +30,10 @@ install: locales
 	
 	git describe --tags > /usr/share/doc/gemlv/VERSION
 	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
+
+install-libs:
+	mkdir -p /usr/lib/python2.7/gemlv
+	cp -v --no-preserve=ownership -r lib/gemlv/*.py /usr/lib/python2.7/gemlv/
 
 locales:
 	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \

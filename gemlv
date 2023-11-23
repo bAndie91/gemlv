@@ -1187,25 +1187,7 @@ def get_listaddressline_main():
 
 def get_headers_markup(eml):
 	display_lines = []
-	display_headers = [
-		"Return-Path",
-		"X-X-Sender",
-		"X-Sender",
-		"Sender",
-		"From",
-		"Organization",
-		"Reply-To",
-		"Importance",
-		"Priority",
-		"X-Priority",  # @notranslate
-		"X-MSMail-Priority",  # @notranslate
-		"To",
-		"Cc",
-		"Date",
-		"Reply-By",
-		"Expires",
-		"X-Spam",  # @notranslate
-	]
+	display_headers = CommonUserInterestedHeaders[:]
 	from_addresses = extract_email_addresses_from_headers('From', eml)
 	# if there is proper sender recorded in the email then do not show the envelope sender 
 	# (ie. "mail from" sender, conventionally recorded in Return-Path header)

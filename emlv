@@ -56,19 +56,41 @@ def td_esc_cb(m):
 def td_esc(s):
 	return re.sub(r'[\t\n\r]', td_esc_cb, s)
 
-def process_mime_parts(eml, levelpfx):
+def list_mime_parts(eml, levelpfx):
+	print_td_header_once()
 	mime_type = eml.content_type.main + '/' + eml.content_type.sub
 	size = human_size(eml.size_decoded_approx)
 	print '\t'.join([levelpfx, mime_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])
 	for idx, part in enumerate(eml.parts):
-		process_mime_parts(part, levelpfx+'.'+str(idx))
+		list_mime_parts(part, levelpfx+'.'+str(idx))
 
 def display(eml):
+	if display_headers:
+		for hname in CommonUserInterestedHeaders:
+			hval = eml.header[hname].decoded
+			if hval:
+				hval = hval.strip()
+				hval = hval.replace('\n', '\n\t')
+				print hname+': '+hval
+		print ""
+	
 	if eml.is_multipart():
 		print eml.preamble
 		print eml.epilogue
 	else:
+		# TODO consider get_content_readably()
 		print eml.payload_decoded
+	
+	# TODO support filters
+
+
+td_header_printed = False
+
+def print_td_header_once():
+	global td_header_printed
+	if not td_header_printed:
+		print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
+		td_header_printed = True
 
 
 
@@ -76,27 +98,46 @@ argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHel
 argp_mxgroup = argparser.add_mutually_exclusive_group()
 argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in FILE(s) (RFC-822) email file(s).")
 argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part(s) specified by INDEX to stdout.")
+argparser.add_argument('--no-header', '-H', '--body-only', '-b', action='store_true', dest='noheader', help="Don't show common headers when extracting, only the message payload.")
 argparser.add_argument('FILE', nargs='*', help="Process the given FILE(s). Read STDIN if FILE is not given.")
 cliArgs = argparser.parse_args(args=sys.argv[1:])
 
+# TODO default show the primary part
+
+display_headers = not cliArgs.noheader
 
 if not cliArgs.FILE:
 	cliArgs.FILE.append('/dev/stdin')
 
+list_or_extract_depending_on_is_multipart = False
+
 if not cliArgs.list and not cliArgs.extract:
-	cliArgs.extract = ['0']
+	if len(cliArgs.FILE) == 1:
+		cliArgs.extract = ['0']
+		list_or_extract_depending_on_is_multipart = True
+	else:
+		cliArgs.extract = map(str, range(0, len(cliArgs.FILE)))
 
 
 if cliArgs.list:
-	print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
 	for idx, filename in enumerate(cliArgs.FILE):
 		eml = gemlv.email.Email(email.message_from_file(open(filename, 'r')))
-		process_mime_parts(eml, str(idx))
+		list_mime_parts(eml, str(idx))
 
 else:
 	for idx in cliArgs.extract:
 		indices = map(int, idx.split('.'))
-		eml = gemlv.email.Email(email.message_from_file(open(cliArgs.FILE[indices[0]], 'r')))
-		for part_idx in indices[1:]:
+		input_file_index = indices[0]
+		mime_part_indices = indices[1:]
+		
+		eml = gemlv.email.Email(email.message_from_file(open(cliArgs.FILE[input_file_index], 'r')))
+		for part_idx in mime_part_indices:
 			eml = eml.parts[part_idx]
-		display(eml)
+		
+		if list_or_extract_depending_on_is_multipart:
+			if eml.is_multipart():
+				list_mime_parts(eml, idx)
+			else:
+				display(eml)
+		else:
+			display(eml)
