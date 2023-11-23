@@ -105,6 +105,7 @@ Without -l or -x option, i.e. read-mode, display the first text/plain part as co
 argp_mxgroup = argparser.add_mutually_exclusive_group()
 argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
 argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times.")
+argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode.")
 argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
 argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help="Filter the message body through this command.")
@@ -117,6 +118,10 @@ if not option.list and not option.extract:
 	read_mode = True
 else:
 	read_mode = False
+
+primary_content_type = 'text/plain'
+if option.html:
+	primary_content_type = 'text/html'
 
 if not option.FILE:
 	option.FILE.append('/dev/stdin')
@@ -145,7 +150,7 @@ else:
 		if len(indices) == 2 and indices[1] == 'primary':
 			mime_part_indices = []
 			for part_idx, sub_part in walk_mime_parts(part, str(input_file_index)):
-				if sub_part.content_type in ['text/plain']:
+				if sub_part.content_type == primary_content_type:
 					mime_part_indices = part_idx.split('.')[1:]
 					break
 		else:
