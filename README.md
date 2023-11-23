@@ -224,5 +224,9 @@ the addressbook file(s) for editing.
 
 **A.** It seems to be some sort of gtk bug. Just scroll over it and it thaws.
 
+## Inspiration
+
+Many UI parts are inspired by Sylpheed/Claws-mail.
+
 # issues
 Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
