@@ -159,17 +159,21 @@ else:
 				output = os.popen(option.header_filter, 'w')
 			display_headers(eml, extra_headers=option.header)
 			output_write("\n")
+			output.flush()
 			output = sys.stdout
 		
 		if option.body_filter:
 			output = os.popen(option.body_filter, 'w')
 		display(part)
+		output.flush()
 		output = sys.stdout
 		
 		if read_mode:
+			output_write('\n')  # in case of body did not end with newline
 			if option.attachments_filter:
 				output = os.popen(option.attachments_filter, 'w')
 			print_mime_part_td_header()
 			list_mime_parts(eml, str(input_file_index))
+			output.flush()
 			output = sys.stdout
 
