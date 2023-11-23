@@ -25,6 +25,8 @@ install: install-libs locales
 	mkdir -p /etc/gemlv
 	cp -v --no-preserve=ownership filters.conf /etc/gemlv/
 	
+	cp -v --no-preserve=ownership emlv /usr/bin/
+	
 	mkdir -p /usr/share/doc/gemlv
 	cp -v --no-preserve=ownership LICENSE /usr/share/doc/gemlv/
 	
@@ -60,6 +62,8 @@ uninstall:
 	
 	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
 	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
+	
+	[ ! -e /usr/bin/emlv ] || rm -v /usr/bin/emlv
 	
 	[ ! -e /usr/share/doc/gemlv/LICENSE ] || rm -v /usr/share/doc/gemlv/LICENSE
 	[ ! -e /usr/share/doc/gemlv/VERSION ] || rm -v /usr/share/doc/gemlv/VERSION
