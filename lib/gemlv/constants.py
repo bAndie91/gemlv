@@ -47,13 +47,14 @@ CommonUserInterestedHeaders = [
 	"From",
 	"Organization",
 	"Reply-To",
+	"To",
+	"Cc",
+	"Subject",
+	"Date",
 	"Importance",
 	"Priority",
 	"X-Priority",  # @notranslate
 	"X-MSMail-Priority",  # @notranslate
-	"To",
-	"Cc",
-	"Date",
 	"Reply-By",
 	"Expires",
 	"X-Spam",  # @notranslate

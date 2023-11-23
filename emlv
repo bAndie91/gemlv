@@ -175,6 +175,7 @@ else:
 		
 		if read_mode:
 			output_write('\n')  # in case of body did not end with newline
+			output_write('\n')  # separate content from table of attachments
 			if option.attachments_filter:
 				output = os.popen(option.attachments_filter, 'w')
 			print_mime_part_td_header()
