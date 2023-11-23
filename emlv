@@ -56,24 +56,20 @@ def td_esc_cb(m):
 def td_esc(s):
 	return re.sub(r'[\t\n\r]', td_esc_cb, s)
 
-def list_mime_parts(eml, levelpfx):
-	print_td_header_once()
-	mime_type = eml.content_type.main + '/' + eml.content_type.sub
-	size = human_size(eml.size_decoded_approx)
-	print '\t'.join([levelpfx, mime_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])
-	for idx, part in enumerate(eml.parts):
-		list_mime_parts(part, levelpfx+'.'+str(idx))
+def list_mime_parts(eml, input_file_index):
+	for part_idx, eml in walk_mime_parts(eml, input_file_index):
+		size = human_size(eml.size_decoded_approx)
+		print '\t'.join([part_idx, eml.content_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])
+
+def display_headers(eml):
+	for hname in CommonUserInterestedHeaders:
+		hval = eml.header[hname].decoded
+		if hval:
+			hval = hval.strip()
+			hval = hval.replace('\n', '\n\t')
+			print hname+': '+hval
 
 def display(eml):
-	if display_headers:
-		for hname in CommonUserInterestedHeaders:
-			hval = eml.header[hname].decoded
-			if hval:
-				hval = hval.strip()
-				hval = hval.replace('\n', '\n\t')
-				print hname+': '+hval
-		print ""
-	
 	if eml.is_multipart():
 		print eml.preamble
 		print eml.epilogue
@@ -83,14 +79,15 @@ def display(eml):
 	
 	# TODO support filters
 
+def load_email(filepath):
+	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
 
-td_header_printed = False
+def walk_mime_parts(eml, idx):
+	yield (idx, eml)
+	for part_idx, part in enumerate(eml.parts):
+		for x in walk_mime_parts(part, '%s.%d' % (idx, part_idx)):
+			yield x
 
-def print_td_header_once():
-	global td_header_printed
-	if not td_header_printed:
-		print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
-		td_header_printed = True
 
 
 
@@ -102,42 +99,45 @@ argparser.add_argument('--no-header', '-H', '--body-only', '-b', action='store_t
 argparser.add_argument('FILE', nargs='*', help="Process the given FILE(s). Read STDIN if FILE is not given.")
 cliArgs = argparser.parse_args(args=sys.argv[1:])
 
-# TODO default show the primary part
-
-display_headers = not cliArgs.noheader
+if cliArgs.extract:
+	cliArgs.noheader = True
 
 if not cliArgs.FILE:
 	cliArgs.FILE.append('/dev/stdin')
 
-list_or_extract_depending_on_is_multipart = False
-
 if not cliArgs.list and not cliArgs.extract:
-	if len(cliArgs.FILE) == 1:
-		cliArgs.extract = ['0']
-		list_or_extract_depending_on_is_multipart = True
-	else:
-		cliArgs.extract = map(str, range(0, len(cliArgs.FILE)))
+	# read primary part mode
+	cliArgs.extract = []
+	for input_file_index, filename in enumerate(cliArgs.FILE):
+		cliArgs.extract.append('%d.primary' % input_file_index)
 
 
 if cliArgs.list:
+	print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
 	for idx, filename in enumerate(cliArgs.FILE):
-		eml = gemlv.email.Email(email.message_from_file(open(filename, 'r')))
+		eml = load_email(filename)
 		list_mime_parts(eml, str(idx))
 
 else:
 	for idx in cliArgs.extract:
-		indices = map(int, idx.split('.'))
-		input_file_index = indices[0]
-		mime_part_indices = indices[1:]
+		indices = idx.split('.')
+		input_file_index = int(indices[0])
+		eml = load_email(cliArgs.FILE[input_file_index])
+		part = eml
 		
-		eml = gemlv.email.Email(email.message_from_file(open(cliArgs.FILE[input_file_index], 'r')))
-		for part_idx in mime_part_indices:
-			eml = eml.parts[part_idx]
-		
-		if list_or_extract_depending_on_is_multipart:
-			if eml.is_multipart():
-				list_mime_parts(eml, idx)
-			else:
-				display(eml)
+		if indices[1] == 'primary':
+			mime_part_indices = []
+			for part_idx, sub_part in walk_mime_parts(part, str(input_file_index)):
+				if sub_part.content_type in ['text/plain']:
+					mime_part_indices = part_idx.split('.')[1:]
+					break
 		else:
-			display(eml)
+			mime_part_indices = indices[1:]
+		
+		for part_idx in map(int, mime_part_indices):
+			part = part.parts[part_idx]
+		
+		if not cliArgs.noheader:
+			display_headers(eml)
+			print ""
+		display(part)
