@@ -1,0 +1,102 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+import traceback
+import locale
+import gettext
+from gemlv.sysutils import warnx
+try:
+	import better_exchook
+except ImportError:
+	pass
+else:
+	better_exchook.install()
+import email
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email.mime.message import MIMEMessage
+from gemlv.contenttypestring import ContentTypeString
+import gemlv.email
+import re
+from tempfile import mkstemp
+from tempfile import mkdtemp
+from mimetypes import guess_extension
+import magic
+import argparse
+import time
+try:
+	import setproctitle
+except ImportError:
+	warnx("No module named setproctitle. Degrading.")
+	class setproctitle(object):
+		@classmethod
+		def setproctitle(self, *x, **kv):
+			pass
+import xdg.BaseDirectory
+from gemlv.utils import AddressLine
+from gemlv.utils import getaddresslines
+from gemlv.utils import decode_mimetext
+from gemlv.mimetext import MimeDecoded
+from gemlv.mimetext import MimeEncoded
+import gemlv.addressbook
+from gemlv.constants import *
+import gemlv.mime as mime
+from gemlv.textutils import human_size
+
+
+
+
+
+def td_esc_cb(m):
+	return repr(m.group(0)).replace('\'', '')
+
+def td_esc(s):
+	return re.sub(r'[\t\n\r]', td_esc_cb, s)
+
+def process_mime_parts(eml, levelpfx):
+	mime_type = eml.content_type.main + '/' + eml.content_type.sub
+	size = human_size(eml.size_decoded_approx)
+	print '\t'.join([levelpfx, mime_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])
+	for idx, part in enumerate(eml.parts):
+		process_mime_parts(part, levelpfx+'.'+str(idx))
+
+def display(eml):
+	if eml.is_multipart():
+		print eml.preamble
+		print eml.epilogue
+	else:
+		print eml.payload_decoded
+
+
+
+argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+argp_mxgroup = argparser.add_mutually_exclusive_group()
+argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in FILE(s) (RFC-822) email file(s).")
+argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part(s) specified by INDEX to stdout.")
+argparser.add_argument('FILE', nargs='*', help="Process the given FILE(s). Read STDIN if FILE is not given.")
+cliArgs = argparser.parse_args(args=sys.argv[1:])
+
+
+if not cliArgs.FILE:
+	cliArgs.FILE.append('/dev/stdin')
+
+if not cliArgs.list and not cliArgs.extract:
+	cliArgs.extract = ['0']
+
+
+if cliArgs.list:
+	print "INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION"
+	for idx, filename in enumerate(cliArgs.FILE):
+		eml = gemlv.email.Email(email.message_from_file(open(filename, 'r')))
+		process_mime_parts(eml, str(idx))
+
+else:
+	for idx in cliArgs.extract:
+		indices = map(int, idx.split('.'))
+		eml = gemlv.email.Email(email.message_from_file(open(cliArgs.FILE[indices[0]], 'r')))
+		for part_idx in indices[1:]:
+			eml = eml.parts[part_idx]
+		display(eml)
