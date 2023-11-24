@@ -53,6 +53,7 @@ from gemlv.pythonutils import SubstractableList
 
 
 def output_write(s):
+	if isinstance(s, unicode): s = s.encode('utf-8')
 	output.write(str(s))
 
 def td_esc_cb(m):
@@ -74,9 +75,9 @@ def display_headers(eml, extra_headers=[]):
 	headers.extend(SubstractableList(extra_headers) - CommonUserInterestedHeaders)
 	for hname_patt in headers:
 		for header in eml.headers.items:
-			if wildcardmatch(header.name, hname_patt):
+			if wildcardmatch(header.raw_name, hname_patt):
 				hval = header.value.decoded.strip().replace('\n', '\n\t')
-				output_write(header.name+': '+hval+'\n')
+				output_write(header.raw_name+': '+hval+'\n')
 
 def display(eml):
 	if eml.is_multipart():
