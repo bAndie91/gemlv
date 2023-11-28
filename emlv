@@ -98,6 +98,7 @@ def walk_mime_parts(eml, idx):
 			yield x
 
 
+default_text_html_body_filter = '~/.local/bin/emlv-body-filter-text-html'
 
 
 argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -109,7 +110,7 @@ argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', h
 argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode besides "+', '.join(CommonUserInterestedHeaders)+". Wildcards are supported.")
 argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
-argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help="Filter the message body through this command.")
+argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help=("Filter the message body through this command. In html mode (--html option) the default is '%s'." % default_text_html_body_filter))
 argparser.add_argument('--attachments-filter', '-fa', metavar='COMMAND', help="Filter the table of attachments through this command (in read-mode).")
 argparser.add_argument('FILE', nargs='*', help="Process the given FILEs. Read STDIN if FILE is not given.")
 option = argparser.parse_args(args=sys.argv[1:])
@@ -123,6 +124,9 @@ else:
 primary_content_type = 'text/plain'
 if option.html:
 	primary_content_type = 'text/html'
+	
+	if not option.body_filter:
+		option.body_filter = default_text_html_body_filter
 
 if not option.FILE:
 	option.FILE.append('/dev/stdin')
@@ -142,6 +146,8 @@ if option.list:
 		list_mime_parts(eml, str(idx))
 
 else:
+	filter_status_codes = []
+	
 	for idx in option.extract:
 		indices = idx.split('.')
 		input_file_index = int(indices[0])
@@ -163,24 +169,45 @@ else:
 		if read_mode:
 			if option.header_filter:
 				output = os.popen(option.header_filter, 'w')
+			
 			display_headers(eml, extra_headers=option.header)
+			
+			if option.header_filter:
+				filter_status = output.close()
+				filter_status_codes.append(filter_status)
+				output = sys.stdout
+			
 			output_write("\n")
-			output.flush()
-			output = sys.stdout
 		
 		if option.body_filter:
 			output = os.popen(option.body_filter, 'w')
+		
 		display(part)
-		output.flush()
-		output = sys.stdout
+		
+		if option.body_filter:
+			filter_status = output.close()
+			filter_status_codes.append(filter_status)
+			output = sys.stdout
 		
 		if read_mode:
 			output_write('\n')  # in case of body did not end with newline
 			output_write('\n')  # separate content from table of attachments
+			
 			if option.attachments_filter:
 				output = os.popen(option.attachments_filter, 'w')
+			
 			print_mime_part_td_header()
 			list_mime_parts(eml, str(input_file_index))
-			output.flush()
-			output = sys.stdout
-
+			
+			if option.attachments_filter:
+				filter_status = output.close()
+				filter_status_codes.append(filter_status)
+				output = sys.stdout
+	
+	filter_status_codes = [code for code in filter_status_codes if code is not None]
+	if filter_status_codes:
+		highest_status_code = max(filter_status_codes)
+		if os.WIFSIGNALED(highest_status_code):
+			sys.exit(128 + os.WTERMSIG(highest_status_code))
+		else:
+			sys.exit(os.WEXITSTATUS(highest_status_code))
