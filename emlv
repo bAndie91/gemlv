@@ -81,7 +81,7 @@ def display_headers(eml, extra_headers=[]):
 
 def display(eml):
 	if eml.is_multipart():
-		output_write(eml.preamble+'\n'+eml.epilogue)
+		output_write("%s\n%s" % (eml.preamble, eml.epilogue))
 	else:
 		# TODO consider get_content_readably()
 		output_write(eml.payload_decoded)
