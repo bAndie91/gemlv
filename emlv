@@ -121,9 +121,9 @@ if not option.list and not option.extract:
 else:
 	read_mode = False
 
-primary_content_type = 'text/plain'
+primary_content_type = MIMETYPE_TEXT
 if option.html:
-	primary_content_type = 'text/html'
+	primary_content_type = MIMETYPE_HTML
 	
 	if not option.body_filter:
 		option.body_filter = default_text_html_body_filter
@@ -166,13 +166,14 @@ else:
 		for part_idx in map(int, mime_part_indices):
 			part = part.parts[part_idx]
 		
+		
 		if read_mode:
 			if option.header_filter:
 				output = os.popen(option.header_filter, 'w')
 			
 			display_headers(eml, extra_headers=option.header)
 			
-			if option.header_filter:
+			if output != sys.stdout:
 				filter_status = output.close()
 				filter_status_codes.append(filter_status)
 				output = sys.stdout
@@ -181,10 +182,14 @@ else:
 		
 		if option.body_filter:
 			output = os.popen(option.body_filter, 'w')
+		elif read_mode:
+			if part.content_type == MIMETYPE_HTML:
+				output = os.popen(default_text_html_body_filter, 'w')
+			# TODO: check other common content types
 		
 		display(part)
 		
-		if option.body_filter:
+		if output != sys.stdout:
 			filter_status = output.close()
 			filter_status_codes.append(filter_status)
 			output = sys.stdout
@@ -199,7 +204,7 @@ else:
 			print_mime_part_td_header()
 			list_mime_parts(eml, str(input_file_index))
 			
-			if option.attachments_filter:
+			if output != sys.stdout:
 				filter_status = output.close()
 				filter_status_codes.append(filter_status)
 				output = sys.stdout
