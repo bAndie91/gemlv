@@ -104,9 +104,10 @@ default_text_html_body_filter = '~/.local/bin/emlv-body-filter-text-html'
 argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 argparser.description = """Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
 Without -l or -x option, i.e. read-mode, display the first text/plain part as content."""
-argp_mxgroup = argparser.add_mutually_exclusive_group()
-argp_mxgroup.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
-argp_mxgroup.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times.")
+argp_mxg1 = argparser.add_mutually_exclusive_group()
+argp_mxg1.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
+argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times.")
+argp_mxg1.add_argument('--save', '-s', action='append', metavar='INDEX', help="Save MIME part specified by INDEX to file. May be specified multiple times.")
 argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode besides "+', '.join(CommonUserInterestedHeaders)+". Wildcards are supported.")
 argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
@@ -116,10 +117,17 @@ argparser.add_argument('FILE', nargs='*', help="Process the given FILEs. Read ST
 option = argparser.parse_args(args=sys.argv[1:])
 
 
-if not option.list and not option.extract:
+if option.save and option.body_filter:
+	raise Exception("Filter options can not be used.")
+
+if not option.list and not option.extract and not option.save:
+	# "read primary part" mode
 	read_mode = True
 else:
 	read_mode = False
+	
+	if option.header_filter or option.attachments_filter:
+		raise Exception("Filter options (header, attachments) are meaningless here.")
 
 primary_content_type = MIMETYPE_TEXT
 if option.html:
@@ -131,8 +139,7 @@ if option.html:
 if not option.FILE:
 	option.FILE.append('/dev/stdin')
 
-if not option.list and not option.extract:
-	# "read primary part" mode
+if read_mode:
 	option.extract = []
 	for input_file_index, filename in enumerate(option.FILE):
 		option.extract.append('%d.primary' % input_file_index)
@@ -147,6 +154,9 @@ if option.list:
 
 else:
 	filter_status_codes = []
+	
+	if option.save:
+		option.extract = option.save
 	
 	for idx in option.extract:
 		indices = idx.split('.')
@@ -180,14 +190,25 @@ else:
 			
 			output_write("\n")
 		
-		if option.body_filter:
-			output = os.popen(option.body_filter, 'w')
-		elif read_mode:
-			if part.content_type == MIMETYPE_HTML:
-				output = os.popen(default_text_html_body_filter, 'w')
-			# TODO: check other common content types
-		
-		display(part)
+		if option.save:
+			attachment_filename = part.filename
+			# replace directory separator to unicode U+2044 FRACTION SLASH
+			output_filename = attachment_filename.replace(os.path.sep, u'⁄')
+			if not output_filename: output_filename = 'attachment-'+idx.replace('.', '-')+'.dat'
+			output = open(output_filename, 'w')
+			output.write(part.payload_decoded)
+			output.close()
+			sys.stderr.write("emlv: saved: "+output_filename+"\n")
+			output = sys.stdout
+		else:
+			if option.body_filter:
+				output = os.popen(option.body_filter, 'w')
+			elif read_mode:
+				if part.content_type == MIMETYPE_HTML:
+					output = os.popen(default_text_html_body_filter, 'w')
+				# TODO: check other common content types
+			
+			display(part)
 		
 		if output != sys.stdout:
 			filter_status = output.close()
