@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Icon=emblem-mail
+Type=X-XFCE-Helper
+Name=Gemlv
+StartupNotify=true
+X-XFCE-Binaries=gemlv-compose;
+X-XFCE-Category=MailReader
+X-XFCE-Commands=%B;
+X-XFCE-CommandsWithParameter=%B --mailto "mailto:%s";

@@ -6,6 +6,7 @@ default:
 install: install-libs locales
 	cp -v --no-preserve=ownership usr/share/applications/gemlv.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/applications/gemlv-compose.desktop /usr/share/applications/
+	cp -v --no-preserve=ownership usr/share/xfce4/helpers/gemlv.desktop /usr/share/xfce4/helpers/
 	cp -v --no-preserve=ownership usr/share/menu/gemlv /usr/share/menu/
 	
 	update-desktop-database
@@ -46,6 +47,7 @@ locales:
 uninstall:
 	[ ! -e /usr/share/applications/gemlv.desktop ] || rm -v /usr/share/applications/gemlv.desktop
 	[ ! -e /usr/share/applications/gemlv-compose.desktop ] || rm -v /usr/share/applications/gemlv-compose.desktop
+	[ ! -e /usr/share/xfce4/helpers/gemlv.desktop ] || rm -v /usr/share/xfce4/helpers/gemlv.desktop
 	[ ! -e /usr/share/menu/gemlv ] || rm -v /usr/share/menu/gemlv
 	
 	[ ! -e /usr/bin/gemlv ] || rm -v /usr/bin/gemlv
