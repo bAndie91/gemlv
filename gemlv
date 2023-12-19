@@ -35,7 +35,7 @@ from gemlv.textutils import wildcardmatch
 import argparse
 import gemlv.xattr as xattr
 if not xattr.supported():
-	warnx(_("Notice: xattr is not available. Degrading extended attribute management."))
+	warnx("Notice: xattr is not available. Degrading extended attribute management.")
 import urlparse
 import pwd
 import threading
