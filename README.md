@@ -1,10 +1,13 @@
 # gemlv
-Email viewer and composer for local emails in GTK
+Email viewer and composer for email files, in GTK
 
 - [Screenshots](#screenshots)
 - [Features](#features)
+- [Autocrypt implementation status](#autocrypt-implementation-status)
 - [CLI options](#cli-options)
+- [Compatibility](#compatibility)
 - [FAQ](#faq)
+- [Inspiration](#inspiration)
 
 ## Screenshots
 
@@ -83,7 +86,7 @@ Email viewer and composer for local emails in GTK
 		- suggest "From" addresses based on past correspondences with the given recipients (need to run `scan-participants` regurarly to populate database)
 	- auto save drafts to `~/.cache/gemlv/drafts/`
 		- you can find and open draft emails there in case of something crashed
-	- support `~/.signature` and multiple user signature files in ~/Mail/.signatures/*`
+	- support `~/.signature` and multiple user signature files in `~/Mail/.signatures/*`
 - reply options
 	- consider Reply-To field
 	- set References, In-Reply-To headers
@@ -186,6 +189,17 @@ optional arguments:
   --header STRING       Add custom header(s) to the new Email (default: None)
 ```
 
+## Compatibility
+
+### python gnupg module
+
+[Gnupg](https://github.com/isislovecruft/python-gnupg) searches gpg-agent using `psutil`.
+When procfs (`/proc`) is mounted with `hidepid` option, `psutil` throws AccessDenied,
+which prevents `gnupg` to initialize.
+
+Affected versions: `gnupg < 3.0.1`.
+Recommended to install `gnupg >= 3.0.1`.
+
 ## FAQ
 
 **Q.** Support feature-rich HTML-rendering?
@@ -228,5 +242,3 @@ the addressbook file(s) for editing.
 
 Many UI parts are inspired by Sylpheed/Claws-mail.
 
-# issues
-Please submit issues via PR to some file `<TITLE>.txt` or `<TITLE>.md` on `issues` branch.
