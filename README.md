@@ -189,6 +189,13 @@ optional arguments:
   --header STRING       Add custom header(s) to the new Email (default: None)
 ```
 
+## Dependencies
+
+not exhaustive list
+
+- gnupg <https://github.com/isislovecruft/python-gnupg>
+- pyxdg <https://www.freedesktop.org/wiki/Software/pyxdg/>
+
 ## Compatibility
 
 ### python gnupg module
