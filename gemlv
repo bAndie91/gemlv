@@ -67,10 +67,9 @@ except ImportError:
 import uuid
 import xdg.BaseDirectory
 try:
-	import pyexiv2
-except ImportError:
-	warnx("No module named pyexiv2. Degrading image auto rotation.")
-	pyexiv2 = None
+	import gemlv.imagerotation
+except ImportError as exc:
+	warnx(str(exc) + '\n' + "No module found to access image metadata. Degrading image auto-rotation.")
 try:
 	import sqlite3
 except ImportError:
@@ -966,7 +965,6 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			load_content_ok = False
 			if eml.content_type.main == 'image':
 				image_data = eml.payload_decoded
-				exif_info = load_exif_metadata(image_data)
 				loader = gtk.gdk.PixbufLoader()
 				try:
 					loader.write(image_data)
@@ -975,7 +973,11 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 					display_error(e)
 				else:
 					pxb = loader.get_pixbuf()
-					pxb = exif_transforms(pxb, exif_info)
+					if 'gemlv.imagerotation' in sys.modules:
+						imagerotator = gemlv.imagerotation.Image(image_data)
+						rotation = {'pixbuf': pxb}
+						imagerotator.rotate(imagerotation_cb, rotation)
+						pxb = rotation['pixbuf']
 					panel_content_image.set_data('last-alloc', None)
 					panel_content_image.set_data('pixbuf', pxb)
 					load_content_ok = True
@@ -1073,44 +1075,19 @@ def on_allocate_panel_content_image(wdg, alloc):
 			pxb = pxb.scale_simple(w - b, h - b, gtk.gdk.INTERP_BILINEAR)
 			wdg.children()[0].set_from_pixbuf(pxb)
 
-def load_exif_metadata(imagedata):
-	if pyexiv2 is None:
-		return None
-	metadata = pyexiv2.ImageMetadata.from_buffer(imagedata)
-	metadata.read()
-	return metadata
-
-def exif_transforms(pxb, metadata):
-	"""transform an image according to the EXIF metadata"""
-	if metadata is None:
-		return pxb
-	
-	if 'Exif.Image.Orientation' in metadata.exif_keys:
-		orientation = metadata['Exif.Image.Orientation'].value
-		# flip-flop:
-		if orientation in [2, 4]:
-			# mirror on the vertical axis
-			pxb = pxb.flip(horizontal=False)
-			orientation -= 1
-		elif orientation in [5, 7]:
-			# mirror on the horizontal axis
-			pxb = pxb.flip(horizontal=True)
-			orientation += 1
-		# rotation:
-		rotation = None
-		if orientation == 6:
-			# rotate 90° CW
-			rotation = gtk.gdk.PIXBUF_ROTATE_CLOCKWISE
-		elif orientation == 3:
-			# rotate 180° CW
-			rotation = gtk.gdk.PIXBUF_ROTATE_UPSIDEDOWN
-		elif orientation == 8:
-			# rotate 270° CW
-			rotation = gtk.gdk.PIXBUF_ROTATE_COUNTERCLOCKWISE
-		if rotation is not None:
-			pxb = pxb.rotate_simple(rotation)
-	
-	return pxb
+def imagerotation_cb(transformation, user_data):
+	if transformation == gemlv.imagerotation.FLIP:
+		user_data['pixbuf'] = user_data['pixbuf'].flip(horizontal=False)
+	elif transformation == gemlv.imagerotation.FLOP:
+		user_data['pixbuf'] = user_data['pixbuf'].flip(horizontal=True)
+	elif transformation == gemlv.imagerotation.CLOCKWISE:
+		user_data['pixbuf'] = user_data['pixbuf'].rotate_simple(gtk.gdk.PIXBUF_ROTATE_CLOCKWISE)
+	elif transformation == gemlv.imagerotation.UPSIDEDOWN:
+		user_data['pixbuf'] = user_data['pixbuf'].rotate_simple(gtk.gdk.PIXBUF_ROTATE_UPSIDEDOWN)
+	elif transformation == gemlv.imagerotation.COUNTERCLOCKWISE:
+		user_data['pixbuf'] = user_data['pixbuf'].rotate_simple(gtk.gdk.PIXBUF_ROTATE_COUNTERCLOCKWISE)
+	else:
+		warnx("unknown image transformation code %d" % transformation)
 
 def resize_panel_view_header(wdg, rect=None):
 	if not panel_view_header.get_data('all-headers'):

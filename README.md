@@ -191,10 +191,18 @@ optional arguments:
 
 ## Dependencies
 
-not exhaustive list
+not exhaustive lists
+
+### Non-optional Dependencies
 
 - gnupg <https://github.com/isislovecruft/python-gnupg>
 - pyxdg <https://www.freedesktop.org/wiki/Software/pyxdg/>
+
+### Optional Dependencies
+
+- pyexiv2 / piexif
+- fuzzywuzzy
+- sqlite3
 
 ## Compatibility
 

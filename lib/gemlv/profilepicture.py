@@ -115,6 +115,8 @@ def template_replacer(expr, tmpl_vars):
 		return result
 
 def load_avatar(email_address, callback, url_templates=None):
+	if email_address is None:
+		return
 	if url_templates is None:
 		url_templates = default_avatar_url_templates
 	email_domain = email_address.rsplit('@', 1)[1]
