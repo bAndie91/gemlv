@@ -80,6 +80,7 @@ from gemlv.utils import getaddresslines
 from gemlv.utils import decode_mimetext
 from gemlv.utils import get_gecos_name
 from gemlv.utils import analyze_for_optimal_encoding
+from gemlv.utils import decode_readably
 from gemlv.mimetext import MimeDecoded
 from gemlv.mimetext import MimeEncoded
 from gemlv.textutils import list2text
@@ -725,21 +726,6 @@ def clear_content(s=''):
 	bufr.set_text(s)
 	panel_content.set_sensitive(False)
 	return bufr
-
-def decode_readably(s, eml):
-	encodings = []
-	if eml.header[HDR_CT].param['charset'].decoded:
-		encodings.append(eml.header[HDR_CT].param['charset'].decoded)
-	encodings.extend(os.environ.get('FALLBACK_ENCODINGS', 'utf-8').split(':'))
-	for encoding in encodings:
-		try:
-			s.decode(encoding, 'strict')
-			break
-		except UnicodeDecodeError:
-			encoding = None
-	if encoding is None:
-		encoding = 'utf-8'
-	return s.decode(encoding, 'replace')
 
 def get_content_readably(eml):
 	return decode_readably(get_content_any(eml), eml)

@@ -116,3 +116,19 @@ def analyze_for_optimal_encoding(buf):
 		return 'base64'
 	else:
 		return 'quoted-printable'
+
+def decode_readably(s, eml):
+	# TODO: integrate into gemlv.email module
+	encodings = []
+	if eml.header[HDR_CT].param['charset'].decoded:
+		encodings.append(eml.header[HDR_CT].param['charset'].decoded)
+	encodings.extend(os.environ.get('FALLBACK_ENCODINGS', 'utf-8').split(':'))
+	for encoding in encodings:
+		try:
+			s.decode(encoding, 'strict')
+			break
+		except UnicodeDecodeError:
+			encoding = None
+	if encoding is None:
+		encoding = 'utf-8'
+	return s.decode(encoding, 'replace')
