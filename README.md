@@ -5,6 +5,7 @@ Email viewer and composer for email files, in GTK
 - [Features](#features)
 - [Autocrypt implementation status](#autocrypt-implementation-status)
 - [CLI options](#cli-options)
+- [Installation Notes](#installation-notes)
 - [Compatibility](#compatibility)
 - [FAQ](#faq)
 - [Inspiration](#inspiration)
@@ -188,6 +189,16 @@ optional arguments:
   --opener COMMAND      File opener command (default: mimeopen-gui)
   --header STRING       Add custom header(s) to the new Email (default: None)
 ```
+
+## Installation Notes
+
+Included modules are installed into `/usr/lib/python2.7` by default.
+If your python installation does not include it in `sys.path` (`PYTHONPATH`),
+create a file called `gemlv.pth` in the "site" directory,
+that is the site module searches for additional module paths,
+then write `/usr/lib/python2.7` in it.
+You can get the "site" directory by eg. `import site; print site.getsitepackages()[0]`.
+
 
 ## Dependencies
 

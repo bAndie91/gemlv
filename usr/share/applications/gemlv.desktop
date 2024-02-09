@@ -4,6 +4,6 @@ Exec=gemlv %f
 Icon=emblem-mail
 Terminal=false
 Type=Application
-Categories=Network;Communication;
+Categories=Network;Communication;Email;
 MimeType=message/rfc822;text/message;text/plain;
 StartupNotify=true

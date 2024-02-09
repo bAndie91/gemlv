@@ -1,4 +1,6 @@
 
+LIB_PREFIX = /usr/lib/python2.7
+
 default:
 	@echo "maybe interested in: install, install-libs, locales"
 	@false
@@ -35,8 +37,8 @@ install: install-libs locales
 	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
 
 install-libs:
-	mkdir -p /usr/lib/python2.7/gemlv
-	cp -v --no-preserve=ownership -r lib/gemlv/*.py /usr/lib/python2.7/gemlv/
+	mkdir -p $(LIB_PREFIX)/gemlv
+	cp -v --no-preserve=ownership -r lib/gemlv/*.py $(LIB_PREFIX)/gemlv/
 
 locales:
 	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
@@ -60,7 +62,7 @@ uninstall:
 	[ ! -e /usr/libexec/gemlv/mailto-progs/kmail ] || rm -v /usr/libexec/gemlv/mailto-progs/kmail
 	rmdir -v /usr/libexec/gemlv/mailto-progs || true
 	rmdir -v /usr/libexec/gemlv || true
-	rm -v -r /usr/lib/python2.7/gemlv/
+	rm -v -r $(LIB_PREFIX)/gemlv/
 	
 	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
 	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
