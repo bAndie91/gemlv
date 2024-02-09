@@ -39,6 +39,7 @@ import xdg.BaseDirectory
 from gemlv.utils import AddressLine
 from gemlv.utils import getaddresslines
 from gemlv.utils import decode_mimetext
+from gemlv.utils import decode_readably
 from gemlv.mimetext import MimeDecoded
 from gemlv.mimetext import MimeEncoded
 import gemlv.addressbook
@@ -83,8 +84,7 @@ def display(eml):
 	if eml.is_multipart():
 		output_write("%s\n%s" % (eml.preamble, eml.epilogue))
 	else:
-		# TODO consider get_content_readably()
-		output_write(eml.payload_decoded)
+		output_write(decode_readably(eml.payload_decoded, eml))
 
 def load_email(filepath):
 	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
