@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import absolute_import
+import os
 import email
 from gemlv.constants import *
 import gemlv.profiler
@@ -77,11 +78,11 @@ class MimeTextValue(object):
 		
 		encoded
 		
-		returns the raw string, MIME-encoded if needed (ie. start with "=?").
+		returns the raw string, MIME-encoded if needed (ie. starting with "=?").
 	"""
 	
 	def __init__(self, value, header_obj, update_func):
-		assert isinstance(value, (MimeDecoded, MimeEncoded, None.__class__))
+		assert isinstance(value, (MimeDecoded, MimeEncoded, str, None.__class__))
 		self._encoded = None
 		self._decoded = None
 		self._header = header_obj
@@ -94,8 +95,27 @@ class MimeTextValue(object):
 		
 		if isinstance(value, MimeEncoded):
 			self._encoded = value
-		else:
+		elif isinstance(value, MimeDecoded):
 			self._decoded = value
+		else:
+			# detect encoding
+			try:
+				self._encoded = MimeEncoded(value)
+			except UnicodeDecodeError:
+				encodings = []
+				email_charset = self._ll_email.get_param('charset', header=HDR_CT)
+				if email_charset:
+					encodings.append(email_charset)
+				encodings.extend(os.environ.get('FALLBACK_ENCODINGS', 'utf-8').split(':'))
+				for encoding in encodings:
+					try:
+						value.decode(encoding, 'strict')
+						break
+					except UnicodeDecodeError:
+						encoding = None
+				if encoding is None:
+					raise
+				self._decoded = MimeDecoded(value.decode(encoding))
 	
 	@property
 	def decoded(self):
@@ -272,7 +292,7 @@ class HeaderAccessor(object):
 class SingularHeaderAccessor(HeaderAccessor):
 	def __getitem__(self, headername):
 		encoded_value = self._ll_email.get(headername, '')
-		return Header(headername, MimeEncoded(encoded_value), self._hl_email)
+		return Header(headername, encoded_value, self._hl_email)
 	
 	def __setitem__(self, headername, value):
 		assert isinstance(value, HeaderValue)
@@ -302,7 +322,7 @@ class HeaderList(list):
 class PluralHeaderAccessor(HeaderAccessor):
 	"access multiple headers with the same name (eg. Received)"
 	def __getitem__(self, headername):
-		return HeaderList([Header(headername, MimeEncoded(encoded_value), self._hl_email) \
+		return HeaderList([Header(headername, encoded_value, self._hl_email) \
 			for encoded_value in self._ll_email.get_all(headername, [])])
 	
 	def __setitem__(self, headername, decoded_value):
@@ -320,7 +340,7 @@ class PluralHeaderAccessor(HeaderAccessor):
 	
 	@property
 	def items(self):
-		return [Header(name, MimeEncoded(value), self._hl_email) for name, value in self._ll_email._headers]
+		return [Header(name, value, self._hl_email) for name, value in self._ll_email._headers]
 	
 	def append(self, header_obj):
 		assert isinstance(header_obj, Header)
