@@ -82,7 +82,7 @@ class MimeTextValue(object):
 	"""
 	
 	def __init__(self, value, header_obj, update_func):
-		assert isinstance(value, (MimeDecoded, MimeEncoded, str, None.__class__))
+		assert isinstance(value, (MimeDecoded, MimeEncoded, basestring, None.__class__))
 		self._encoded = None
 		self._decoded = None
 		self._header = header_obj
