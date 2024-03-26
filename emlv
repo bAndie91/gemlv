@@ -80,11 +80,23 @@ def display_headers(eml, extra_headers=[]):
 				hval = header.value.decoded.strip().replace('\n', '\n\t')
 				output_write(header.raw_name+': '+hval+'\n')
 
+class DecodeIfTTY(object):
+	def __init__(self, output, decoder):
+		self.output = output
+		self.decoder = decoder
+	def decode(self, data):
+		if self.output.isatty():
+			return self.decoder(data)
+		else:
+			return data
+
 def display(eml):
+	decoder = DecodeIfTTY(output, lambda data: decode_readably(data, eml))
+	
 	if eml.is_multipart():
-		output_write("%s\n%s" % (eml.preamble, eml.epilogue))
+		output_write("%s\n%s" % (decoder.decode(eml.preamble), decoder.decode(eml.epilogue)))
 	else:
-		output_write(eml.payload_decoded)
+		output_write(decoder.decode(eml.payload_decoded))
 
 def load_email(filepath):
 	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
@@ -116,7 +128,7 @@ option = argparser.parse_args(args=sys.argv[1:])
 
 
 if option.save and option.body_filter:
-	raise Exception("Filter options can not be used.")
+	raise Exception("Filter options can not be combined with --save.")
 
 if not option.list and not option.extract and not option.save:
 	# "read primary part" mode
