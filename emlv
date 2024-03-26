@@ -220,6 +220,7 @@ else:
 				for exename in part.content_type.main, part.content_type.replace('/', '_'):
 					exepath = os.path.expanduser(os.path.join(default_filter_prefix, exename))
 					if os.path.exists(exepath):
+						os.environ['CONTENT_TYPE_CHARSET'] = str(part.header[HDR_CT].param['charset'].decoded)
 						output = os.popen(exepath, 'w')
 						break
 			display(part)
