@@ -111,21 +111,28 @@ def walk_mime_parts(eml, idx):
 default_filter_prefix = '~/.local/bin/emlv-filter/'
 
 
-argparser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+argparser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter)
 argparser.description = """Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
-Without -l or -x option, i.e. read-mode, display the first text/plain part as content."""
+Without --list or --extract option, i.e. read-mode, display the first text/plain part as content.
+
+It searches executables named <MAIN> and <MAIN>_<SUB> in """+default_filter_prefix+""" to filter content with MIME type <MAIN>/<SUB> through them.
+You can disable this by "--body_filter=-" parameter."""
 argp_mxg1 = argparser.add_mutually_exclusive_group()
 argp_mxg1.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
-argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times.")
+argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times. See --list to get the indices of each part of a MIME-multipart file.")
 argp_mxg1.add_argument('--save', '-s', action='append', metavar='INDEX', help="Save MIME part specified by INDEX to file. May be specified multiple times.")
 argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode besides "+', '.join(CommonUserInterestedHeaders)+". Wildcards are supported.")
 argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
-argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help=("Filter the message body through this command. Lookup MAIN and MAIN_SUB executables in '%s' directory where the message's content type is MAIN/SUB." % default_filter_prefix))
+argparser.add_argument('--body-filter', '-fb', metavar='COMMAND', help=("Filter the message body through this command."))
 argparser.add_argument('--attachments-filter', '-fa', metavar='COMMAND', help="Filter the table of attachments through this command (in read-mode).")
-argparser.add_argument('FILE', nargs='*', help="Process the given FILEs. Read STDIN if FILE is not given.")
+argparser.add_argument('FILE', nargs='*', help="Process the given FILEs as raw RFC-822 emails. Read STDIN if FILE is not given.")
 option = argparser.parse_args(args=sys.argv[1:])
 
+
+if option.header_filter == '-': option.header_filter = ''
+if option.body_filter == '-': option.body_filter = ''
+if option.attachments_filter == '-': option.attachments_filter = ''
 
 if option.save and option.body_filter:
 	raise Exception("Filter options can not be combined with --save.")
@@ -209,7 +216,7 @@ else:
 		else:
 			if option.body_filter:
 				output = os.popen(option.body_filter, 'w')
-			elif read_mode:
+			elif read_mode and option.body_filter != '':
 				for exename in part.content_type.main, part.content_type.replace('/', '_'):
 					exepath = os.path.expanduser(os.path.join(default_filter_prefix, exename))
 					if os.path.exists(exepath):
