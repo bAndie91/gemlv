@@ -84,7 +84,7 @@ def display(eml):
 	if eml.is_multipart():
 		output_write("%s\n%s" % (eml.preamble, eml.epilogue))
 	else:
-		output_write(decode_readably(eml.payload_decoded, eml))
+		output_write(eml.payload_decoded)
 
 def load_email(filepath):
 	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
