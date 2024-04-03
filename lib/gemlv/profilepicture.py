@@ -50,7 +50,7 @@ def libravatar_servers(srv_name):
 class UnknownTemplateVariable(Exception):
 	pass
 
-class UnknownTemplateFunction(Exception):
+class UnknownTemplateFilter(Exception):
 	pass
 
 def tvar(name, tmpl_vars):
@@ -106,7 +106,7 @@ def template_replacer(expr, tmpl_vars):
 		elif fltr == 'domainpart':
 			result = result.rsplit('@', 1)[1]
 		else:
-			raise UnknownTemplateFunction(fltr)
+			raise UnknownTemplateFilter(fltr)
 	
 	if lvalue is not None:
 		tmpl_vars[lvalue] = result

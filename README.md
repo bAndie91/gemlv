@@ -214,9 +214,10 @@ not exhaustive lists
 
 ### Optional Dependencies
 
-- pyexiv2 / piexif
+- pyexiv2 or piexif
 - fuzzywuzzy
 - sqlite3
+- dnspython (for Libravatar support)
 
 ## Compatibility
 
