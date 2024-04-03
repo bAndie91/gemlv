@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -eo pipefail
+
+if [ -n "$CONTENT_TYPE_CHARSET" ]
+then
+	terminal_charset=`locale charmap`
+	iconv -f "$CONTENT_TYPE_CHARSET" -t "$terminal_charset"
+else
+	cat
+fi |\
+sed -e 's/^\s*$//' | cat -s

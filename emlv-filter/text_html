@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -eo pipefail
+
+elinks -dump 1 -force-html |\
+sed -e "s/^\s*$//" | cat -s
