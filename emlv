@@ -192,25 +192,32 @@ else:
 		
 		if read_mode:
 			if option.header_filter:
+				output.flush()
 				output = os.popen(option.header_filter, 'w')
 			
 			display_headers(eml, extra_headers=option.header)
 			
 			if output != sys.stdout:
+				output.flush()
 				filter_status = output.close()
 				filter_status_codes.append(filter_status)
 				output = sys.stdout
 			
 			output_write("\n")
 		
+		output.flush()
+		
 		if option.save:
 			attachment_filename = part.filename
 			# replace directory separator to unicode U+2044 FRACTION SLASH
 			output_filename = attachment_filename.replace(os.path.sep, u'⁄')
 			if not output_filename: output_filename = 'attachment-'+idx.replace('.', '-')+'.dat'
+
 			output = open(output_filename, 'w')
 			output.write(part.payload_decoded)
+			output.flush()
 			output.close()
+			
 			sys.stderr.write("emlv: saved: "+output_filename+"\n")
 			output = sys.stdout
 		else:
@@ -226,6 +233,7 @@ else:
 			display(part)
 		
 		if output != sys.stdout:
+			output.flush()
 			filter_status = output.close()
 			filter_status_codes.append(filter_status)
 			output = sys.stdout
@@ -235,15 +243,19 @@ else:
 			output_write('\n')  # separate content from table of attachments
 			
 			if option.attachments_filter:
+				output.flush()
 				output = os.popen(option.attachments_filter, 'w')
 			
 			print_mime_part_td_header()
 			list_mime_parts(eml, str(input_file_index))
 			
 			if output != sys.stdout:
+				output.flush()
 				filter_status = output.close()
 				filter_status_codes.append(filter_status)
 				output = sys.stdout
+		
+		output.flush()
 	
 	filter_status_codes = [code for code in filter_status_codes if code is not None]
 	if filter_status_codes:
