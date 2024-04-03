@@ -1,4 +1,7 @@
+This is a readme for `gemlv` and `emlv`.
+
 # gemlv
+
 Email viewer and composer for email files, in GTK
 
 - [Screenshots](#screenshots)
@@ -240,7 +243,7 @@ around in emails on the other hand (except as attachments which you can open ext
 **Q.** Where can I configure incoming/outgoing email server address/hostname/portnumber/ssl/tls/starttls options?
 
 **A.** Nowhere. It's just a viewer for raw email files (and composer). You may setup an other program to
-acquire your emails and save them in a directory, or use some virtual filesystem (fuse) which represents your 
+acquire your emails and save them in a directory, or use some virtual filesystem (fuse) which presents your 
 IMAP/POP3 mailbox as a conventional filesystem. I personally donwload my emails by `getmail4` preserving IMAP
 folder structure.
 
@@ -268,3 +271,52 @@ the addressbook file(s) for editing.
 
 Many UI parts are inspired by Sylpheed/Claws-mail.
 
+# emlv
+
+Email viewer for console/terminal
+
+## CLI options
+
+```
+usage: emlv [-h] [--list | --extract INDEX | --save INDEX] [--html]
+            [--header HEADER] [--header-filter COMMAND]
+            [--body-filter COMMAND] [--attachments-filter COMMAND]
+            [FILE [FILE ...]]
+
+Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
+Without --list or --extract option, i.e. read-mode, display the first text/plain part as content.
+
+It searches executables named <MAIN> and <MAIN>_<SUB> in ~/.local/bin/emlv-filter/ to filter content with MIME type <MAIN>/<SUB> through them.
+You can disable this by "--body_filter=-" parameter.
+
+positional arguments:
+  FILE                  Process the given FILEs as raw RFC-822 emails. Read
+                        STDIN if FILE is not given.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --list, -l            List all MIME parts in email files given in FILE.
+  --extract INDEX, -x INDEX
+                        Extract MIME part specified by INDEX to stdout. May be
+                        specified multiple times. See --list to get the
+                        indices of each part of a MIME-multipart file.
+  --save INDEX, -s INDEX
+                        Save MIME part specified by INDEX to file. May be
+                        specified multiple times.
+  --html                Take the first text/html part as content, not
+                        text/plain. Option --body-filter is also recommended
+                        here.
+  --header HEADER, -H HEADER
+                        Extra headers to show in read-mode besides Return-
+                        Path, X-X-Sender, X-Sender, Sender, From,
+                        Organization, Reply-To, To, Cc, Subject, Date,
+                        Importance, Priority, X-Priority, X-MSMail-Priority,
+                        Reply-By, Expires, X-Spam. Wildcards are supported.
+  --header-filter COMMAND, -fh COMMAND
+                        Filter the headers through this command.
+  --body-filter COMMAND, -fb COMMAND
+                        Filter the message body through this command.
+  --attachments-filter COMMAND, -fa COMMAND
+                        Filter the table of attachments through this command
+                        (in read-mode).
+```
