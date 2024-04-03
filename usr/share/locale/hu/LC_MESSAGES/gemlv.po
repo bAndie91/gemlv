@@ -458,6 +458,9 @@ msgstr "Aláírás törlése"
 msgid "Add signature"
 msgstr "Aláírás"
 
+msgid "Signature…"
+msgstr "Aláírás…"
+
 msgid "Remove quote"
 msgstr "Idézet törlése"
 

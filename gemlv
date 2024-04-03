@@ -2109,6 +2109,7 @@ def set_composer_text(s):
 def append_composer_text_default_user_signature():
 	composer_text_buffer.append('\n\n')
 	composer_text_buffer.append_namedrange('user_signature', gemlv.user_signature.default())
+	composer_text_buffer.format_namedrange('user_signature', foreground='blue')
 
 def get_reply_quotation():
 	return _("Quote:") + '\n\n' + quote_message()
@@ -2312,6 +2313,7 @@ def act_reply(compose_type):
 			else:
 				composer_text_buffer.append('\n')
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
+				composer_text_buffer.format_namedrange('quoted_message', foreground='grey')
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			composer_headers.add('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
@@ -2319,6 +2321,7 @@ def act_reply(compose_type):
 			composer_headers.set_single(HDR_SUBJ, subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
+			composer_text_buffer.format_namedrange('quoted_message', foreground='grey')
 			
 			messageid = TheEmail.header[HDR_MID].decoded
 			composer_headers.add('In-Reply-To', messageid)
@@ -2816,17 +2819,19 @@ class TextBuffer(gtk.TextBuffer):
 	def __init__(self):
 		super(self.__class__, self).__init__()
 		self.text_namedranges = {}
+		self.namedrange_tags = {}
 	def set_namedrange(self, rangename, content):
 		self.clear_namedrange(rangename)
 		self.set_end_mark_gravity(rangename, 'right')
 		itr = self.get_namedrange_boundaries(rangename)[0]
 		self.insert(itr, content)
 		self.set_end_mark_gravity(rangename, 'left')
+		self._reformat_namedrange(rangename)
 	def clear_namedrange(self, rangename):
 		self.delete(*self.get_namedrange_boundaries(rangename))
 	def add_namedrange(self, rangename, content, position_iter_cb):
 		if self.text_namedranges.has_key(rangename):
-			raise self.TextBufferNamedRangeError("Range '%s' in TextBuffer is already exists." % (rangename,))  # @notranslate
+			raise self.TextBufferNamedRangeError("Range '%s' already exists in TextBuffer." % (rangename,))  # @notranslate
 		mark_start = self.create_mark(rangename+'-start', position_iter_cb(), left_gravity=True)
 		mark_end = self.create_mark(rangename+'-end', position_iter_cb(), left_gravity=False)
 		self.text_namedranges[rangename] = {'start': mark_start, 'end': mark_end}
@@ -2848,6 +2853,13 @@ class TextBuffer(gtk.TextBuffer):
 			self.delete_namedrange(rangename)
 			if position_iter_cb is None: position_iter_cb = self.get_iter_at_cursor
 			self.add_namedrange(rangename, content, position_iter_cb)
+	def format_namedrange(self, rangename, **format):
+		self.namedrange_tags[rangename] = self.create_tag()
+		self.namedrange_tags[rangename].set_properties(**format)
+		self._reformat_namedrange(rangename)
+	def _reformat_namedrange(self, rangename):
+		if rangename in self.namedrange_tags:
+			self.apply_tag(self.namedrange_tags[rangename], *self.get_namedrange_boundaries(rangename))
 	def get_iter_at_cursor(self):
 		return self.get_iter_at_mark(self.get_insert())
 	def delete_namedrange(self, rangename):
@@ -2858,7 +2870,7 @@ class TextBuffer(gtk.TextBuffer):
 			del self.text_namedranges[rangename]
 	def get_namedrange_boundaries(self, rangename):
 		if not self.text_namedranges.has_key(rangename):
-			raise self.TextBufferNamedRangeError("Range '%s' in TextBuffer is not exists." % (rangename,))  # @notranslate
+			raise self.TextBufferNamedRangeError("Range '%s' does not exist in TextBuffer." % (rangename,))  # @notranslate
 		return self.get_iter_at_mark(self.text_namedranges[rangename]['start']), self.get_iter_at_mark(self.text_namedranges[rangename]['end'])
 	def get_namedrange_text(self, rangename):
 		if self.text_namedranges.has_key(rangename):
@@ -2874,7 +2886,7 @@ class TextBuffer(gtk.TextBuffer):
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
-	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add signature"))
+	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Signature…"))
 	menu_addsign = gtk.Menu()
 	for user_signature_name in gemlv.user_signature.iter_all():
 		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
