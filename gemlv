@@ -2863,6 +2863,7 @@ class TextBuffer(gtk.TextBuffer):
 			self.apply_tag(self.namedrange_tags[rangename], *self.get_namedrange_boundaries(rangename))
 	
 	def add_pattern_format(self, pattern, **format):
+		# for formats, see http://www.uucp.hu/mirror/gnome.org/developer.gnome.org/pygtk/stable/class-gtktexttag.html#properties-gtktexttag
 		self.pattern_formats[pattern] = self.create_tag()
 		self.pattern_formats[pattern].set_properties(**format)
 	def apply_pattern_formats(self):
@@ -4932,6 +4933,10 @@ panel_edit_message.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once
 composer_text_buffer.connect('modified-changed', on_edit_message)
 composer_text_buffer.connect('changed', on_change_message)
 composer_text_buffer.add_pattern_format(r'^>.*', foreground='grey')
+composer_text_buffer.add_pattern_format(r'^  .*', family='monospace')
+composer_text_buffer.add_pattern_format(r'(?<!\w)`(.+?)`(?!\w)', family='monospace')
+composer_text_buffer.add_pattern_format(r'(?<!\w)_(?!_)([^ ]+?)(?<!_)_(?!\w)', style=pango.STYLE_ITALIC)
+composer_text_buffer.add_pattern_format(r'(?<!\w)((__|\*\*).+?\2)(?!\w)', weight=pango.WEIGHT_BOLD)
 panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
 panel_edit_message.connect('populate-popup', populate_composer_textview_menu)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
