@@ -2100,6 +2100,7 @@ def on_edit_subject(_wdg):
 
 def on_change_message(_wdg):
 	timer_once('update_composer_status_message', 5, update_composer_status_message)
+	timer2_once(0.2, composer_text_buffer.apply_pattern_formats, iden='composer-apply-patter-formats')
 	win_comp.set_data('is-auto-saved', False)
 
 def set_composer_text(s):
@@ -2313,7 +2314,6 @@ def act_reply(compose_type):
 			else:
 				composer_text_buffer.append('\n')
 				composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
-				composer_text_buffer.format_namedrange('quoted_message', foreground='grey')
 		else:
 			win_comp.set_data('add-msgid-xattr-on-send', [XATTR_REPLIED])
 			composer_headers.add('Thread-Topic', TheEmail.header['Thread-Topic'].decoded or orig_subj)
@@ -2321,7 +2321,6 @@ def act_reply(compose_type):
 			composer_headers.set_single(HDR_SUBJ, subj)
 			composer_text_buffer.append('\n')
 			composer_text_buffer.append_namedrange('quoted_message', get_reply_quotation())
-			composer_text_buffer.format_namedrange('quoted_message', foreground='grey')
 			
 			messageid = TheEmail.header[HDR_MID].decoded
 			composer_headers.add('In-Reply-To', messageid)
@@ -2820,6 +2819,7 @@ class TextBuffer(gtk.TextBuffer):
 		super(self.__class__, self).__init__()
 		self.text_namedranges = {}
 		self.namedrange_tags = {}
+		self.pattern_formats = {}
 	def set_namedrange(self, rangename, content):
 		self.clear_namedrange(rangename)
 		self.set_end_mark_gravity(rangename, 'right')
@@ -2827,6 +2827,7 @@ class TextBuffer(gtk.TextBuffer):
 		self.insert(itr, content)
 		self.set_end_mark_gravity(rangename, 'left')
 		self._reformat_namedrange(rangename)
+		self.apply_pattern_formats()
 	def clear_namedrange(self, rangename):
 		self.delete(*self.get_namedrange_boundaries(rangename))
 	def add_namedrange(self, rangename, content, position_iter_cb):
@@ -2860,6 +2861,19 @@ class TextBuffer(gtk.TextBuffer):
 	def _reformat_namedrange(self, rangename):
 		if rangename in self.namedrange_tags:
 			self.apply_tag(self.namedrange_tags[rangename], *self.get_namedrange_boundaries(rangename))
+	
+	def add_pattern_format(self, pattern, **format):
+		self.pattern_formats[pattern] = self.create_tag()
+		self.pattern_formats[pattern].set_properties(**format)
+	def apply_pattern_formats(self):
+		text = self.get_text_all()
+		for pattern, tag in self.pattern_formats.iteritems():
+			self.remove_tag(tag, self.get_start_iter(), self.get_end_iter())
+			for match in re.finditer(pattern, text, re.MULTILINE):
+				for substr_start, substr_end in (match.regs[1:] if len(match.regs)>1 else match.regs):
+					start = self.get_iter_at_offset(substr_start)
+					end = self.get_iter_at_offset(substr_end)
+					self.apply_tag(tag, start, end)
 	def get_iter_at_cursor(self):
 		return self.get_iter_at_mark(self.get_insert())
 	def delete_namedrange(self, rangename):
@@ -2879,6 +2893,7 @@ class TextBuffer(gtk.TextBuffer):
 			return None
 	def append(self, content):
 		self.insert(self.get_end_iter(), content)
+		self.apply_pattern_formats()
 	def clear(self):
 		return self.delete(self.get_start_iter(), self.get_end_iter())
 	def get_text_all(self):
@@ -4916,6 +4931,7 @@ panel_edit_message.set_wrap_mode(getattr(gtk, 'WRAP_'+((Props['ui/composer/body/
 panel_edit_message.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once(1.5, lambda: Props.__setitem__('ui/composer/body/wrapmode', tv.get_wrap_mode().value_nick)))
 composer_text_buffer.connect('modified-changed', on_edit_message)
 composer_text_buffer.connect('changed', on_change_message)
+composer_text_buffer.add_pattern_format(r'^>.*', foreground='grey')
 panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
 panel_edit_message.connect('populate-popup', populate_composer_textview_menu)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)

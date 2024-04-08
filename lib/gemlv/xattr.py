@@ -36,6 +36,8 @@ def set(fh, attrs, filename='-'):
 				if attrval is None:
 					xattr.removexattr(fh, attrname)
 				elif attrval:  # not set empty value
+					if isinstance(attrval, unicode):
+						attrval = attrval.encode('utf-8')
 					xattr.setxattr(fh, attrname, attrval)
 			except IOError as e:
 				if e.errno == os.errno.ENODATA and attrval is None:
