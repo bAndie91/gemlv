@@ -1,4 +1,4 @@
-?package(gemlv):needs="X11" section="Applications/Network/Communication"\
+?package(local.gemlv):needs="X11" section="Applications/Network/Communication"\
   icon="/usr/share/icons/gnome/24x24/actions/gnome-stock-mail-new.png" \
-  title="Gemlv Local Email Composer" \
+  title="Email Composer" longtitle="gEMLv Local Email Composer" \
   command="/usr/bin/gemlv-compose"
