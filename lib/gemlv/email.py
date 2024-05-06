@@ -476,7 +476,9 @@ class Email(object):
 	
 	@property
 	def preamble(self):
-		return self._ll_email.preamble
+		s = self._ll_email.preamble
+		if s is None: return ''
+		return s
 	
 	@preamble.setter
 	def preamble(self, s):
@@ -484,7 +486,9 @@ class Email(object):
 	
 	@property
 	def epilogue(self):
-		return self._ll_email.epilogue
+		s = self._ll_email.epilogue
+		if s is None: return ''
+		return s
 	
 	@epilogue.setter
 	def epilogue(self, s):
