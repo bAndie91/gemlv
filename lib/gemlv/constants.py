@@ -49,6 +49,7 @@ CommonUserInterestedHeaders = [
 	"Reply-To",
 	"To",
 	"Cc",
+	"Delivered-To",
 	"Subject",
 	"Date",
 	"Importance",
