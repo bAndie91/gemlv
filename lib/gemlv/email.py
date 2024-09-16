@@ -174,6 +174,13 @@ class HeaderParameterAccessor(object):
 	
 	def __getitem__(self, pname):
 		pvalue_uq = self._ll_email.get_param(pname, header=self._header.name, failobj='', unquote=False)
+		if isinstance(pvalue_uq, tuple):
+			# it sometimes retuns with a tuple like ('UTF-8', '', 'the actual content') instead of a string.
+			# for example this header parameter:
+			#   filename*0*=UTF-8''%74%68%65%20%61%63%74%75%61%6c%20%63%6f%6e%74%65%6e%74
+			pvalue_uq = pvalue_uq[2].decode(pvalue_uq[0])
+			pvalue = unquote_header_parameter(pvalue_uq)
+			return HeaderParameterValue(pname, MimeDecoded(pvalue), self._header)
 		pvalue = unquote_header_parameter(pvalue_uq)
 		return HeaderParameterValue(pname, MimeEncoded(pvalue), self._header)
 
