@@ -39,7 +39,7 @@ def libravatar_servers(srv_name):
 	except dns.exception.DNSException:
 		return ''
 	else:
-		return multi_url_host_delimiter.join(['%s:%d' % (item.target, item.port) for item in answer.rrset.items])
+		return multi_url_host_delimiter.join(['%s:%d' % (item.target.rstrip('.'), item.port) for item in answer.rrset.items])
 
 class UnknownTemplateVariable(Exception):
 	pass
