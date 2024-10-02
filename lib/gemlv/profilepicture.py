@@ -10,17 +10,11 @@ from gemlv.pythonutils import uniq
 
 multi_url_host_delimiter = ' '
 
-default_avatar_url_templates = [
-	'https://{avatars_sec_host}/avatar/{email:md5}',
-	'https://{avatars_sec_host}/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}',
-	'https://{avatars_sec_host}/avatar/{email:lower:md5}',
-	'http://{avatars_host}/avatar/{email:md5}',
-	'http://{avatars_host}/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}',
-	'http://{avatars_host}/avatar/{email:lower:md5}',
-	'https://www.gravatar.com/avatar/{email:md5}?default=404&size=64&rating=G',
-	'https://www.gravatar.com/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default=404&size=64&rating=G',
-	'https://www.gravatar.com/avatar/{email:lower:md5}?default=404&size=64&rating=G',
-]
+default_avatar_url_templates = []
+for avatar_origin in 'https://{avatars_sec_host}', 'http://{avatars_host}', 'https://seccdn.libravatar.org', 'http://cdn.libravatar.org', 'https://www.gravatar.com':
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}')
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}')
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}')
 
 class LazyLoad(object):
 	def __init__(self, func, *args, **kwargs):
