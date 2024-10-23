@@ -32,6 +32,7 @@ install: install-libs locales
 	
 	mkdir -p /usr/share/doc/gemlv
 	cp -v --no-preserve=ownership LICENSE /usr/share/doc/gemlv/
+	cp -v --no-preserve=ownership README.md /usr/share/doc/gemlv/
 	
 	git describe --tags > /usr/share/doc/gemlv/VERSION
 	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
@@ -88,3 +89,6 @@ uninstall-for-user:
 	[ ! -e ~/.local/share/applications/gemlv.desktop ] || rm ~/.local/share/applications/gemlv.desktop
 	update-desktop-database ~/.local/share/applications/
 	[ ! -e ~/.config/gemlv/filters.conf ] || rm ~/.config/gemlv/filters.conf
+
+install-deps:
+	apt install razor pyzor bogofilter
