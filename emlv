@@ -67,9 +67,9 @@ def print_mime_part_td_header():
 	output_write("INDEX	MIME_TYPE	SIZE	FILENAME	DESCRIPTION\n")
 
 def list_mime_parts(eml, input_file_index):
-	for part_idx, eml in walk_mime_parts(eml, input_file_index):
+	for path, eml in walk_mime_parts(eml, [input_file_index]):
 		size = human_size(eml.size_decoded_approx)
-		output_write('\t'.join([part_idx, eml.content_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])+'\n')
+		output_write('\t'.join(['.'.join(map(str, path)), eml.content_type, size, td_esc(eml.filename), td_esc(eml.header['Content-Description'].decoded)])+'\n')
 
 def display_headers(eml, extra_headers=[]):
 	headers = CommonUserInterestedHeaders
@@ -101,11 +101,19 @@ def display(eml):
 def load_email(filepath):
 	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
 
-def walk_mime_parts(eml, idx):
-	yield (idx, eml)
+def walk_mime_parts(eml, multipart_path=[]):
+	yield (multipart_path, eml)
 	for part_idx, part in enumerate(eml.parts):
-		for x in walk_mime_parts(part, '%s.%d' % (idx, part_idx)):
+		for x in walk_mime_parts(part, multipart_path+[part_idx]):
 			yield x
+
+def find_first_part(multipart, content_type=None):
+	first_part_path = []
+	for multipart_path, sub_part in walk_mime_parts(multipart):
+		if sub_part.content_type == content_type:
+			first_part_path = multipart_path
+			break
+	return first_part_path
 
 
 default_filter_prefix = '~/.local/bin/emlv-filter/'
@@ -163,7 +171,7 @@ if option.list:
 	print_mime_part_td_header()
 	for idx, filename in enumerate(option.FILE):
 		eml = load_email(filename)
-		list_mime_parts(eml, str(idx))
+		list_mime_parts(eml, idx)
 
 else:
 	filter_status_codes = []
@@ -178,11 +186,9 @@ else:
 		part = eml
 		
 		if len(indices) == 2 and indices[1] == 'primary':
-			mime_part_indices = []
-			for part_idx, sub_part in walk_mime_parts(part, str(input_file_index)):
-				if sub_part.content_type == primary_content_type:
-					mime_part_indices = part_idx.split('.')[1:]
-					break
+			mime_part_indices = find_first_part(part, content_type = primary_content_type)
+			if not mime_part_indices and primary_content_type != MIMETYPE_HTML:
+				mime_part_indices = find_first_part(part, content_type = MIMETYPE_HTML)
 		else:
 			mime_part_indices = indices[1:]
 		
@@ -247,7 +253,7 @@ else:
 				output = os.popen(option.attachments_filter, 'w')
 			
 			print_mime_part_td_header()
-			list_mime_parts(eml, str(input_file_index))
+			list_mime_parts(eml, input_file_index)
 			
 			if output != sys.stdout:
 				output.flush()
