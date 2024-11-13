@@ -209,7 +209,7 @@ not exhaustive lists
 
 ### Non-optional Dependencies
 
-- gnupg <https://github.com/isislovecruft/python-gnupg>
+- gnupg <https://bitbucket.org/vinay.sajip/python-gnupg.git>
 - pyxdg <https://www.freedesktop.org/wiki/Software/pyxdg/>
 
 ### Optional Dependencies
@@ -220,15 +220,6 @@ not exhaustive lists
 - dnspython (for Libravatar support)
 
 ## Compatibility
-
-### python gnupg module
-
-[Gnupg](https://github.com/isislovecruft/python-gnupg) searches gpg-agent using `psutil`.
-When procfs (`/proc`) is mounted with `hidepid` option, `psutil` throws AccessDenied,
-which prevents `gnupg` to initialize.
-
-Affected versions: `gnupg < 3.0.1`.
-Recommended to install `gnupg >= 3.0.1`.
 
 ## FAQ
 
