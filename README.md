@@ -209,7 +209,7 @@ not exhaustive lists
 
 ### Non-optional Dependencies
 
-- gnupg <https://bitbucket.org/vinay.sajip/python-gnupg.git>
+- gnupg <https://bitbucket.org/vinay.sajip/python-gnupg.git>, <https://github.com/vsajip/python-gnupg>
 - pyxdg <https://www.freedesktop.org/wiki/Software/pyxdg/>
 
 ### Optional Dependencies
