@@ -13,6 +13,7 @@ import gemlv.mime as mime
 from gemlv.mimetext import MimeEncoded
 from gemlv.mimetext import MimeDecoded
 from gemlv.textutils import unquote_header_parameter
+from gemlv.utils import decode_readably
 
 
 class PayloadTypeError(Exception):
@@ -173,16 +174,28 @@ class HeaderParameterAccessor(object):
 			self._ll_email = self._hl_email._ll_email
 	
 	def __getitem__(self, pname):
-		pvalue_uq = self._ll_email.get_param(pname, header=self._header.name, failobj='', unquote=False)
-		if isinstance(pvalue_uq, tuple):
+		pvalue_possible_quoted = self._ll_email.get_param(pname, header=self._header.name, failobj='', unquote=False)
+		if isinstance(pvalue_possible_quoted, tuple):
 			# it sometimes retuns with a tuple like ('UTF-8', '', 'the actual content') instead of a string.
 			# for example this header parameter:
 			#   filename*0*=UTF-8''%74%68%65%20%61%63%74%75%61%6c%20%63%6f%6e%74%65%6e%74
-			pvalue_uq = pvalue_uq[2].decode(pvalue_uq[0])
-			pvalue = unquote_header_parameter(pvalue_uq)
+			pvalue_possible_quoted = pvalue_possible_quoted[2].decode(pvalue_possible_quoted[0])
+			pvalue = unquote_header_parameter(pvalue_possible_quoted)
 			return HeaderParameterValue(pname, MimeDecoded(pvalue), self._header)
-		pvalue = unquote_header_parameter(pvalue_uq)
-		return HeaderParameterValue(pname, MimeEncoded(pvalue), self._header)
+		pvalue = unquote_header_parameter(pvalue_possible_quoted)
+		# the following try-except detects if the header parameter value is already decoded (in say UTF-8),
+		# or is it in MIME-encoded form - which it normally should be.
+		try:
+			# unicode() fails if there is non-ascii char in pvalue which is supposed to be ascii-only normally.
+			unicode(pvalue)
+		except UnicodeDecodeError:
+			# if it is indeed non-ascii-only, try to string-decode (not MIME-decode because it is probably not in MIME-encoded status) it
+			# from the guessed character encoding (decode_readably() guesses the most likely charset).
+			pvalue_guessed_coding_status = MimeDecoded(decode_readably(pvalue, self._hl_email))
+		else:
+			# if it is ascii-only, take it as a MIME-encoded data.
+			pvalue_guessed_coding_status = MimeEncoded(pvalue)
+		return HeaderParameterValue(pname, pvalue_guessed_coding_status, self._header)
 
 class HeaderParameterPluralAccessor(object):
 	def __init__(self, header_obj):
