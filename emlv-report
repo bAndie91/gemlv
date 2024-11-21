@@ -1,123 +1,140 @@
 #!/bin/bash
 
-LF=$'\n'
-type=$1
+set -u
+
+. /usr/lib/tool/bash-utils || exit -1
+
+spam_dir_basename=Spam
+
+EMLV_REPORT_TYPE=$1
 shift
 
-if [ -z "$GEMLV_UNDER_XTERM" ]
+case "$EMLV_REPORT_TYPE" in
+(spam)	true;;
+(ham)	true;;
+(*)		errx -1 "unknown report type: $EMLV_REPORT_TYPE";;
+esac
+
+
+files_to_report=("$@")
+commands=()
+args=()
+
+for EMLV_EMAIL_FILE in "${files_to_report[@]}"
+do
+	case "$EMLV_REPORT_TYPE" in
+	(spam)
+		commands+=("razor-report -d -f")
+		args+=("$EMLV_EMAIL_FILE")
+		
+		commands+=("pyzor-files -d report --")
+		args+=("$EMLV_EMAIL_FILE")
+		
+		commands+=("bogofilter -s -v -B")
+		args+=("$EMLV_EMAIL_FILE")
+		;;
+	(ham)
+		commands+=("razor-revoke -d -f")
+		args+=("$EMLV_EMAIL_FILE")
+		
+		commands+=("pyzor-files -d whitelist --")
+		args+=("$EMLV_EMAIL_FILE")
+		
+		commands+=("bogofilter -n -v -B")
+		args+=("$EMLV_EMAIL_FILE")
+		;;
+	esac
+done
+
+
+# start commands in the background
+
+pids=()
+
+for idx in "${!commands[@]}"
+do
+	cmd=${commands[$idx]}
+	arg=${args[$idx]}
+	command $cmd "$arg" &
+	pids+=($!)
+done
+
+
+# wait for all background process to finish
+# and gather exit codes
+
+exitcodes=()
+
+for idx in "${!commands[@]}"
+do
+	pid=${pids[$idx]}
+	wait $pid
+	exitcode=$?
+	exitcodes[$idx]=$exitcode
+done
+
+
+# report if all command ran successfully
+# or which ones failed.
+
+all_ok=1
+errorlevel=0
+unprocessed_files=()
+
+for idx in "${!commands[@]}"
+do
+	exitcode=${exitcodes[$idx]}
+	if [ $exitcode = 0 ]
+	then
+		true
+	else
+		all_ok=0
+		if [ $errorlevel -lt $exitcode ]; then errorlevel=$exitcode; fi
+		printf "error %3d: %s %s\n" $exitcode "${commands[$idx]}" "${args[$idx]}"
+		unprocessed_files+=("${args[$idx]}")
+	fi
+done
+
+if [ $all_ok = 1 ]
 then
-	if [ -x ~/.local/share/gemlv/report-$type ]
-	then
-		exec ~/.local/share/gemlv/report-$type "$@"
-	fi
-	
-	if [ -x /etc/gemlv/report-$type ]
-	then
-		exec /etc/gemlv/report-$type "$@"
-	fi
-	
-	GEMLV_EMAIL_FILE=$1
-	export GEMLV_EMAIL_FILE
-	GEMLV_UNDER_XTERM=yes
-	export GEMLV_UNDER_XTERM
-	GEMLV_REPORT_TYPE=$type
-	export GEMLV_REPORT_TYPE
-	
-	exec xterm -hold -e "gemlv-report-$type"
-else
-	if zenity --question --no-markup --text "Report ${GEMLV_REPORT_TYPE^}?$LF$GEMLV_EMAIL_FILE" --title "Report ${GEMLV_REPORT_TYPE^}"
-	then
-		pids=()
-		
-		case "$GEMLV_REPORT_TYPE" in
-		spam)
-			commands=("razor-report -d -f" "pyzor-files -d report --" "bogofilter -s -v -B")
-			;;
-		ham)
-			commands=("razor-revoke -d -f" "pyzor-files -d whitelist --" "bogofilter -n -v -B")
-			;;
-		*)
-			echo "unknown: $GEMLV_REPORT_TYPE" >&2
-			exit -1
-			;;
-		esac
-		
-		for cmd in "${commands[@]}"
-		do
-			command $cmd "$GEMLV_EMAIL_FILE" &
-			pids+=($!)
-		done
-		
-		all_ok=1
-		codes=()
-		
-		for pid in "${pids[@]}"
-		do
-			wait $pid
-			code=$?
-			codes+=($code)
-			if [ $code != 0 ]
-			then
-				all_ok=0
-			fi
-		done
-		
-		if [ $all_ok != 1 ]
-		then
-			n=0
-			highest_code=0
-			for code in "${codes[@]}"
-			do
-				if [ $code != 0 ]
-				then
-					echo "$0: $GEMLV_EMAIL_FILE: [1m$GEMLV_REPORT_TYPE report error $code[m at command '${commands[$n]}'" >&2
-					if [ $highest_code -lt $code ]
-					then
-						highest_code=$code
-					fi
-				fi
-				n=$[n+1]
-			done
-			exit $highest_code
-		fi
-		
-		# Move to 'Spam/' folder
-		
-		path=`readlink -f "$GEMLV_EMAIL_FILE"`
-		dirpath=`dirname "$path"`
-		dirname=`basename "$dirpath"`
-		ask_move=no
-		
-		case "$GEMLV_REPORT_TYPE" in
-		spam)
-			prep=into
-			if [ "$dirname" != Spam ]
-			then
-				ask_move=yes
-			fi
-			;;
-		ham)
-			prep="out from"
-			if [ "$dirname" = Spam ]
-			then
-				ask_move=yes
-			fi
-			;;
-		esac
-		
-		if [ $ask_move = yes ] && zenity --question --no-markup --text "Move $prep Spam folder?$LF$GEMLV_EMAIL_FILE" --title "Move Email $prep Spam"
-		then
-			case "$GEMLV_REPORT_TYPE" in
-			spam)
-				mkdir -p "$dirpath/Spam/"
-				mv "$GEMLV_EMAIL_FILE" "$dirpath/Spam/"
-				;;
-			ham)
-				mv "$GEMLV_EMAIL_FILE" "$dirpath/../"
-				;;
-			esac
-		fi
-		
-		echo "$0: $GEMLV_EMAIL_FILE: [1mdone marked as $GEMLV_REPORT_TYPE[m" >&2
-	fi
+	warnx "All command ran successfully."
 fi
+
+
+# move files reported as spam to the Spam folder (create one in the directory where the file was),
+# and move ham files out of the Spam folder if they accidentaly happened to be there.
+
+for path in "${files_to_report[@]}"
+do
+	if in_list "$path" "${unprocessed_files[@]}"
+	then
+		# don't move the file if any of the commands it was passed to as an argument failed.
+		continue
+	fi
+	if [ ! -e "$path" ]
+	then
+		# it must have been moved already.
+		continue
+	fi
+	
+	realpath=`readlink -f "$path"`
+	dirpath=`dirname "$realpath"`
+	dirname=`basename "$dirpath"`
+	
+	case "$EMLV_REPORT_TYPE" in
+	(spam)
+		if [ "$dirname" != "$spam_dir_basename" ]
+		then
+			spamdir=$dirpath/$spam_dir_basename
+			mkdir -p "$spamdir"
+			mv -n "$path" "$spamdir/"
+		fi
+		;;
+	(ham)
+		if [ "$dirname" = "$spam_dir_basename" ]
+		then
+			mv -n "$path" "$dirpath/../"
+		fi
+		;;
+	esac
+done

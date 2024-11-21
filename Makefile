@@ -17,6 +17,7 @@ install: install-libs locales
 	cp -v --no-preserve=ownership gemlv /usr/bin/
 	ln -snvf gemlv /usr/bin/gemlv-compose
 	ln -snvf gemlv /usr/bin/gemlv-mailto
+	cp -v --no-preserve=ownership emlv-report /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-spam /usr/bin/
 	cp -v --no-preserve=ownership gemlv-report-ham /usr/bin/
@@ -56,6 +57,7 @@ uninstall:
 	[ ! -e /usr/bin/gemlv ] || rm -v /usr/bin/gemlv
 	[ ! -e /usr/bin/gemlv-compose ] || rm -v /usr/bin/gemlv-compose
 	[ ! -e /usr/bin/gemlv-mailto ] || rm -v /usr/bin/gemlv-mailto
+	[ ! -e /usr/bin/emlv-report ] || rm -v /usr/bin/emlv-report
 	[ ! -e /usr/bin/gemlv-report ] || rm -v /usr/bin/gemlv-report
 	[ ! -e /usr/bin/gemlv-report-spam ] || rm -v /usr/bin/gemlv-report-spam
 	[ ! -e /usr/bin/gemlv-report-ham ] || rm -v /usr/bin/gemlv-report-ham

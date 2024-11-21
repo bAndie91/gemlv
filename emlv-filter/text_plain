@@ -2,11 +2,30 @@
 
 set -eo pipefail
 
+reduce_blanks()
+{
+	# remove all whitespace lines
+	# and squeeze blanks
+	sed -e 's/^\s*$//' | cat -s
+}
+
 if [ -n "$CONTENT_TYPE_CHARSET" ]
 then
 	terminal_charset=`locale charmap`
-	iconv -f "$CONTENT_TYPE_CHARSET" -t "$terminal_charset"
+	input_buffer=`cat`
+	set +e
+	output_buffer=`iconv -f "$CONTENT_TYPE_CHARSET" -t "$terminal_charset//TRANSLIT" <<< "$input_buffer"`
+	iconv_error=$?
+	set -e
+	if [ $iconv_error = 0 ]
+	then
+		cat <<< "$output_buffer"
+	else
+		# iconv could not convert (maybe wrong input charset is given),
+		# pass through as-is
+		cat <<< "$input_buffer"
+	fi
 else
 	cat
 fi |\
-sed -e 's/^\s*$//' | cat -s
+reduce_blanks
