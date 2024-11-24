@@ -140,8 +140,9 @@ It searches executables named <MAIN> and <MAIN>_<SUB> in """+default_filter_pref
 You can disable this by "--body_filter=-" parameter."""
 argp_mxg1 = argparser.add_mutually_exclusive_group()
 argp_mxg1.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
-argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. May be specified multiple times. See --list to get the indices of each part of a MIME-multipart file.")
-argp_mxg1.add_argument('--save', '-s', action='append', metavar='INDEX', help="Save MIME part specified by INDEX to file. May be specified multiple times.")
+argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. See --list to get the indices of each part of a MIME-multipart file. This option may be repeated.")
+argp_mxg1.add_argument('--save', '-s', action='append', metavar='INDEX', help="Save MIME part specified by INDEX to file. The output file name is either the attachment's name if it's given, or \"attached-email-INDEX.eml\" if the attachment is itself an Email, or \"attachment-INDEX.dat\" otherwise. This option may be repeated.")
+argparser.add_argument('--plaintext', action='store_true', help="Always take the first text/plain part as content. Default is to fall back to text/html if no text/plain found.")
 argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode besides "+', '.join(CommonUserInterestedHeaders)+". Wildcards are supported.")
 argparser.add_argument('--header-filter', '-fh', metavar='COMMAND', help="Filter the headers through this command.")
@@ -167,8 +168,11 @@ else:
 		raise Exception("Filter options (header, attachments) are meaningless here.")
 
 primary_content_type = MIMETYPE_TEXT
+fallback_to_html = True
 if option.html:
 	primary_content_type = MIMETYPE_HTML
+if option.plaintext:
+	fallback_to_html = False
 
 if not option.FILE:
 	option.FILE.append('/dev/stdin')
@@ -197,16 +201,14 @@ else:
 		input_file_index = int(indices[0])
 		eml = load_email(option.FILE[input_file_index])
 		part = eml
+		mime_part_indices = []
 		
 		if len(indices) == 2 and indices[1] == 'primary':
 			mime_part_indices = find_first_part(part, content_type = primary_content_type)
-			if not mime_part_indices and primary_content_type != MIMETYPE_HTML:
+			if not mime_part_indices and fallback_to_html and primary_content_type != MIMETYPE_HTML:
 				mime_part_indices = find_first_part(part, content_type = MIMETYPE_HTML)
 		else:
 			mime_part_indices = indices[1:]
-		
-		for part_idx in map(int, mime_part_indices):
-			part = part.parts[part_idx]
 		
 		
 		if read_mode:
@@ -226,35 +228,51 @@ else:
 		
 		output.flush()
 		
-		if option.save:
-			attachment_filename = part.filename
-			output_filename = safe_filename(attachment_filename)
-			if not output_filename: output_filename = 'attachment-'+idx.replace('.', '-')+'.dat'
-			
-			output = file_or_stdio(output_filename, 'w', sys.stdout)
-			output.write(part.payload_decoded)
-			output.flush()
-			output.close()
-			
-			sys.stderr.write("emlv: saved: "+output_filename+"\n")
-			output = sys.stdout
+		if read_mode and mime_part_indices == []:
+			sys.stderr.write("Not found any MIME part to display.\n")
 		else:
-			if option.body_filter:
-				output = os.popen(option.body_filter, 'w')
-			elif read_mode and option.body_filter != '':
-				for exename in part.content_type.main, part.content_type.replace('/', '_'):
-					exepath = os.path.expanduser(os.path.join(default_filter_prefix, exename))
-					if os.path.exists(exepath):
-						os.environ['CONTENT_TYPE_CHARSET'] = str(part.header[HDR_CT].param['charset'].decoded)
-						output = os.popen(exepath, 'w')
-						break
-			display(part)
-		
-		if output != sys.stdout:
-			output.flush()
-			filter_status = output.close()
-			filter_status_codes.append(filter_status)
-			output = sys.stdout
+			for part_idx in map(int, mime_part_indices):
+				part = part.parts[part_idx]
+			
+			if option.save:
+				attachment_filename = part.filename
+				output_filename = safe_filename(attachment_filename)
+				if not output_filename:
+					if part.content_type == MIMETYPE_EMAIL:
+						output_filename = 'attached-email-'+idx.replace('.', '-')+'.eml'
+					else:
+						output_filename = 'attachment-'+idx.replace('.', '-')+'.dat'
+				
+				output = file_or_stdio(output_filename, 'w', sys.stdout)
+				if part.is_multipart():
+					if part.content_type == MIMETYPE_EMAIL:
+						output.write(part.payload_encoded)
+					else:
+						output.write(part.as_string())
+				else:
+					output.write(part.payload_decoded)
+				output.flush()
+				output.close()
+				
+				sys.stderr.write("emlv: saved: "+output_filename+"\n")
+				output = sys.stdout
+			else:
+				if option.body_filter:
+					output = os.popen(option.body_filter, 'w')
+				elif read_mode and option.body_filter != '':
+					for exename in part.content_type.main, part.content_type.replace('/', '_'):
+						exepath = os.path.expanduser(os.path.join(default_filter_prefix, exename))
+						if os.path.exists(exepath):
+							os.environ['CONTENT_TYPE_CHARSET'] = str(part.header[HDR_CT].param['charset'].decoded)
+							output = os.popen(exepath, 'w')
+							break
+				display(part)
+			
+			if output != sys.stdout:
+				output.flush()
+				filter_status = output.close()
+				filter_status_codes.append(filter_status)
+				output = sys.stdout
 		
 		if read_mode:
 			output_write('\n')  # in case of body did not end with newline
