@@ -413,8 +413,17 @@ class Email(object):
 			return ()
 	
 	@property
+	def body_encoded(self):
+		raw = self._ll_email.as_string()
+		header, body = re.split(r'\r?\n\r?\n', raw, 1)
+		return body
+	
+	@property
 	def payload_encoded(self):
-		return self._ll_email.get_payload(decode=False)
+		if self._ll_email.is_multipart():
+			return self.body_encoded
+		else:
+			return self._ll_email.get_payload(decode=False)
 	
 	@payload_encoded.setter
 	def payload_encoded(self, encpayload):

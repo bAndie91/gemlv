@@ -91,15 +91,23 @@ class DecodeIfTTY(object):
 			return data
 
 def display(eml):
-	decoder = DecodeIfTTY(output, lambda data: decode_readably(data, eml))
-	
 	if eml.is_multipart():
-		output_write("%s\n%s" % (decoder.decode(eml.preamble), decoder.decode(eml.epilogue)))
+		if eml.content_type == MIMETYPE_EMAIL:
+			output_write(eml.payload_encoded)
+		else:
+			output_write(eml.as_string())
 	else:
+		decoder = DecodeIfTTY(output, lambda data: decode_readably(data, eml))
 		output_write(decoder.decode(eml.payload_decoded))
 
+def file_or_stdio(filepath, openmode, stdio):
+	if filepath == '-':
+		return stdio
+	else:
+		return open(filepath, openmode)
+	
 def load_email(filepath):
-	return gemlv.email.Email(email.message_from_file(open(filepath, 'r')))
+	return gemlv.email.Email(email.message_from_file(file_or_stdio(filepath, 'r', sys.stdin)))
 
 def walk_mime_parts(eml, multipart_path=[]):
 	yield (multipart_path, eml)
@@ -115,13 +123,18 @@ def find_first_part(multipart, content_type=None):
 			break
 	return first_part_path
 
+def safe_filename(s):
+	# replace directory separator to unicode U+2044 FRACTION SLASH
+	s = s.replace(os.path.sep, u'⁄')
+	return s
+
 
 default_filter_prefix = '~/.local/bin/emlv-filter/'
 
 
 argparser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter)
 argparser.description = """Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
-Without --list or --extract option, i.e. read-mode, display the first text/plain part as content.
+Without --list or --extract option, i.e. read-mode, display the first text/plain part as content (or text/html if no plain text part found).
 
 It searches executables named <MAIN> and <MAIN>_<SUB> in """+default_filter_prefix+""" to filter content with MIME type <MAIN>/<SUB> through them.
 You can disable this by "--body_filter=-" parameter."""
@@ -215,11 +228,10 @@ else:
 		
 		if option.save:
 			attachment_filename = part.filename
-			# replace directory separator to unicode U+2044 FRACTION SLASH
-			output_filename = attachment_filename.replace(os.path.sep, u'⁄')
+			output_filename = safe_filename(attachment_filename)
 			if not output_filename: output_filename = 'attachment-'+idx.replace('.', '-')+'.dat'
-
-			output = open(output_filename, 'w')
+			
+			output = file_or_stdio(output_filename, 'w', sys.stdout)
 			output.write(part.payload_decoded)
 			output.flush()
 			output.close()
