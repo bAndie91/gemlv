@@ -384,12 +384,18 @@ def _fix_parts_by_cte(mime_part):
 	if mime_part.is_multipart():
 		cte = mime_part.get(HDR_CTE, '').lower()
 		if cte in ('quoted-printable', 'base64') + ENCNAMES_UUE:
+			# create a temporarly email object to reuse email module's decoding routines
 			aux_email = email.message.Message()
+			# manually split the input email object (potentially multipart MIME attachment) into headers and raw body
 			raw_mime_part = mime_part.as_string()
 			mimepart_headers, aux_email._payload = re.split(r'\r?\n\r?\n', raw_mime_part, 1)
+			# copy the input email object's CTE to the temporarly email
 			_set_header(aux_email, HDR_CTE, cte)
+			# let the upstream email module decode it as a non-multipart MIME payload
 			payload_decoded = aux_email.get_payload(decode=True)
+			# construct a new MIMEMessage from the original (input) email headers and its properly decoded payload (except the CTE it not what was originally)
 			mimepart_decoded = email.message_from_string(mimepart_headers + '\r\n\r\n' + payload_decoded)
+			# replace the input email's sub-MIME-parts to those which are just yielded
 			mime_part.set_payload([])
 			mime_part[HDR_CTE] = '8bit'
 			mime_part.set_payload(mimepart_decoded.get_payload())
