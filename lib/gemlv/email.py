@@ -371,6 +371,35 @@ class PluralHeaderAccessor(HeaderAccessor):
 		self._ll_email.add_header(header_obj.name, header_obj.value.encoded)
 
 
+def _set_header(mimepart, hname, hvalue):
+	try:
+		mimepart.replace_header(hname, hvalue)
+	except KeyError as e:
+		mimepart.add_header(hname, hvalue)
+
+def _fix_parts_by_cte(mime_part):
+	# fix defect in email module (version 4.0.3 but others are likely affected too)
+	# that it does not obey Content-Transfer-Encoding when decoding multipart MIME objects.
+	
+	if mime_part.is_multipart():
+		cte = mime_part.get(HDR_CTE, '').lower()
+		if cte in ('quoted-printable', 'base64') + ENCNAMES_UUE:
+			aux_email = email.message.Message()
+			raw_mime_part = mime_part.as_string()
+			mimepart_headers, aux_email._payload = re.split(r'\r?\n\r?\n', raw_mime_part, 1)
+			_set_header(aux_email, HDR_CTE, cte)
+			payload_decoded = aux_email.get_payload(decode=True)
+			mimepart_decoded = email.message_from_string(mimepart_headers + '\r\n\r\n' + payload_decoded)
+			mime_part.set_payload([])
+			mime_part[HDR_CTE] = '8bit'
+			mime_part.set_payload(mimepart_decoded.get_payload())
+		elif cte in ('', '7bit', '8bit'):
+			pass
+		else:
+			raise Exception("don't know how to decode %s Content-Transfer-Encoding" % (cte,))
+		
+		#for subpart in mime_part....
+
 class Email(object):
 	def __init__(self, email_obj, parent_email_obj=None):
 		if isinstance(email_obj, self.__class__):
@@ -378,6 +407,7 @@ class Email(object):
 		self._ll_email = email_obj  # the low level email object
 		self.parent = parent_email_obj
 		self._size_approx = None
+		_fix_parts_by_cte(email_obj)
 	
 	@property
 	def header(self):
