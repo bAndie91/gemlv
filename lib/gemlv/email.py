@@ -397,7 +397,7 @@ def _fix_parts_by_cte(mime_part):
 			mimepart_decoded = email.message_from_string(mimepart_headers + '\r\n\r\n' + payload_decoded)
 			# replace the input email's sub-MIME-parts to those which are just yielded
 			mime_part.set_payload([])
-			mime_part[HDR_CTE] = '8bit'
+			_set_header(mime_part, HDR_CTE, '8bit')
 			mime_part.set_payload(mimepart_decoded.get_payload())
 		elif cte in ('', '7bit', '8bit'):
 			pass
