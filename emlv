@@ -116,12 +116,10 @@ def walk_mime_parts(eml, multipart_path=[]):
 			yield x
 
 def find_first_part(multipart, content_type=None):
-	first_part_path = []
 	for multipart_path, sub_part in walk_mime_parts(multipart):
 		if sub_part.content_type == content_type:
-			first_part_path = multipart_path
-			break
-	return first_part_path
+			return multipart_path
+	return None
 
 def safe_filename(s):
 	# replace directory separator to unicode U+2044 FRACTION SLASH
@@ -202,13 +200,20 @@ else:
 		eml = load_email(option.FILE[input_file_index])
 		part = eml
 		mime_part_indices = []
+		mime_part_to_display_is_found = False
 		
 		if len(indices) == 2 and indices[1] == 'primary':
 			mime_part_indices = find_first_part(part, content_type = primary_content_type)
-			if not mime_part_indices and fallback_to_html and primary_content_type != MIMETYPE_HTML:
-				mime_part_indices = find_first_part(part, content_type = MIMETYPE_HTML)
+			if mime_part_indices is not None:
+				mime_part_to_display_is_found = True
+			else:
+				if fallback_to_html and primary_content_type != MIMETYPE_HTML:
+					mime_part_indices = find_first_part(part, content_type = MIMETYPE_HTML)
+					if mime_part_indices is not None:
+						mime_part_to_display_is_found = True
 		else:
 			mime_part_indices = indices[1:]
+			mime_part_to_display_is_found = True
 		
 		
 		if read_mode:
@@ -228,7 +233,7 @@ else:
 		
 		output.flush()
 		
-		if read_mode and mime_part_indices == []:
+		if read_mode and not mime_part_to_display_is_found:
 			sys.stderr.write("Not found any MIME part to display.\n")
 		else:
 			for part_idx in map(int, mime_part_indices):
