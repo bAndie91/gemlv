@@ -128,6 +128,14 @@ def uniq(alist):
 		if x not in result: result.append(x)
 	return result
 
+def listify(x):
+	if isinstance(x, list):
+		return x
+	elif isinstance(x, tuple):
+		return list(x)
+	else:
+		return [x]
+
 class CaseInsensitiveString(str):
 	def __repr__(self):
 		return '%s(%s)' % (self.__class__.__name__, str.__repr__(self))

@@ -1089,13 +1089,7 @@ def get_header_links(s, schemata):
 	 - uri
 	 - scheme
 	 - comment (if any)
-	 in case of "mailto:..." link:
-	 - to: "To" recipients list
-	 - cc: "Cc" recipients list
-	 - bcc: "Bcc" recipients list
-	 - subject (if any)
-	 - body (if any)
-	 - other accepted mailto fields (if any)
+	 - other fields (to, cc, bcc, subject, body, etc.) in case of "mailto:..." links
 	"""
 	# RFC2369
 	links = []
@@ -1116,16 +1110,21 @@ def get_header_links(s, schemata):
 				for field_name in MultiRecipientsMailtoFields:
 					link[field_name] = []
 				link['to'] = getaddresslines([urlparse.unquote(uriparts.path)])
+				link['attach'] = []
 				for field_name, field_values in urlparse.parse_qs(uriparts.query).iteritems():
 					field_name = field_name.lower()
-					if field_name in AcceptableMailtoFields and len(field_values) > 0:
+					if field_name in ['uri', 'scheme', 'comment']:
+						# ignore as these are reserved keys
+						# TODO: don't put user input data directly in link, but in eg. link['fields']
+						continue
+					if len(field_values) > 0:
 						field_values_decoded = [decode_mimetext(v) for v in field_values]
 						if field_name in MultiRecipientsMailtoFields:
 							# RFC2368
 							# there may be multiple fields of the same kind (eg. "?cc=addr1&cc=addr2")
 							# and each of them may hold multiple addresses delimited by comma (eg. "addr1%2C%20addr2")
 							field_values_decoded = getaddresslines(field_values)
-						if field_name in MultiRecipientsMailtoFields:
+						if field_name in MultiRecipientsMailtoFields or field_name == 'attach':
 							link[field_name].extend(field_values_decoded)
 						else:
 							link[field_name] = field_values_decoded[0]
@@ -2197,8 +2196,8 @@ def add_composer_agent_headers():
 	composer_headers.add('User-Agent', USERAGENT)
 	composer_headers.add('X-Mailer', USERAGENT)
 
-def add_composer_mailto(mailto):
-	for field in AcceptableMailtoFields:
+def add_composer_mailto(mailto, acceptablefields):
+	for field in acceptablefields:
 		if field in mailto:
 			header = gemlv.email.Header(field).name
 			if field in MultiRecipientsMailtoFields:
@@ -2207,6 +2206,10 @@ def add_composer_mailto(mailto):
 				composer_headers.set_single(HDR_SUBJ, mailto[field])
 			elif field == 'body':
 				set_composer_text(mailto[field])
+			elif field == 'attach':
+				for uripath in mailto['attach']:
+					fspath = file_uri_to_path(uripath)
+					attach_path(fspath, fspath)
 			else:
 				composer_headers.add(header, mailto[field])
 
@@ -2358,7 +2361,7 @@ def act_unsubscribe():
 	links = get_header_links(','.join(TheEmail.headers['List-Unsubscribe'].encoded), schemata=['*'])
 	if len(links) == 1 and links[0]['scheme'] == 'mailto':
 		if open_composer(reason=COMPOSE_UNSUB):
-			add_composer_mailto(links[0])
+			add_composer_mailto(links[0], UsuallyAcceptableMailtoFields)
 			on_after_save_draft()
 	else:
 		text = ''
@@ -4594,7 +4597,7 @@ SingletonHeaders = [
 # SemiSingletonHeaders are shown as separate headers on the UI but clashed into one in the raw email.
 SemiSingletonHeaders = [ HDR_REF ] + RecipientHeaders
 MultiRecipientsMailtoFields = ['to', 'cc', 'bcc']  # in addition to rfc2368, gemlv deems Bcc to be safe too
-AcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
+UsuallyAcceptableMailtoFields = MultiRecipientsMailtoFields + ['subject', 'keywords', 'body']
 
 NewEmail = None
 
@@ -5111,7 +5114,7 @@ if cliArgs.compose:
 	
 	if cliArgs.mailto:
 		mailto = parse_mailto(cliArgs.mailto)
-		add_composer_mailto(mailto)
+		add_composer_mailto(mailto, UsuallyAcceptableMailtoFields + ['attach'])
 		del mailto
 	if getattr(cliArgs, 'from'):
 		composer_headers.set_single('From', getattr(cliArgs, 'from'))
