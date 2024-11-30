@@ -1784,12 +1784,17 @@ class GemlvComposerHeader(gtk.HBox):
 			self.btn_suggestions.hide()
 	
 	def on_populate_text_context_menu(self, entry, menu):
+		pos = -1
 		if self.name in AddressbookHeaders:
-			pos = 0
+			pos += 1
 			mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
 			mi.connect('activate', self.add_to_addressbook)
 			menu.insert(mi, pos)
-			menu.show_all()
+		pos += 1
+		mi = gui_toolkits.StockMenuItem(icon_name='new', label=_("Generate "+HDR_MID))
+		mi.connect('activate', lambda *_x: self.add_to_value(make_msgid()))
+		menu.insert(mi, pos)
+		menu.show_all()
 	
 	def add_to_addressbook(self, *_x):
 		act_add_to_addressbook_manual(AddressLine(MimeDecoded(self.value)))
@@ -1926,6 +1931,10 @@ class GemlvComposerHeader(gtk.HBox):
 	@value.setter
 	def value(self, newvalue):
 		self.wdg_value.set_text(newvalue)
+	
+	def add_to_value(self, s):
+		if self.value != '': s = ", " + s
+		self.value += s
 	
 	def on_value_changed(self, entry=None):
 		if entry is None: entry = self.wdg_value
@@ -4507,6 +4516,7 @@ AdvancedHeaders = [
 	'Content-Language', 'Accept-Language',
 	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
 	'User-Agent', 'X-Mailer',
+	HDR_MID,
 ]
 # sensitive headers are removed from the email when forwarding.
 # user-provided headers which are deemed sensitive are kept when being sent.
@@ -5003,7 +5013,7 @@ tvc.add_attribute(cr_txt, 'text', COL_ATTACHMENTS_SIZE_LABEL)
 panel_attachments.append_column(tvc)
 
 
-[CustomHeadersStore.append([h]) for h in AdvancedHeaders]
+[CustomHeadersStore.append([h]) for h in sorted(AdvancedHeaders)]
 
 toolbuttons = [
 	(None, gui_toolkits.LabelsToolItem(), None, None, None),
