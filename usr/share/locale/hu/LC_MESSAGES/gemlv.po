@@ -557,3 +557,8 @@ msgstr "Fájl kiválasztása"
 msgid "Select files"
 msgstr "Fájlok kiválasztása"
 
+msgid "Add new Message-ID"
+msgstr "Új Message-ID (üzenetazonosító) hozzáadása"
+
+msgid "Copy image's URL"
+msgstr "Kép URL címének másolása"

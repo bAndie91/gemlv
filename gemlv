@@ -1791,7 +1791,7 @@ class GemlvComposerHeader(gtk.HBox):
 			mi.connect('activate', self.add_to_addressbook)
 			menu.insert(mi, pos)
 		pos += 1
-		mi = gui_toolkits.StockMenuItem(icon_name='new', label=_("Generate "+HDR_MID))
+		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_NEW, label=_("Add new Message-ID"))
 		mi.connect('activate', lambda *_x: self.add_to_value(make_msgid()))
 		menu.insert(mi, pos)
 		menu.show_all()
@@ -4437,6 +4437,9 @@ def on_context_menu_on_avatar(event):
 	avatar_menu = gtk.Menu()
 	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_SAVE)
 	mi.connect('activate', on_avatar_save)
+	avatar_menu.append(mi)
+	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy image's URL"))
+	mi.connect('activate', lambda *_x: gtk.Clipboard().set_text(avatar_image.get_data('source-url')))
 	avatar_menu.append(mi)
 	avatar_menu.show_all()
 	avatar_menu.popup(None, None, None, event.button, event.time)
