@@ -270,13 +270,13 @@ Email viewer for console/terminal
 ## CLI options
 
 ```
-usage: emlv [-h] [--list | --extract INDEX | --save INDEX] [--html]
-            [--header HEADER] [--header-filter COMMAND]
+usage: emlv [-h] [--list | --extract INDEX | --save INDEX] [--plaintext]
+            [--html] [--header HEADER] [--header-filter COMMAND]
             [--body-filter COMMAND] [--attachments-filter COMMAND]
             [FILE [FILE ...]]
 
 Display RFC-822 email file(s) headers, content, and attachments, list MIME parts, extract attachments from it.
-Without --list or --extract option, i.e. read-mode, display the first text/plain part as content.
+Without --list or --extract option, i.e. read-mode, display the first text/plain part as content (or text/html if no plain text part found).
 
 It searches executables named <MAIN> and <MAIN>_<SUB> in ~/.local/bin/emlv-filter/ to filter content with MIME type <MAIN>/<SUB> through them.
 You can disable this by "--body_filter=-" parameter.
@@ -289,21 +289,28 @@ optional arguments:
   -h, --help            show this help message and exit
   --list, -l            List all MIME parts in email files given in FILE.
   --extract INDEX, -x INDEX
-                        Extract MIME part specified by INDEX to stdout. May be
-                        specified multiple times. See --list to get the
-                        indices of each part of a MIME-multipart file.
+                        Extract MIME part specified by INDEX to stdout. See
+                        --list to get the indices of each part of a MIME-
+                        multipart file. This option may be repeated.
   --save INDEX, -s INDEX
-                        Save MIME part specified by INDEX to file. May be
-                        specified multiple times.
+                        Save MIME part specified by INDEX to file. The output
+                        file name is either the attachment's name if it's
+                        given, or "attached-email-INDEX.eml" if the attachment
+                        is itself an Email, or "attachment-INDEX.dat"
+                        otherwise. This option may be repeated.
+  --plaintext           Always take the first text/plain part as content.
+                        Default is to fall back to text/html if no text/plain
+                        found.
   --html                Take the first text/html part as content, not
                         text/plain. Option --body-filter is also recommended
                         here.
   --header HEADER, -H HEADER
                         Extra headers to show in read-mode besides Return-
                         Path, X-X-Sender, X-Sender, Sender, From,
-                        Organization, Reply-To, To, Cc, Subject, Date,
-                        Importance, Priority, X-Priority, X-MSMail-Priority,
-                        Reply-By, Expires, X-Spam. Wildcards are supported.
+                        Organization, Reply-To, To, Cc, Delivered-To, Subject,
+                        Date, Importance, Priority, X-Priority, X-MSMail-
+                        Priority, Reply-By, Expires, X-Spam. Wildcards are
+                        supported.
   --header-filter COMMAND, -fh COMMAND
                         Filter the headers through this command.
   --body-filter COMMAND, -fb COMMAND
