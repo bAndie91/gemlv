@@ -68,7 +68,9 @@ class Image(object):
 				traceback.print_stack()
 			else:
 				for tagtype in metadata.keys():
-					for tagid, value in metadata[tagtype].iteritems():
+					tagset = metadata.get(tagtype)
+					if not tagset: continue
+					for tagid, value in tagset.iteritems():
 						try:
 							if piexif.TAGS[tagtype][tagid]['name'] == 'Orientation':
 								orientation = value
