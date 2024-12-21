@@ -3165,6 +3165,8 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	sendmail_envs = {
 		'FROM': AddressLine(email_to_send.header['From'].decoded).email,
 		'RCPT': ','.join(map(lambda al: al.email, recipients_addr)),
+		'SIZE': email_to_send.size_approx,
+		'INTERACTIVE': "1",
 	}
 	
 	child_read, parent_write, parent_read, child_write = new_pipe_handles(2)
