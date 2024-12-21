@@ -4517,7 +4517,7 @@ AdvancedHeaders = [
 	'Priority', 'Importance', 'Precedence',
 	'Newsgroups', 'Followup-To', 'Thread-Topic',
 	'Content-Language', 'Accept-Language',
-	'Deliver-At-Age', 'Deliver-At-Date', 'Reply-By', 'Expires',
+	'Date', 'Reply-By', 'Expires', 'Deliver-At-Date', 'Deliver-At-Age',
 	'User-Agent', 'X-Mailer',
 	HDR_MID,
 ]
