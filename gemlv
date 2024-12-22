@@ -2252,11 +2252,11 @@ def guess_my_addressline():
 		realname = gemlv.utils.get_gecos_name()
 	return AddressLine((MimeDecoded(realname), addr))
 
-def guess_reply_addressline():
+def guess_reply_addresslines():
 	if TheEmail is not None:
 		for hname in ['Reply-To', 'From', 'Sender', 'X-Sender', 'X-X-Sender']:
 			if hname in TheEmail.headers:
-				return AddressLine(TheEmail.header[hname].encoded)
+				return getaddresslines(TheEmail.headers[hname].encoded)
 	return AddressLine('')
 
 
@@ -2338,20 +2338,23 @@ def act_reply(compose_type):
 			composer_headers.add('In-Reply-To', messageid)
 			composer_maintain_references_headers()
 			
-			reply_addressline = guess_reply_addressline()
+			reply_addresslines = guess_reply_addresslines()
 			listaddress = get_listaddressline_main()
 			
 			if compose_type == COMPOSE_REPLY:
-				composer_headers.add('To', str(reply_addressline))
+				composer_headers.add_multi('To', [str(al) for al in reply_addresslines])
 			elif compose_type == COMPOSE_REPLY_ALL:
 				# gather all email addresses in the message
 				# but do not duplicate any
-				skip_addresses = [my_addressline.email, reply_addressline.email, '']
+				reply_emails = [al.email for al in reply_addresslines]
+				skip_addresses = [my_addressline.email, ''] + reply_emails
 				rcpt_addresses = []
 				
-				if reply_addressline.email and reply_addressline.email != my_addressline.email:
-					composer_headers.add('To', str(reply_addressline))
-					rcpt_addresses.append(reply_addressline.email)
+				for addressline in reply_addresslines:
+					if addressline.email != my_addressline.email:
+						composer_headers.add('To', str(addressline))
+						rcpt_addresses.append(addressline.email)
+				
 				for rh in RecipientHeaders:
 					for addressline in [al for al in getaddresslines(TheEmail.headers[rh].encoded) if al.email not in skip_addresses]:
 						composer_headers.add(rh, str(addressline))
