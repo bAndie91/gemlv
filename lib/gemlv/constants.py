@@ -5,12 +5,13 @@ from contenttypestring import ContentTypeString
 
 COMMON_MULTIPART_PREAMBLE = "This is a multi-part message in MIME format."  # @notranslate
 
-RE_DOMAIN = r'(?:(?!-)[a-z\d-]+(?<!-)\.?)+'
+RE_DNSLABEL = r'(?<!-)[a-z\d-]+(?!-)'
+RE_DOMAIN = RE_DNSLABEL + r'(?:\.' + RE_DNSLABEL + r')*\.?'
 RE_IPADDR = r'[0-9a-f\.:]+'
-RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + '|\[' + RE_IPADDR + '\])'
+RE_DOMAINPART = r'(?P<DP>' + RE_DOMAIN + r'|\[' + RE_IPADDR + r'\])'
 RE_EMAIL_PERMISSIVE = r'.@' + RE_DOMAINPART
 RE_EMAIL = r'(?P<LP>\w[\w\.+-]*(?<![\.-]))@' + RE_DOMAINPART
-RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + '(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
+RE_ADDRESS = r'\s*(?:(?P<DQ>\x22|)(?P<N>(?<=\x22)(?:[^\x22\n\\]|\\[\x22\\])*|[^\x22\x27<\n\\]+)(?P=DQ))?\s*(?(N)<|(?:(?P<LT><)|))' + RE_EMAIL + r'(?(N)>|(?(LT)>))\s*(?:,\s*|$)'
 
 PMU_MIME = '<i><span color=\'gray30\'>'
 PMU_MIME_CLOSE = '</span></i>'
