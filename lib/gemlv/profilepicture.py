@@ -11,10 +11,11 @@ from gemlv.pythonutils import uniq
 multi_url_host_delimiter = ' '
 
 default_avatar_url_templates = []
+avatar_service_placeholder_image_type = 'identicon'
 for avatar_origin in 'https://{avatars_sec_host}', 'http://{avatars_host}', 'https://seccdn.libravatar.org', 'http://cdn.libravatar.org', 'https://www.gravatar.com':
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}')
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}')
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}')
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}?default=' + avatar_service_placeholder_image_type)
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default=' + avatar_service_placeholder_image_type)
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}?default=' + avatar_service_placeholder_image_type)
 
 class LazyLoad(object):
 	def __init__(self, func, *args, **kwargs):
