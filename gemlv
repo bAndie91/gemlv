@@ -117,7 +117,7 @@ from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
 from gemlv.constants import *
 import gemlv.mime as mime
-from gemlv.profilepicture import load_avatar
+from gemlv.profilepicture import load_avatar_try_multiple_emails_then_fallback
 
 
 ### helper classes, functions ###
@@ -581,13 +581,10 @@ def load_file(filename):
 	win_main.set_data('email-file', filename)
 	update_window_title(win_main, filename, TheEmail.header[HDR_SUBJ].decoded)
 	
-	senderaddr = None
+	senderaddresses = []
 	for h in OriginatorHeaders:
-		addr = extract_1_email_address_from_headers(h, TheEmail)
-		if addr:
-			senderaddr = addr
-			break
-	threading.Thread(target=load_avatar, args=(senderaddr, avatar_loader_callback, Props['avatar/url_templates.json'])).start()
+		senderaddresses.extend(extract_email_addresses_from_headers(h, TheEmail))
+	threading.Thread(target=load_avatar_try_multiple_emails_then_fallback, args=(senderaddresses, avatar_loader_callback, Props['avatar/url_templates.json'])).start()
 	
 	if TheEmail.header[HDR_DNT].nonempty:
 		if xattr.get(filename, XATTR_MDNSENT) is None:

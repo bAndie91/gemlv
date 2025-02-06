@@ -11,14 +11,10 @@ from gemlv.pythonutils import uniq
 multi_url_host_delimiter = ' '
 
 default_avatar_url_templates = []
-avatar_service_placeholder_image_type = 'identicon'
 for avatar_origin in 'https://{avatars_sec_host}', 'http://{avatars_host}', 'https://seccdn.libravatar.org', 'http://cdn.libravatar.org', 'https://www.gravatar.com':
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}?default=404')
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default=404')
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}?default=404')
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}?default=' + avatar_service_placeholder_image_type)
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default=' + avatar_service_placeholder_image_type)
-	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}?default=' + avatar_service_placeholder_image_type)
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:md5}?default={placeholder}')
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{localpart=email:localpart}{lowerdomain=email:domainpart:lower}{lowerdomain_email=localpart+"@"+lowerdomain}{lowerdomain_email:md5}?default={placeholder}')
+	default_avatar_url_templates.append(avatar_origin + '/avatar/{email:lower:md5}?default={placeholder}')
 
 class LazyLoad(object):
 	def __init__(self, func, *args, **kwargs):
@@ -112,17 +108,20 @@ def template_replacer(expr, tmpl_vars):
 	else:
 		return result
 
-def load_avatar(email_address, callback, url_templates=None):
+def load_avatar(email_address, callback, url_templates=None, url_template_parameters={}):
 	if email_address is None:
 		return
 	if url_templates is None:
 		url_templates = default_avatar_url_templates
 	email_domain = email_address.rsplit('@', 1)[1]
-	tmpl_vars = {
+	if "placeholder" not in url_template_parameters: url_template_parameters["placeholder"] = "404"
+	tmpl_vars = {}
+	tmpl_vars.update(url_template_parameters)
+	tmpl_vars.update({
 		'email': email_address,
 		'avatars_host': LazyLoad(libravatar_servers, '_avatars._tcp.' + email_domain),
 		'avatars_sec_host': LazyLoad(libravatar_servers, '_avatars-sec._tcp.' + email_domain),
-	}
+	})
 	avatar_ok = False
 	urls_tried = []
 	
@@ -160,3 +159,19 @@ def load_avatar(email_address, callback, url_templates=None):
 		if avatar_ok:
 			break
 	callback('finish')
+
+def load_avatar_try_multiple_emails_then_fallback(email_addresses, callback, url_templates=None):
+	status = {
+		'avatar_found': False,
+	}
+	def cb(stage, result=None):
+		if stage == 'load':
+			status['avatar_found'] = True
+		callback(stage, result)
+	for placeholder in '404', 'identicon':
+		for email_address in email_addresses:
+			load_avatar(email_address, cb, url_templates, {'placeholder': placeholder})
+			if status['avatar_found']:
+				break
+		if status['avatar_found']:
+			break
