@@ -747,25 +747,49 @@ def set_content_text(s):
 
 def highlight_hyperlinks(tview):
 	bufr = tview.get_buffer()
-	text = bufr.get_text_all(include_embedded_objects=True)
+	text = bufr.get_text_all(include_embedded_objects=True).decode('utf-8')
 	offset_shift = 0
-	for match in re.finditer(r'\b([a-z+-]+://[^\s]+)', text.decode('utf8'), re.I):
+	
+	html_renderer_numbered_links = {}
+	for match in re.finditer(r'^\s*(\d+)\.\s+([a-z+-]+://[^\s]+)', text, re.I | re.M):
+		html_renderer_numbered_links[match.group(1)] = match.group(2)
+	for match in re.finditer(r'\[(\d+)\]', text, re.I):
+		num = match.group(1)
+		if num in html_renderer_numbered_links:
+			pos_start = match.start(0)
+			pos_end = match.end(0)
+			hyperlinkify(tview, bufr, pos_start + offset_shift, pos_end + offset_shift, html_renderer_numbered_links[num], match.group(0))
+			offset_shift += 1
+	
+	for match in re.finditer(r'\b([a-z+-]+://[^\s]+)', text, re.I):
 		uri = match.group(0)
 		pos_start = match.start(0)
 		pos_end = match.end(0)
-		iter_start = bufr.get_iter_at_offset(pos_start + offset_shift)
-		iter_end = bufr.get_iter_at_offset(pos_end + offset_shift)
-		
-		bufr.apply_tag_by_name('hidden', iter_start, iter_end)
-		anchor = gtk.TextChildAnchor()
-		bufr.insert_child_anchor(iter_start, anchor)
+		hyperlinkify(tview, bufr, pos_start + offset_shift, pos_end + offset_shift, uri, uri)
 		offset_shift += 1
-		link = gtk.Label()
-		font = tview.get_data('saved-font')['string']
-		link.set_markup('<span font_desc="%s"><a href="%s">%s</a></span>' % (font, glib.markup_escape_text(uri), glib.markup_escape_text(uri)))
-		link.set_selectable(True)
-		link.show_all()
-		tview.add_child_at_anchor(link, anchor)
+
+def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
+	iter_start = bufr.get_iter_at_offset(pos_start)
+	iter_end = bufr.get_iter_at_offset(pos_end)
+	bufr.apply_tag_by_name('hidden', iter_start, iter_end)
+	anchor = gtk.TextChildAnchor()
+	bufr.insert_child_anchor(iter_start, anchor)
+	link = gtk.Label()
+	font = tview.get_data('saved-font')['string']
+	link.set_markup('<span font_desc="%s"><a href="%s">%s</a></span>' % (font, glib.markup_escape_text(uri), glib.markup_escape_text(title)))
+	link.set_data('uri', uri)
+	link.set_selectable(True)
+	link.set_tooltip_text(uri)  # FIXME does not work
+	link.connect('populate-popup', on_populate_hyperlinklabel_context_menu)
+	link.show_all()
+	tview.add_child_at_anchor(link, anchor)
+
+def on_populate_hyperlinklabel_context_menu(widget, menu):
+	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN)
+	uri = widget.get_data('uri')
+	mi.connect('activate', lambda *_x: run_async(cliArgs.opener, cliArgs.opener_args + [uri], None))
+	menu.insert(mi, 0)
+	menu.show_all()
 
 def setup_textview_for_hyperlinks(tview):
 	tbuf = tview.get_buffer()
