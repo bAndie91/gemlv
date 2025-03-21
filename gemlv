@@ -782,6 +782,13 @@ def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
 	link.set_tooltip_text(uri)  # FIXME does not work
 	link.connect('populate-popup', on_populate_hyperlinklabel_context_menu)
 	link.show_all()
+
+	pctx = tview.get_pango_context()
+	fdsc = pctx.get_font_description()
+	pmtr = pctx.get_metrics(fdsc, pctx.get_language())
+	line_height = pmtr.get_ascent()/pango.SCALE #+ pmtr.get_descent()/pango.SCALE
+	link.set_size_request(-1, line_height)
+	
 	tview.add_child_at_anchor(link, anchor)
 
 def on_populate_hyperlinklabel_context_menu(widget, menu):
