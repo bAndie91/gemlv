@@ -745,6 +745,33 @@ def set_content_text(s):
 	panel_content.set_sensitive(True)
 	return True
 
+def highlight_hyperlinks(tview):
+	bufr = tview.get_buffer()
+	text = bufr.get_text_all(include_embedded_objects=True)
+	offset_shift = 0
+	for match in re.finditer(r'\b([a-z+-]+://[^\s]+)', text.decode('utf8'), re.I):
+		uri = match.group(0)
+		pos_start = match.start(0)
+		pos_end = match.end(0)
+		iter_start = bufr.get_iter_at_offset(pos_start + offset_shift)
+		iter_end = bufr.get_iter_at_offset(pos_end + offset_shift)
+		
+		bufr.apply_tag_by_name('hidden', iter_start, iter_end)
+		anchor = gtk.TextChildAnchor()
+		bufr.insert_child_anchor(iter_start, anchor)
+		offset_shift += 1
+		link = gtk.Label()
+		font = tview.get_data('saved-font')['string']
+		link.set_markup('<span font_desc="%s"><a href="%s">%s</a></span>' % (font, glib.markup_escape_text(uri), glib.markup_escape_text(uri)))
+		link.set_selectable(True)
+		link.show_all()
+		tview.add_child_at_anchor(link, anchor)
+
+def setup_textview_for_hyperlinks(tview):
+	tbuf = tview.get_buffer()
+	tbuf.create_tag('hyperlink', foreground='blue', underline=pango.UNDERLINE_SINGLE)
+	tbuf.create_tag('hidden', invisible=True)
+
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
 	return gpg_msg
@@ -1017,6 +1044,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			for s in pipereader(content, cmd, args):
 				bufr.insert(bufr.get_end_iter(), s)
 				loaded_text += s
+			highlight_hyperlinks(panel_content)
 			panel_content.set_sensitive(True)
 		panel_btnbox.hide()
 		panel_content_image.hide()
@@ -2912,8 +2940,11 @@ class TextBuffer(gtk.TextBuffer):
 		self.apply_pattern_formats()
 	def clear(self):
 		return self.delete(self.get_start_iter(), self.get_end_iter())
-	def get_text_all(self):
-		return self.get_text(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
+	def get_text_all(self, include_embedded_objects=False):
+		if include_embedded_objects:
+			return self.get_slice(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
+		else:
+			return self.get_text(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
@@ -4737,7 +4768,7 @@ btn_save = gui_toolkits.StockButton(stock=gtk.STOCK_SAVE)
 btn_save_struct = gui_toolkits.StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
-panel_content = gtk.TextView()
+panel_content = gtk.TextView(buffer=TextBuffer())
 tb_controls = gtk.Toolbar()
 menubutton_filters = gtk.MenuToolButton(gtk.STOCK_ZOOM_FIT)
 menu_filters = gtk.Menu()
@@ -4818,6 +4849,7 @@ panel_content.set_editable(False)
 panel_content.set_wrap_mode(getattr(gtk, 'WRAP_'+((Props['ui/view/body/wrapmode'] or 'WORD').upper().replace('-', '_'))))
 panel_content.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once(1.5, lambda: Props.__setitem__('ui/view/body/wrapmode', tv.get_wrap_mode().value_nick)))
 panel_content.connect('scroll-event', on_scroll_on_button_font, panel_content, gtk.gdk.CONTROL_MASK)
+setup_textview_for_hyperlinks(panel_content)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
 menubutton_filters.set_homogeneous(False)
