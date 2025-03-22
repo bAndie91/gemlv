@@ -772,6 +772,7 @@ def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
 def setup_textview_for_hyperlinks(tview):
 	tbuf = tview.get_buffer()
 	tbuf.create_tag('hyperlink', foreground='blue', underline=pango.UNDERLINE_SINGLE)
+	tbuf.create_tag('hyperlink-onhover', foreground='white', underline=pango.UNDERLINE_SINGLE, background='blue')
 	tbuf.create_tag('hidden', invisible=True)
 	tagtable = tbuf.get_tag_table()
 	tag_link = tagtable.lookup('hyperlink')
@@ -808,9 +809,18 @@ def on_hyperlink_event(tag, tview, event, itr):
 			return True
 
 def track_mouse_over_textview(tview, event):
+	tbuf = tview.get_buffer()
 	itr = tview.get_iter_at_location(int(event.x), int(event.y))
 	tags = itr.get_tags()
-	tview.get_window(gtk.TEXT_WINDOW_TEXT).set_cursor(gtk.gdk.Cursor(gtk.gdk.HAND2) if any(tag.get_property('name') == 'hyperlink' for tag in tags) else None)
+	is_over_link = any(tag.get_property('name') == 'hyperlink' for tag in tags)
+	tview.get_window(gtk.TEXT_WINDOW_TEXT).set_cursor(gtk.gdk.Cursor(gtk.gdk.HAND2) if is_over_link else None)
+	tbuf.remove_tag_by_name('hyperlink-onhover', tbuf.get_start_iter(), tbuf.get_end_iter())
+	if is_over_link:
+		charpos = itr.get_offset()
+		for link in tview.get_buffer().get_data('hyperlinks'):
+			if link['pos_start'] <= charpos and charpos <= link['pos_end']:
+				tbuf.apply_tag_by_name('hyperlink-onhover', tbuf.get_iter_at_offset(link['pos_start']), tbuf.get_iter_at_offset(link['pos_end']))
+				break
 
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
