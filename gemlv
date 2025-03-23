@@ -427,7 +427,7 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 			dlg.set_current_folder(os.getcwd())
 		elif resp == gtk.RESPONSE_OK:
 			files_to_open = dlg.get_filenames() if multifile else [dlg.get_filename()]
-			run_async(cliArgs.opener, cliArgs.opener_args + files_to_open, None)
+			run_async(cliArgs.opener, cliArgs.opener_args + files_to_open)
 		else:
 			break
 	if dlg.get_current_folder() is not None:
@@ -449,7 +449,7 @@ def choose_open_files(custom_accept_button_stock=None):
 
 
 
-def run_async(cmd, args, postrun):
+def run_async(cmd, args, postrun=None):
 	args = args[:]
 	args.insert(0, os.path.basename(cmd))
 	pid1 = os.fork()
@@ -763,16 +763,45 @@ def highlight_hyperlinks(tview):
 		pos_end = match.end(0)
 		hyperlinkify(tview, bufr, pos_start, pos_end, uri, uri)
 
+class TextViewHyperlink(dict):
+	def __init__(self, **props):
+		self['visited'] = False
+		for prop, val in props.iteritems():
+			self[prop] = val
+	@property
+	def uri(self):
+		return self['uri']
+	@uri.setter
+	def uri(self, new):
+		self['uri'] = new
+	@property
+	def visited(self):
+		return self['visited']
+	@visited.setter
+	def visited(self, new):
+		self['visited'] = new
+		bufr = self['textview'].get_buffer()
+		iter_start = bufr.get_iter_at_offset(self['pos_start'])
+		iter_end = bufr.get_iter_at_offset(self['pos_end'])
+		bufr.apply_tag_by_name('hyperlink-visited', iter_start, iter_end)
+	def open(self, opener=None, *pargs, **kwargs):
+		if opener is None:
+			gtk.show_uri(None, self.uri, *pargs, **kwargs)
+		else:
+			run_async(opener[0], opener[1:] + [self.uri], *pargs, **kwargs)
+		self.visited = True
+
 def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
 	iter_start = bufr.get_iter_at_offset(pos_start)
 	iter_end = bufr.get_iter_at_offset(pos_end)
 	bufr.apply_tag_by_name('hyperlink', iter_start, iter_end)
-	bufr.get_data('hyperlinks').append({'pos_start': pos_start, 'pos_end': pos_end, 'uri': uri, 'title': title})
+	bufr.get_data('hyperlinks').append(TextViewHyperlink(textview=tview, pos_start=pos_start, pos_end=pos_end, uri=uri, title=title))
 
 def setup_textview_for_hyperlinks(tview):
 	tbuf = tview.get_buffer()
 	tbuf.create_tag('hyperlink', foreground='blue', underline=pango.UNDERLINE_SINGLE)
-	tbuf.create_tag('hyperlink-onhover', foreground='white', underline=pango.UNDERLINE_SINGLE, background='blue')
+	tbuf.create_tag('hyperlink-visited', foreground='purple')
+	tbuf.create_tag('hyperlink-onhover', foreground='white', background='blue')
 	tbuf.create_tag('hidden', invisible=True)
 	tagtable = tbuf.get_tag_table()
 	tag_link = tagtable.lookup('hyperlink')
@@ -782,27 +811,28 @@ def setup_textview_for_hyperlinks(tview):
 
 def on_hyperlink_event(tag, tview, event, itr):
 	if event.type in [gtk.gdk.BUTTON_RELEASE, gtk.gdk.BUTTON_PRESS]:
+		link = None
 		click_charpos = itr.get_offset()
-		for link in tview.get_buffer().get_data('hyperlinks'):
-			if link['pos_start'] <= click_charpos and click_charpos <= link['pos_end']:
-				uri = link['uri']
+		for l in tview.get_buffer().get_data('hyperlinks'):
+			if l['pos_start'] <= click_charpos and click_charpos <= l['pos_end']:
+				link = l
 				break
 	if event.type == gtk.gdk.BUTTON_RELEASE:
 		if event.button == 1:
-			gtk.show_uri(None, uri, event.time)
+			link.open(None, event.time)
 		elif event.button == 2:
-			run_async(cliArgs.opener, cliArgs.opener_args + [uri], None)
+			link.open([cliArgs.opener] + cliArgs.opener_args)
 	elif event.type == gtk.gdk.BUTTON_PRESS:
 		if event.button == 3:
 			menu = gtk.Menu()
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO)
-			mi.connect('activate', lambda mi, uri, time: gtk.show_uri(None, uri, time), uri, event.time)
+			mi.connect('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)
 			menu.append(mi)
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN)
-			mi.connect('activate', lambda mi, uri: run_async(cliArgs.opener, cliArgs.opener_args + [uri], None), uri)
+			mi.connect('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)
 			menu.append(mi)
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY)
-			mi.connect('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), uri)
+			mi.connect('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), link.uri)
 			menu.append(mi)
 			menu.show_all()
 			menu.popup(None, None, None, event.button, event.time)
@@ -2485,7 +2515,7 @@ def scroll_textview(tv, rect, scrwin):
 
 def act_report_spam(considered_as_spam = True):
 	emailfile = os.path.abspath(cliArgs.FILE)
-	run_async('gemlv-report-%s' % ('spam' if considered_as_spam else 'ham'), [emailfile], None)
+	run_async('gemlv-report-%s' % ('spam' if considered_as_spam else 'ham'), [emailfile])
 
 def runcmd_thread(args, input_fd, out_buffer, vb):
 	reader, writer = new_pipe_handles(1)
@@ -2571,7 +2601,7 @@ def open_payload_as_temp_file(eml):
 		e.filename = tmppath
 		display_error(e)
 		return
-	run_async(cliArgs.opener, cliArgs.opener_args + [tmppath], [os.unlink, tmppath])
+	run_async(cliArgs.opener, cliArgs.opener_args + [tmppath], postrun=[os.unlink, tmppath])
 
 
 def calc_attachment_name(part, n=None):
@@ -3803,8 +3833,8 @@ def act_addressbook():
 	
 	def on_edit(addressbrowser, _items):
 		addressbrowser.close()
-		run_async(cliArgs.opener, [gemlv.addressbook.get_singlefile_path()], None)
-		run_async(cliArgs.opener, [gemlv.addressbook.get_directory_path()], None)
+		run_async(cliArgs.opener, [gemlv.addressbook.get_singlefile_path()])
+		run_async(cliArgs.opener, [gemlv.addressbook.get_directory_path()])
 	
 	def on_close(addressbrowser):
 		win_comp.remove_data('addressbook-window')
@@ -3868,14 +3898,14 @@ def act_composer_attachment_menu_open_from_disk(opts):
 	if not opts.original_path:
 		display_error(_("Source file not known."))
 		return
-	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path], None)
+	run_async(cliArgs.opener, cliArgs.opener_args + [opts.original_path])
 
 def act_composer_attachment_menu_open_dir(opts):
 	if not opts.original_path:
 		display_error(_("Source file not known."))
 		return
 	original_dir = os.path.dirname(opts.original_path)
-	run_async(cliArgs.opener, cliArgs.opener_args + [original_dir], None)
+	run_async(cliArgs.opener, cliArgs.opener_args + [original_dir])
 
 def act_composer_attachment_menu_rename(opts):
 	tvc = panel_attachments.get_data('edit-treeviewcolumn')
