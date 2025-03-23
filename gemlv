@@ -778,12 +778,10 @@ class TextViewHyperlink(dict):
 	def visited(self):
 		return self['visited']
 	@visited.setter
-	def visited(self, new):
-		self['visited'] = new
-		bufr = self['textview'].get_buffer()
-		iter_start = bufr.get_iter_at_offset(self['pos_start'])
-		iter_end = bufr.get_iter_at_offset(self['pos_end'])
-		bufr.apply_tag_by_name('hyperlink-visited', iter_start, iter_end)
+	def visited(self, is_visited):
+		self['visited'] = is_visited
+		if is_visited:
+			self['textview'].get_buffer().apply_tag_to_range('hyperlink-visited', self['pos_start'], self['pos_end'])
 	def open(self, opener=None, *pargs, **kwargs):
 		if opener is None:
 			gtk.show_uri(None, self.uri, *pargs, **kwargs)
@@ -792,9 +790,7 @@ class TextViewHyperlink(dict):
 		self.visited = True
 
 def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
-	iter_start = bufr.get_iter_at_offset(pos_start)
-	iter_end = bufr.get_iter_at_offset(pos_end)
-	bufr.apply_tag_by_name('hyperlink', iter_start, iter_end)
+	bufr.apply_tag_to_range('hyperlink', pos_start, pos_end)
 	bufr.get_data('hyperlinks').append(TextViewHyperlink(textview=tview, pos_start=pos_start, pos_end=pos_end, uri=uri, title=title))
 
 def setup_textview_for_hyperlinks(tview):
@@ -802,7 +798,6 @@ def setup_textview_for_hyperlinks(tview):
 	tbuf.create_tag('hyperlink', foreground='blue', underline=pango.UNDERLINE_SINGLE)
 	tbuf.create_tag('hyperlink-visited', foreground='purple')
 	tbuf.create_tag('hyperlink-onhover', foreground='white', background='blue')
-	tbuf.create_tag('hidden', invisible=True)
 	tagtable = tbuf.get_tag_table()
 	tag_link = tagtable.lookup('hyperlink')
 	tag_link.connect('event', on_hyperlink_event)
@@ -811,6 +806,7 @@ def setup_textview_for_hyperlinks(tview):
 
 def on_hyperlink_event(tag, tview, event, itr):
 	if event.type in [gtk.gdk.BUTTON_RELEASE, gtk.gdk.BUTTON_PRESS]:
+		# find which hyperlink did the user click
 		link = None
 		click_charpos = itr.get_offset()
 		for l in tview.get_buffer().get_data('hyperlinks'):
@@ -824,6 +820,7 @@ def on_hyperlink_event(tag, tview, event, itr):
 			link.open([cliArgs.opener] + cliArgs.opener_args)
 	elif event.type == gtk.gdk.BUTTON_PRESS:
 		if event.button == 3:
+			# build context menu for a hyperlink in the TextView:
 			menu = gtk.Menu()
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO)
 			mi.connect('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)
@@ -844,12 +841,12 @@ def track_mouse_over_textview(tview, event):
 	tags = itr.get_tags()
 	is_over_link = any(tag.get_property('name') == 'hyperlink' for tag in tags)
 	tview.get_window(gtk.TEXT_WINDOW_TEXT).set_cursor(gtk.gdk.Cursor(gtk.gdk.HAND2) if is_over_link else None)
-	tbuf.remove_tag_by_name('hyperlink-onhover', tbuf.get_start_iter(), tbuf.get_end_iter())
+	tbuf.remove_tags_from_range('hyperlink-onhover')
 	if is_over_link:
 		charpos = itr.get_offset()
 		for link in tview.get_buffer().get_data('hyperlinks'):
 			if link['pos_start'] <= charpos and charpos <= link['pos_end']:
-				tbuf.apply_tag_by_name('hyperlink-onhover', tbuf.get_iter_at_offset(link['pos_start']), tbuf.get_iter_at_offset(link['pos_end']))
+				tbuf.apply_tag_to_range('hyperlink-onhover', link['pos_start'], link['pos_end'])
 				break
 
 def get_gpg_signed_data_from_mime_part(eml):
@@ -3025,6 +3022,16 @@ class TextBuffer(gtk.TextBuffer):
 			return self.get_slice(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
 		else:
 			return self.get_text(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
+	def apply_tag_to_range(self, tagname, pos_start, pos_end):
+		self.apply_tag_by_name(tagname, self.get_iter_at_offset(pos_start), self.get_iter_at_offset(pos_end))
+	def remove_tags_from_range(self, tagname, pos_start=None, pos_end=None):
+		"""remove the named tags from the given range.
+		if either of start or end positions is None, the start and end positions are considered respectively.
+		so a simple `remove_tags_from_range(name)` removed the given tags completely.
+		"""
+		iter_start = self.get_iter_at_offset(pos_start) if pos_start is not None else self.get_start_iter()
+		iter_end = self.get_iter_at_offset(pos_end) if pos_end is not None else self.get_end_iter()
+		self.remove_tag_by_name(tagname, iter_start, iter_end)
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
