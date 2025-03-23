@@ -747,8 +747,9 @@ def highlight_hyperlinks(tview):
 	text = bufr.get_text_all(include_embedded_objects=True).decode('utf-8')
 	bufr.set_data('hyperlinks', [])
 	
+	re_hyperlink = r'([a-z+-]+://[^\s]+|mailto:[^\s@]+@[a-z0-9_.-]+)'
 	html_renderer_numbered_links = {}
-	for match in re.finditer(r'^\s*(\d+)\.\s+([a-z+-]+://[^\s]+)', text, re.I | re.M):
+	for match in re.finditer(r'^\s*(\d+)\.\s+' + re_hyperlink, text, re.I | re.M):
 		html_renderer_numbered_links[match.group(1)] = match.group(2)
 	for match in re.finditer(r'\[(\d+)\]', text, re.I):
 		num = match.group(1)
@@ -757,7 +758,7 @@ def highlight_hyperlinks(tview):
 			pos_end = match.end(0)
 			hyperlinkify(tview, bufr, pos_start, pos_end, html_renderer_numbered_links[num], match.group(0))
 	
-	for match in re.finditer(r'\b([a-z+-]+://[^\s]+)', text, re.I):
+	for match in re.finditer(r'\b' + re_hyperlink, text, re.I):
 		uri = match.group(0)
 		pos_start = match.start(0)
 		pos_end = match.end(0)
@@ -828,6 +829,10 @@ def on_hyperlink_event(tag, tview, event, itr):
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN)
 			mi.connect('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)
 			menu.append(mi)
+			if link.uri.startswith('mailto:'):
+				mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+				mi.connect('activate', lambda mi, uri: act_add_to_addressbook_manual(AddressLine(MimeDecoded(uri))), link.uri)
+				menu.append(mi)
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY)
 			mi.connect('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), link.uri)
 			menu.append(mi)
