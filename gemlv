@@ -820,7 +820,7 @@ def setup_textview_for_hyperlinks(tview):
 	tview.connect("motion_notify_event", track_mouse_over_textview)
 
 def on_hyperlink_event(tag, tview, event, itr):
-	if event.type in [gtk.gdk.BUTTON_RELEASE, gtk.gdk.BUTTON_PRESS]:
+	if event.type == gtk.gdk.BUTTON_PRESS:
 		# find which hyperlink did the user click
 		link = None
 		click_charpos = itr.get_offset()
@@ -828,13 +828,12 @@ def on_hyperlink_event(tag, tview, event, itr):
 			if l['pos_start'] <= click_charpos and click_charpos <= l['pos_end']:
 				link = l
 				break
-	if event.type == gtk.gdk.BUTTON_RELEASE:
+		
 		if event.button == 1:
 			link.open(None, event.time)
 		elif event.button == 2:
 			link.open([cliArgs.opener] + cliArgs.opener_args)
-	elif event.type == gtk.gdk.BUTTON_PRESS:
-		if event.button == 3:
+		elif event.button == 3:
 			# build context menu for a hyperlink in the TextView:
 			menu = gtk.Menu()
 			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO)
