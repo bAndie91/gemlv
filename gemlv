@@ -1443,8 +1443,7 @@ def open_comp_hdr_menu(widget, event):
 	return False
 
 def on_composer_attachments_clicked(widget, event):
-	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
-		
+	if event.button == 3:
 		itpath, _col = panel_attachments.get_cursor()
 		if itpath is not None:
 			it = Attachments.get_iter(itpath)
