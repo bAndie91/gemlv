@@ -562,3 +562,6 @@ msgstr "Új Message-ID (üzenetazonosító) hozzáadása"
 
 msgid "Copy image's URL"
 msgstr "Kép URL címének másolása"
+
+msgid "Error while setting the Queue ID on the email file being edited and sent."
+msgstr "Hiba a Queue ID beállítása során az épp szerkesztett és elküldött Email fájlon."

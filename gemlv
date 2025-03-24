@@ -100,6 +100,7 @@ from gemlv.sysutils import is_safe_symlink
 from gemlv.sysutils import basenameify
 from gemlv.sysutils import file_uri_to_path
 from gemlv.sysutils import new_pipe_handles
+from gemlv.sysutils import unlink_or_else
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
 from gemlv.pythonutils import Cyclelist
@@ -112,6 +113,7 @@ from gemlv.pythonutils import compact
 from gemlv.pythonutils import strip_list
 from gemlv.pythonutils import merge_overlapping_ranges
 from gemlv.pythonutils import sorted_list_uniq
+from gemlv.pythonutils import filter_nones
 import gemlv.gui_toolkits as gui_toolkits
 from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
@@ -317,25 +319,37 @@ def save_exception_traceback(exc_obj, stack, traceback_str):
 		exc_obj.traceback_str = traceback_str
 	exc_obj.traceback_str += '\n'
 
-def display_error(e, suppl_text='', async=False, icon=gtk.MESSAGE_ERROR):
+def extract_text_from_error_like_object(e):
 	text = None
-	if hasattr(e, 'strerror'):
-		text = e.strerror
-		if hasattr(e, 'errno'):
-			text += ' (code %d)' % e.errno
-		if e.filename is not None:
-			text += '\n' + _("file") + ': ' + e.filename
-	elif isinstance(e, Exception):
-		text = e.__class__.__name__ + ':\n' + e.message
+	suppl_text = None
+	if isinstance(e, list):
+		subresults = [extract_text_from_error_like_object(inner) for inner in e]
+		sub_texts, sub_suppl_texts = zip(*subresults)
+		text = '\n'.join(filter_nones(sub_texts))
+		suppl_text = '\n'.join(filter_nones(sub_suppl_texts))
+	else:
 		if hasattr(e, 'traceback_str'):
-			suppl_text += '\n' + e.traceback_str
-	elif isinstance(e, list):
-		text = ''.join(e)
+			suppl_text = e.traceback_str
+		if hasattr(e, 'strerror'):
+			text = e.strerror
+			if hasattr(e, 'errno'):
+				text += ' (code %d)' % e.errno
+			if e.filename is not None:
+				text += '\n' + _("file") + ': ' + e.filename
+		elif isinstance(e, Exception):
+			text = e.__class__.__name__ + ':\n' + e.message
 	if text is None:
 		text = str(e)
+	return (text, suppl_text)
+
+def display_error(e, suppl_text='', async=False, icon=gtk.MESSAGE_ERROR):
+	(text, suppl_text_add) = extract_text_from_error_like_object(e)
+	if suppl_text != '': suppl_text += '\n'
+	suppl_text += suppl_text_add
+	
 	dlg = gtk.MessageDialog(gui_toolkits.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, icon, gtk.BUTTONS_OK, text)
 	dlg.set_transient_for(gui_toolkits.get_current_window())
-	dlg.set_title(_("Error"))
+	dlg.set_title(_("Error")+' - '+PROGNAME)
 	if suppl_text != '':
 		dlg.set_resizable(True)
 		carea = dlg.get_content_area()
@@ -2599,7 +2613,7 @@ def open_payload_as_temp_file(eml):
 			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 			display_error(e, async=True, icon=gtk.MESSAGE_WARNING)
 	except OSError as e:
-		os.unlink(tmppath)
+		unlink_or_else(tmppath)
 		e.filename = tmppath
 		display_error(e)
 		return
@@ -3390,13 +3404,17 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 			msgid = email_to_send.header[HDR_MID].decoded
 			for xattrname in win_comp.get_data('add-msgid-xattr-on-send'):
 				xattr.append(origin_email_fh, {xattrname: msgid}, origin_email_file, glue=',')
+		# Show button to save sent email in 'Sent/' folder
+		btn_save_sent.show_all()
 		# Save queue id to the composed email file's xattr.
 		emailfile = win_comp.get_data('saved-to-file')
 		if emailfile is not None:
 			# Note: queue id won't be saved in xattributes if you have not saved the email before sent.
-			xattr.append(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
-		# Show button to save sent email in 'Sent/' folder
-		btn_save_sent.show_all()
+			try:
+				xattr.append(open(emailfile), {XATTR_QUEUEID: sendmail_queue_id}, emailfile, glue=',')
+			except Exception as e:
+				save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+				display_error([_("Error while setting the Queue ID on the email file being edited and sent."), e])
 		# Save recipient to the auto addressbook.
 		for recipient_addressline in recipients_addr:
 			gemlv.addressbook.add(section='gemlv.auto', address_line=recipient_addressline)
@@ -4486,16 +4504,13 @@ def act_edit_external():
 		filehandler.write(composer_text_buffer.get_text_all())
 		xattr.set(filehandler, {XATTR_CHARSET: 'UTF-8', XATTR_TYPE: MIMETYPE_TEXT}, tmppath)
 		filehandler.close()
-	except IOError as e:
+	except (IOError, OSError) as e:
 		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
-		err = e
-	except OSError as e:
-		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
-		e.filename = tmppath
+		if not getattr(e, 'filename'): e.filename = tmppath
 		err = e
 	if err is not None:
-		display_error(e)
-		os.unlink(tmppath)
+		display_error(err)
+		unlink_or_else(tmppath)
 		on_edit_external_done(None)
 		return
 	thread = ExecThreadRunner(cliArgs.opener, cliArgs.opener_args + [tmppath], [cb_edit_external, tmppath])
@@ -4519,10 +4534,7 @@ def cb_edit_external(status, filepath):
 			display_error(e)
 		gtk.threads_leave()
 	else:
-		try:
-			os.unlink(filepath)
-		except OSError as e:
-			warnx(str(e))
+		unlink_or_else(filepath)
 
 def on_edit_external_done(data):
 	if data is not None:

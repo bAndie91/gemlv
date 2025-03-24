@@ -136,6 +136,9 @@ def listify(x):
 	else:
 		return [x]
 
+def filter_nones(lst):
+	return filter(lambda i: i is not None, lst)
+
 class CaseInsensitiveString(str):
 	def __repr__(self):
 		return '%s(%s)' % (self.__class__.__name__, str.__repr__(self))

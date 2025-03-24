@@ -116,3 +116,10 @@ def new_pipe_handles(npairs):
 		pipes.append(os.fdopen(r, 'r'))
 		pipes.append(os.fdopen(w, 'w'))
 	return pipes
+
+def unlink_or_else(path):
+	"unlink file but don't care if it fails."
+	try:
+		os.unlink(path)
+	except OSError:
+		traceback.print_exc()
