@@ -1050,7 +1050,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 	btn_save2.set_sensitive(True)
 	
 	if eml.header['Content-Location'].nonempty:
-		uri = urllib2.unquote(eml.header['Content-Location'].decoded).decode('utf-8')
+		uri = urllib2.unquote(eml.header['Content-Location'].decoded.encode('utf-8')).decode('utf-8')
 		uri_esc = glib.markup_escape_text(uri)
 		lbl_content_location.set_markup('%s <a href=\'%s\'>%s</a>' % (_("See Content here:"), uri_esc, uri_esc))
 		lbl_content_location.show()
