@@ -114,6 +114,7 @@ from gemlv.pythonutils import strip_list
 from gemlv.pythonutils import merge_overlapping_ranges
 from gemlv.pythonutils import sorted_list_uniq
 from gemlv.pythonutils import filter_nones
+from gemlv.pythonutils import configured_object
 import gemlv.gui_toolkits as gui_toolkits
 from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
@@ -829,28 +830,31 @@ def on_hyperlink_event(tag, tview, event, itr):
 				link = l
 				break
 		
-		if event.button == 1:
+		if event.button == gui_toolkits.MOUSE_BUTTON_LEFT:
 			link.open(None, event.time)
-		elif event.button == 2:
+		elif event.button == gui_toolkits.MOUSE_BUTTON_MIDDLE:
 			link.open([cliArgs.opener] + cliArgs.opener_args)
-		elif event.button == 3:
+		elif event.button == gui_toolkits.MOUSE_BUTTON_RIGHT:
 			# build context menu for a hyperlink in the TextView:
-			menu = gtk.Menu()
-			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO)
-			mi.connect('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)
-			menu.append(mi)
-			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN)
-			mi.connect('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)
-			menu.append(mi)
+			hyperlink_context_menu.remove_all_menuitems()
+			menuitems = [
+				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO, config=[
+					('connect', ('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)),
+				]),
+				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, config=[
+					('connect', ('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)),
+				]),
+				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, config=[
+					('connect', ('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), link.uri)),
+				]),
+			]
 			if link.uri.startswith('mailto:'):
-				mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
-				mi.connect('activate', lambda mi, uri: act_add_to_addressbook_manual(AddressLine(MimeDecoded(uri))), link.uri)
-				menu.append(mi)
-			mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY)
-			mi.connect('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), link.uri)
-			menu.append(mi)
-			menu.show_all()
-			menu.popup(None, None, None, event.button, event.time)
+				menuitems.insert(2, gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+					('connect', ('activate', lambda mi, uri: act_add_to_addressbook_manual(AddressLine(MimeDecoded(uri))), link.uri)),
+				]))
+			hyperlink_context_menu.append_menuitems(menuitems)
+			hyperlink_context_menu.show_all()
+			hyperlink_context_menu.popup(None, None, None, event.button, event.time)
 			return True
 
 def track_mouse_over_textview(tview, event):
@@ -1425,24 +1429,24 @@ def on_click_button(btn, func):
 
 def on_press_button(btn, evt, func):
 	if evt.type == gtk.gdk.BUTTON_PRESS:
-		if evt.button == 3 or (evt.button == 1 and evt.state & gtk.gdk.SHIFT_MASK):
+		if evt.button == gui_toolkits.MOUSE_BUTTON_RIGHT or (evt.button == gui_toolkits.MOUSE_BUTTON_LEFT and evt.state & gtk.gdk.SHIFT_MASK):
 			act_button(func)
 	return False
 
 def pass_right_click(widget, event, func, *user_params):
 	if event.type == gtk.gdk.BUTTON_PRESS:
-		if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+		if event.button == gui_toolkits.MOUSE_BUTTON_RIGHT or (event.button == gui_toolkits.MOUSE_BUTTON_LEFT and event.state & gtk.gdk.SHIFT_MASK):
 			return func(event, *user_params)
 	return False
 
 def open_comp_hdr_menu(widget, event):
-	if event.button == 3 or (event.button == 1 and event.state & gtk.gdk.SHIFT_MASK):
+	if event.button == gui_toolkits.MOUSE_BUTTON_RIGHT or (event.button == gui_toolkits.MOUSE_BUTTON_LEFT and event.state & gtk.gdk.SHIFT_MASK):
 		menu_add_header.popup(None, None, None, event.button, event.time)
 		return True
 	return False
 
 def on_composer_attachments_clicked(widget, event):
-	if event.button == 3:
+	if event.button == gui_toolkits.MOUSE_BUTTON_RIGHT:
 		itpath, _col = panel_attachments.get_cursor()
 		if itpath is not None:
 			it = Attachments.get_iter(itpath)
@@ -1458,7 +1462,7 @@ def act_composer_header_menuitem_clicked(mi, hname=None):
 	if hname is None:
 		hname = mi.get_data('chname')
 	if hname == '':
-		menuitem_all_comp_hdr.set_active(True)
+		menuitem_composer_show_all_headers.set_active(True)
 	if isinstance(mi, gtk.CheckMenuItem):
 		if not mi.active:
 			composer_headers.remove_multi(hname)
@@ -1471,8 +1475,8 @@ def act_composer_header_menuitem_all_clicked(mi):
 	composer_headers.show_advanced_headers(mi.active)
 
 def act_toggle_composer_headers():
-	on = menuitem_all_comp_hdr.get_active()
-	menuitem_all_comp_hdr.set_active(not on)
+	on = menuitem_composer_show_all_headers.get_active()
+	menuitem_composer_show_all_headers.set_active(not on)
 	composer_headers.show_advanced_headers(not on)
 
 
@@ -1909,13 +1913,13 @@ class GemlvComposerHeader(gtk.HBox):
 		pos = -1
 		if self.name in AddressbookHeaders:
 			pos += 1
-			mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
-			mi.connect('activate', self.add_to_addressbook)
-			menu.insert(mi, pos)
+			menu.insert(gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+				('connect', ('activate', self.add_to_addressbook)),
+			]), pos)
 		pos += 1
-		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_NEW, label=_("Add new Message-ID"))
-		mi.connect('activate', lambda *_x: self.add_to_value(make_msgid()))
-		menu.insert(mi, pos)
+		menu.insert(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_NEW, label=_("Add new Message-ID"), config=[
+			('connect', ('activate', lambda *_x: self.add_to_value(make_msgid()))),
+		]), pos)
 		menu.show_all()
 	
 	def add_to_addressbook(self, *_x):
@@ -1931,20 +1935,20 @@ class GemlvComposerHeader(gtk.HBox):
 	
 	def point_out(self):
 		if self.hntype == self.HNTYPE_CUSTOM:
-			menuitem_all_comp_hdr.set_active(True)
+			menuitem_composer_show_all_headers.set_active(True)
 		self.focus()
 		glib.idle_add(self.scrollfocus, priority=glib.PRIORITY_DEFAULT_IDLE)
 	
 	def popup_rcpt_menu(self, wdg, evt):
-		if evt.button == 1:
+		if evt.button == gui_toolkits.MOUSE_BUTTON_LEFT:
 			wdg.set_relief(gtk.RELIEF_NORMAL)
-			mnu = gtk.Menu()
+			mnu = gui_toolkits.Menu()
 			mnu.connect('deactivate', self.popup_rcpt_menu_disappear, wdg)
 			for chname in RecipientHeaders:
-				mi = gtk.MenuItem(label=_(chname))
-				mi.set_data('name', chname)
-				mi.connect('activate', self.popup_rcpt_menuitem_activated, wdg)
-				mnu.append(mi)
+				mnu.append(gui_toolkits.StockMenuItem(label=_(chname), config=[
+					('set_data', ('name', chname)),
+					('connect', ('activate', self.popup_rcpt_menuitem_activated, wdg)),
+				]))
 			mnu.show_all()
 			mnu.popup(None, None, lambda _menu, widget: gui_toolkits.coordinates(widget, gtk.CORNER_BOTTOM_LEFT), evt.button, evt.time, wdg)
 			return True
@@ -1960,7 +1964,7 @@ class GemlvComposerHeader(gtk.HBox):
 	
 	def show_all(self):
 		super(self.__class__, self).show_all()
-		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_all_comp_hdr.get_active():
+		if self.hntype == self.HNTYPE_CUSTOM and not menuitem_composer_show_all_headers.get_active():
 			self.hide()
 		self.showhide_pick_buttons()
 	
@@ -2278,7 +2282,7 @@ def open_composer(reason):
 	
 	win_comp.show_all()
 	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
-	menuitem_all_comp_hdr.set_active(False)
+	menuitem_composer_show_all_headers.set_active(False)
 	composer_headers.remove_all()
 	
 	for h in SenderHeaders:
@@ -3053,7 +3057,7 @@ class TextBuffer(gtk.TextBuffer):
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
 	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Signature…"))
-	menu_addsign = gtk.Menu()
+	menu_addsign = gui_toolkits.Menu()
 	for user_signature_name in gemlv.user_signature.iter_all():
 		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
 		submi.connect('activate', lambda _x, user_signature_name: composer_text_buffer.update_namedrange('user_signature', gemlv.user_signature.byname(user_signature_name)), user_signature_name)
@@ -3830,7 +3834,7 @@ class AddressBrowser(gtk.Window):
 		return map(lambda x: self.mod[self.mod.get_iter(x)][0], self.selection.get_selected_rows()[1])
 	
 	def handle_dblclick(self, _x, evt):
-		if evt.button == 1 and evt.type == gtk.gdk._2BUTTON_PRESS:
+		if evt.button == gui_toolkits.MOUSE_BUTTON_LEFT and evt.type == gtk.gdk._2BUTTON_PRESS:
 			flt_pathinfo = self.treeview.get_path_at_pos(int(evt.x), int(evt.y))
 			if flt_pathinfo is not None:
 				iterator_path = self.listfilter.convert_path_to_child_path(flt_pathinfo[0])
@@ -4309,7 +4313,7 @@ def remove_attachments(treeview_iterator_paths):
 
 def on_panel_parts_button_press_event(wdg, event):
 	# https://stackoverflow.com/a/57470492/1676943
-	if event.type != gtk.gdk.BUTTON_PRESS or event.button != 1: return
+	if event.type != gtk.gdk.BUTTON_PRESS or event.button != gui_toolkits.MOUSE_BUTTON_LEFT: return
 	if (event.state & gtk.gdk.CONTROL_MASK): return
 	path = wdg.get_path_at_pos(int(event.x), int(event.y))
 	if not path: return
@@ -4574,13 +4578,15 @@ def on_avatar_save(mi):
 			display_error(e)
 
 def on_context_menu_on_avatar(event):
-	avatar_menu = gtk.Menu()
-	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_SAVE)
-	mi.connect('activate', on_avatar_save)
-	avatar_menu.append(mi)
-	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy image's URL"))
-	mi.connect('activate', lambda *_x: gtk.Clipboard().set_text(avatar_image.get_data('source-url')))
-	avatar_menu.append(mi)
+	avatar_menu = gui_toolkits.Menu()
+	avatar_menu.append_menuitems([
+		gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_SAVE, config=[
+			('connect', ('activate', on_avatar_save)),
+		]),
+		gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy image's URL"), config=[
+			('connect', ('activate', lambda *_x: gtk.Clipboard().set_text(avatar_image.get_data('source-url')))),
+		]),
+	])
 	avatar_menu.show_all()
 	avatar_menu.popup(None, None, None, event.button, event.time)
 
@@ -4871,9 +4877,10 @@ btn_save_struct = gui_toolkits.StockButton(label=_("Keep Structure"), stock=gtk.
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView(buffer=TextBuffer())
+hyperlink_context_menu = gui_toolkits.Menu()
 tb_controls = gtk.Toolbar()
 menubutton_filters = gtk.MenuToolButton(gtk.STOCK_ZOOM_FIT)
-menu_filters = gtk.Menu()
+menu_filters = gui_toolkits.Menu()
 
 win_main.add(box_main)
 box_main.pack_start(toolbar, False, True)
@@ -5027,9 +5034,9 @@ panel_upper = gtk.HPaned()
 entry_subject = gtk.Entry()
 composer_headers = GemlvComposerHeadersContainer(subject_field = entry_subject)
 spanel_comp_header = gui_toolkits.Scrollable(composer_headers)
-menu_add_header = gtk.Menu()
+menu_add_header = gui_toolkits.Menu()
 CustomHeadersStore = gtk.ListStore(str)
-menu_composer_attachments = gtk.Menu()
+menu_composer_attachments = gui_toolkits.Menu()
 spanel_attachments = gtk.ScrolledWindow()
 Attachments = gui_toolkits.TreeStore(gobject.TYPE_PYOBJECT, str, str, gtk.gdk.Pixbuf, str, str)  # update COL_ATTACHMENTS_* constants if changed
 connect_loopless_signal(Attachments, 'row-changed', on_composer_attachments_row_changed)
@@ -5101,21 +5108,23 @@ tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)
 
 # context menu on headers panel (composer mode)
-for name in SenderHeaders:
-	mi = gtk.CheckMenuItem(_("Specify %s") % (_(name)))
-	mi.set_data('chname', name)
-	connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked)
-	menu_add_header.append(mi)
-mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient"))
-connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To')
-menu_add_header.append(mi)
-menu_add_header.append(gtk.SeparatorMenuItem())
-mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header"))
-connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, '')
-menu_add_header.append(mi)
-menuitem_all_comp_hdr = gtk.CheckMenuItem(_("Show Custom Headers"))
-connect_loopless_signal(menuitem_all_comp_hdr, 'toggled', act_composer_header_menuitem_all_clicked)
-menu_add_header.append(menuitem_all_comp_hdr)
+menu_add_header.append_menuitems([
+	configured_object(gtk.CheckMenuItem(_("Specify %s") % (_(name))), [
+		('set_data', ('chname', name)),
+		lambda mi: connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked),
+	]) for name in SenderHeaders] + [
+	configured_object(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient")), [
+		lambda mi: connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To'),
+	]),
+	gtk.SeparatorMenuItem(),
+	configured_object(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header")), [
+		lambda mi: connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, ''),
+	]),
+	configured_object(gtk.CheckMenuItem(_("Show Custom Headers")), [
+		lambda mi: connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_all_clicked),
+		lambda mi: globals().__setitem__('menuitem_composer_show_all_headers', mi),
+	]),
+])
 menu_add_header.show_all()
 
 # context menu on attachments panel (composer mode)

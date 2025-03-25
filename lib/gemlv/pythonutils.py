@@ -247,3 +247,13 @@ def sorted_list_uniq(lst):
 		if idx == 0 or elem != last_elem:
 			yield elem
 		last_elem = elem
+
+def configured_object(obj, configsteps):
+	for step in configsteps:
+		if callable(step):
+			step(obj)
+		else:
+			methodname, args = step[:]
+			method = getattr(obj, methodname)
+			method(*args)
+	return obj

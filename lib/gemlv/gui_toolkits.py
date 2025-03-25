@@ -4,6 +4,10 @@ import gtk
 import glib
 from gemlv.constants import *
 
+MOUSE_BUTTON_LEFT = 1
+MOUSE_BUTTON_MIDDLE = 2
+MOUSE_BUTTON_RIGHT = 3
+
 class Window(gtk.Window):
 	def set_icon_name(self, name):
 		self.set_icon(gtk.icon_theme_get_default().load_icon(name, gtk.ICON_SIZE_SMALL_TOOLBAR, 0))
@@ -60,8 +64,16 @@ class StockToggleToolButton(gtk.ToggleToolButton):
 		if stock not in gtk.stock_list_ids():
 			self.set_icon_name(stock)
 
+class Menu(gtk.Menu):
+	def remove_all_menuitems(self):
+		for mi in self.get_children():
+			self.remove(mi)
+	def append_menuitems(self, items):
+		for mi in items:
+			self.append(mi)
+
 class StockMenuItem(gtk.ImageMenuItem):
-	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None):
+	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None, config=[]):
 		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
 		if label is not None:
 			self.set_label(label)
@@ -69,6 +81,9 @@ class StockMenuItem(gtk.ImageMenuItem):
 			i = gtk.Image()
 			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
 			self.set_image(i)
+		for step in config:
+			method = getattr(self, step[0])
+			method(*step[1])
 
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
