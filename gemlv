@@ -1078,22 +1078,14 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			if eml.content_type.main == 'image':
 				image_data = eml.payload_decoded
 				loader = gtk.gdk.PixbufLoader()
+				loader.connect('area-updated', on_content_image_loader_update, image_data)
 				try:
 					loader.write(image_data)
 				except Exception as e:
 					save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 					display_error(e)
 				else:
-					pxb = loader.get_pixbuf()
-					if 'gemlv.imagerotation' in sys.modules:
-						imagerotator = gemlv.imagerotation.Image(image_data)
-						rotation = {'pixbuf': pxb}
-						imagerotator.rotate(imagerotation_cb, rotation)
-						pxb = rotation['pixbuf']
-					panel_content_image.set_data('last-alloc', None)
-					panel_content_image.set_data('pixbuf', pxb)
 					load_content_ok = True
-					panel_content_image.show()
 				finally:
 					loader.close()
 #			elif eml.content_type.main == 'audio':
@@ -1166,6 +1158,17 @@ def on_window_configure(widget, event):
 			raise Exception("widget type unknown: %s" % repr(widget))
 	for k, v in ('position/x', event.x), ('position/y', event.y), ('width', event.width), ('height', event.height):
 		Props['ui/%s/%s' % (winname, k)] = v
+
+def on_content_image_loader_update(loader, x, y, w, h, image_data):
+	pxb = loader.get_pixbuf()
+	if 'gemlv.imagerotation' in sys.modules:
+		imagerotator = gemlv.imagerotation.Image(image_data)
+		rotation = {'pixbuf': pxb}
+		imagerotator.rotate(imagerotation_cb, rotation)
+		pxb = rotation['pixbuf']
+	panel_content_image.set_data('last-alloc', None)
+	panel_content_image.set_data('pixbuf', pxb)
+	panel_content_image.show_all()
 
 def on_allocate_panel_content_image(wdg, alloc):
 	pxb = wdg.get_data('pixbuf')

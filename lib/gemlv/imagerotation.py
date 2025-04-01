@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
+import sys
 import traceback
 
 pyexiv2 = None
@@ -66,6 +68,8 @@ class Image(object):
 				metadata = piexif.load(self.imagedata)
 			except Exception as exc:
 				traceback.print_stack()
+				traceback.print_exc()
+				print("can not read image file's metadata", file=sys.stderr)
 			else:
 				for tagtype in metadata.keys():
 					tagset = metadata.get(tagtype)
