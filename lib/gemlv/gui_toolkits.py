@@ -26,10 +26,11 @@ class ScrolledLabelView(gtk.ScrolledWindow):
 		self.label.set_markup('<tt>' + glib.markup_escape_text(text) + '</tt>')
 
 class LabelsToolItem(gtk.ToolItem):
-	def __init__(self):
+	def __init__(self, labels=[]):
 		super(self.__class__, self).__init__()
 		self.box = gtk.HBox()
 		self.add(self.box)
+		self.set_labels(labels)
 	def set_labels(self, labels):
 		"""
 		sets multiple labels separated by a separator widget.
@@ -47,16 +48,18 @@ class LabelsToolItem(gtk.ToolItem):
 			if not first:
 				self.box.pack_start(gtk.SeparatorToolItem(), True, False)
 			label = gtk.Label()
-			if type(piece) == str:
+			if isinstance(piece, basestring):
 				label.set_text(piece)
-			elif type(piece) == dict:
+			elif isinstance(piece, dict):
 				if piece.has_key('markup'):
 					label.set_markup(piece['markup'])
 				elif piece.has_key('text'):
 					label.set_text(piece['text'])
+			else:
+				label.set_text(repr(piece))
 			self.box.pack_start(label, True, False)
 			first = False
-		self.box.show_all()
+		self.show_all()
 
 class StockToggleToolButton(gtk.ToggleToolButton):
 	def __init__(self, stock=None):

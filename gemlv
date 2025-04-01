@@ -817,7 +817,7 @@ def setup_textview_for_hyperlinks(tview):
 	tagtable = tbuf.get_tag_table()
 	tag_link = tagtable.lookup('hyperlink')
 	tag_link.connect('event', on_hyperlink_event)
-	tview.add_events(gtk.gdk.POINTER_MOTION_MASK)
+	tview.add_events(gtk.gdk.POINTER_MOTION_MASK)  # TODO block it if the content is not HTML
 	tview.connect("motion_notify_event", track_mouse_over_textview)
 
 def on_hyperlink_event(tag, tview, event, itr):
@@ -869,7 +869,13 @@ def track_mouse_over_textview(tview, event):
 		for link in tview.get_buffer().get_data('hyperlinks'):
 			if link['pos_start'] <= charpos and charpos <= link['pos_end']:
 				tbuf.apply_tag_to_range('hyperlink-onhover', link['pos_start'], link['pos_end'])
+				show_onhover_hyperlink(link.uri)
 				break
+	else:
+		show_onhover_hyperlink(None)
+
+def show_onhover_hyperlink(text):
+	footer_message_label.set_labels([text] if text is not None else [])
 
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
@@ -5004,6 +5010,7 @@ toolbuttons = [
 	(None, 'mail-mark-junk', _("Spam"), None, None),
 	(None, 'mail-signed-verified', _("Valid signature"), show_signature_info, None),
 	(None, 'dialog-warning', _("Invalid signature"), show_signature_info, None),
+	(None, gui_toolkits.LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save with keeping structure"), act_save, act_save_struct),
@@ -5012,7 +5019,7 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, x_, btn_open2, btn_save2, x_, x, x, btn_font \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, footer_message_label, x_, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 
