@@ -5011,7 +5011,6 @@ toolbuttons = [
 	(None, 'mail-signed-verified', _("Valid signature"), show_signature_info, None),
 	(None, 'dialog-warning', _("Invalid signature"), show_signature_info, None),
 	(None, gui_toolkits.LabelsToolItem(), None, None, None),
-	(None, None, None, 'space', None),
 	(None, gtk.STOCK_OPEN, None, act_open, None),
 	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save with keeping structure"), act_save, act_save_struct),
 	(None, None, None, 'separator', None),
@@ -5019,9 +5018,11 @@ toolbuttons = [
 	ToolItemDeclaration_wrap(panel_content),
 	ToolItemDeclaration_font(panel_content),
 ]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, footer_message_label, x_, btn_open2, btn_save2, x_, x, x, btn_font \
+stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, footer_message_label, btn_open2, btn_save2, x_, x, x, btn_font \
 = load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
+footer_message_label.set_expand(True)
+footer_message_label.connect('labels-updated', lambda lti: map(lambda label: label.set_ellipsize(pango.ELLIPSIZE_MIDDLE), lti.labels))
 
 
 ### Build Composer GUI ###

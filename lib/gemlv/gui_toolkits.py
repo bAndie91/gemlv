@@ -3,6 +3,7 @@
 import gtk
 import glib
 from gemlv.constants import *
+import gobject
 
 MOUSE_BUTTON_LEFT = 1
 MOUSE_BUTTON_MIDDLE = 2
@@ -26,10 +27,13 @@ class ScrolledLabelView(gtk.ScrolledWindow):
 		self.label.set_markup('<tt>' + glib.markup_escape_text(text) + '</tt>')
 
 class LabelsToolItem(gtk.ToolItem):
+	__gsignals__ = {
+		'labels-updated': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_BOOLEAN, ()),
+	}
 	def __init__(self, labels=[]):
 		super(self.__class__, self).__init__()
 		self.box = gtk.HBox()
-		self.add(self.box)
+		self.labels = []
 		self.set_labels(labels)
 	def set_labels(self, labels):
 		"""
@@ -43,23 +47,43 @@ class LabelsToolItem(gtk.ToolItem):
 		"""
 		for label in self.box.get_children():
 			label.destroy()
-		first = True
-		for piece in labels:
-			if not first:
-				self.box.pack_start(gtk.SeparatorToolItem(), True, False)
-			label = gtk.Label()
-			if isinstance(piece, basestring):
-				label.set_text(piece)
-			elif isinstance(piece, dict):
-				if piece.has_key('markup'):
-					label.set_markup(piece['markup'])
-				elif piece.has_key('text'):
-					label.set_text(piece['text'])
-			else:
-				label.set_text(repr(piece))
-			self.box.pack_start(label, True, False)
-			first = False
+		if len(labels) == 1:
+			lbl = self.make_label(labels[0])
+			self.replace_child(lbl)
+			self.labels = [lbl]
+		else:
+			self.replace_child(self.box)
+			first = True
+			for piece in labels:
+				label = self.make_label(piece)
+				if not first:
+					self.box.pack_start(gtk.SeparatorToolItem(), True, False)
+				self.box.pack_start(label, True, False)
+				first = False
+			self.labels = self.box.get_children()
 		self.show_all()
+		self.emit('labels-updated')
+	def make_label(self, labeldef):
+		label = gtk.Label()
+		if isinstance(labeldef, basestring):
+			label.set_text(labeldef)
+		elif isinstance(labeldef, dict):
+			if labeldef.has_key('markup'):
+				label.set_markup(labeldef['markup'])
+			elif labeldef.has_key('text'):
+				label.set_text(labeldef['text'])
+		else:
+			label.set_text(repr(labeldef))
+		label.set_alignment(0, 0.5)
+		return label
+	def replace_child(self, child):
+		children = self.get_children()
+		if len(children) > 0:
+			if children[0] != child:
+				self.remove(children[0])
+			else:
+				return
+		self.add(child)
 
 class StockToggleToolButton(gtk.ToggleToolButton):
 	def __init__(self, stock=None):
