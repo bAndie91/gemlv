@@ -116,6 +116,16 @@ from gemlv.pythonutils import sorted_list_uniq
 from gemlv.pythonutils import filter_nones
 from gemlv.pythonutils import configured_object
 import gemlv.gui_toolkits as gui_toolkits
+from gemlv.gui_toolkits import Toolbar
+from gemlv.gui_toolkits import SeparatorToolItem
+from gemlv.gui_toolkits import SpacerToolItem
+from gemlv.gui_toolkits import LabelsToolItem
+from gemlv.gui_toolkits import StockButton
+from gemlv.gui_toolkits import StockToolButton
+from gemlv.gui_toolkits import StockToggleToolButton
+from gemlv.gui_toolkits import ActionStockToolButton
+from gemlv.gui_toolkits import ActionMenuToolButton
+from gemlv.gui_toolkits import StockMenuItem
 from gemlv.gui_toolkits import connect_loopless_signal
 from gemlv.eventimage import EventImage
 from gemlv.constants import *
@@ -310,6 +320,10 @@ def timer2_flush():
 		timer2_call(iden, Timers2[iden]['func'], Timers2[iden]['args'])
 
 
+def GlobalNamedObject(obj, name):
+	globals().__setitem__(name, obj)
+	return obj
+
 def save_exception_traceback(exc_obj, stack, traceback_str):
 	stack = stack[:-1]
 	traceback_str_1st_line, traceback_str_rest_lines = traceback_str.split('\n', 1)
@@ -377,12 +391,12 @@ def question(msg, stock_yes=None, stock_no=None, parent=None):
 	dlg.set_title(_("Question"))
 	if stock_no is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_NO).hide()
-		btn_no = gui_toolkits.StockButton(label=stock_no[0], stock=stock_no[1])
+		btn_no = StockButton(label=stock_no[0], stock=stock_no[1])
 		dlg.add_action_widget(btn_no, gtk.RESPONSE_NO)
 		btn_no.show()
 	if stock_yes is not None:
 		dlg.get_widget_for_response(gtk.RESPONSE_YES).hide()
-		btn_yes = gui_toolkits.StockButton(label=stock_yes[0], stock=stock_yes[1])
+		btn_yes = StockButton(label=stock_yes[0], stock=stock_yes[1])
 		dlg.add_action_widget(btn_yes, gtk.RESPONSE_YES)
 		btn_yes.show()
 	resp = dlg.run()
@@ -417,12 +431,12 @@ def choose_dialog(action, filename=None, multifile=False, ask_overwrite=False, c
 		dlg.set_select_multiple(True)
 		selected = []
 	
-	btn_cwd = gui_toolkits.StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
+	btn_cwd = StockButton(label=_("Working Dir"), stock=gtk.STOCK_JUMP_TO)
 	dlg.add_action_widget(btn_cwd, gtk.RESPONSE_NO)
 	btn_cwd.show()
 	
 	if custom_accept_button_stock == 'mail-attachment':
-		btn_opn = gui_toolkits.StockButton(label=_("View"), stock=gtk.STOCK_OPEN)
+		btn_opn = StockButton(label=_("View"), stock=gtk.STOCK_OPEN)
 		dlg.add_action_widget(btn_opn, gtk.RESPONSE_OK)
 		btn_opn.show() 
 	
@@ -838,18 +852,18 @@ def on_hyperlink_event(tag, tview, event, itr):
 			# build context menu for a hyperlink in the TextView:
 			hyperlink_context_menu.remove_all_menuitems()
 			menuitems = [
-				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_JUMP_TO, config=[
+				StockMenuItem(stock_id=gtk.STOCK_JUMP_TO, config=[
 					('connect', ('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)),
 				]),
-				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, config=[
+				StockMenuItem(stock_id=gtk.STOCK_OPEN, config=[
 					('connect', ('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)),
 				]),
-				gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, config=[
+				StockMenuItem(stock_id=gtk.STOCK_COPY, config=[
 					('connect', ('activate', lambda mi, uri: gtk.Clipboard().set_text(uri), link.uri)),
 				]),
 			]
 			if link.uri.startswith('mailto:'):
-				menuitems.insert(2, gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+				menuitems.insert(2, StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
 					('connect', ('activate', lambda mi, uri: act_add_to_addressbook_manual(AddressLine(MimeDecoded(uri))), link.uri)),
 				]))
 			hyperlink_context_menu.append_menuitems(menuitems)
@@ -986,7 +1000,7 @@ def show_signature_info(*_x):
 	set_dialog_icon_name(dlg, 'mail-signed-verified' if valid else 'dialog-warning')
 	dlg.set_markup(glib.markup_escape_text(_("Digital signature is validated. See details below.") if valid else _("The digital signature on this email/attachment could not be validated. The email might be forged.")))
 	if not valid:
-		dlg.add_action_widget(gui_toolkits.StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
+		dlg.add_action_widget(StockButton(stock=gtk.STOCK_DIALOG_WARNING, label=_("View anyway")), gtk.RESPONSE_APPLY)
 	dlg.add_buttons(gtk.STOCK_CLOSE, gtk.RESPONSE_CLOSE)
 	dlg.set_default_response(gtk.RESPONSE_CLOSE)
 	
@@ -1768,14 +1782,14 @@ class GemlvComposerHeader(gtk.HBox):
 		self.completer.get_model().set_sort_column_id(col_order, gtk.SORT_ASCENDING)
 		self.completer.set_popup_single_match(True)
 		
-		self.btn_datetime = gui_toolkits.StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_datetime = StockButton('', 'x-office-calendar', icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_datetime.set_tooltip_text(_("Pick date and time"))
 		self.btn_datetime.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_datetime, False, False)
 		self.btn_datetime.connect('clicked', self.pick_datetime)
 		self.btn_datetime.connect('button-press-event', self.propagate_button_press_event)
 		
-		self.btn_suggestions = gui_toolkits.StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
+		self.btn_suggestions = StockButton('', gtk.STOCK_DIALOG_INFO, icon_size=gtk.ICON_SIZE_MENU)
 		self.btn_suggestions.set_tooltip_text(_("Suggestions…"))
 		self.btn_suggestions.set_relief(gtk.RELIEF_NONE)
 		self.pack_start(self.btn_suggestions, False, False)
@@ -1783,13 +1797,13 @@ class GemlvComposerHeader(gtk.HBox):
 		self.btn_suggestions.connect('button-press-event', self.propagate_button_press_event)
 		
 		if plus:
-			self.btn_add = gui_toolkits.StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_add = StockButton('', gtk.STOCK_ADD, icon_size=gtk.ICON_SIZE_MENU)
 			self.pack_start(self.btn_add, False, False)
 			self.btn_add.set_relief(gtk.RELIEF_NONE)
 			self.btn_add.connect('clicked', self.duplicate)
 			self.btn_add.connect('button-press-event', self.propagate_button_press_event)
 		if minus:
-			self.btn_del = gui_toolkits.StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
+			self.btn_del = StockButton('', gtk.STOCK_REMOVE, icon_size=gtk.ICON_SIZE_MENU)
 			self.btn_del.set_relief(gtk.RELIEF_NONE)
 			self.pack_start(self.btn_del, False, False)
 			self.btn_del.connect('clicked', self.cancel)
@@ -1922,11 +1936,11 @@ class GemlvComposerHeader(gtk.HBox):
 		pos = -1
 		if self.name in AddressbookHeaders:
 			pos += 1
-			menu.insert(gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+			menu.insert(StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
 				('connect', ('activate', self.add_to_addressbook)),
 			]), pos)
 		pos += 1
-		menu.insert(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_NEW, label=_("Add new Message-ID"), config=[
+		menu.insert(StockMenuItem(stock_id=gtk.STOCK_NEW, label=_("Add new Message-ID"), config=[
 			('connect', ('activate', lambda *_x: self.add_to_value(make_msgid()))),
 		]), pos)
 		menu.show_all()
@@ -1954,7 +1968,7 @@ class GemlvComposerHeader(gtk.HBox):
 			mnu = gui_toolkits.Menu()
 			mnu.connect('deactivate', self.popup_rcpt_menu_disappear, wdg)
 			for chname in RecipientHeaders:
-				mnu.append(gui_toolkits.StockMenuItem(label=_(chname), config=[
+				mnu.append(StockMenuItem(label=_(chname), config=[
 					('set_data', ('name', chname)),
 					('connect', ('activate', self.popup_rcpt_menuitem_activated, wdg)),
 				]))
@@ -2216,7 +2230,7 @@ def prompt_datetime(entry):
 	cbox = dlg.get_content_area()
 	cbox.pack_start(calendar, True, True)
 	cbox.pack_start(clock, True, True)
-	btn_now = gui_toolkits.StockButton(_("Now"), gtk.STOCK_JUMP_TO)
+	btn_now = StockButton(_("Now"), gtk.STOCK_JUMP_TO)
 	btn_now.connect('clicked', lambda x: select_datetime())
 	abox = dlg.get_action_area()
 	abox.pack_start(btn_now, False, False)
@@ -2926,7 +2940,7 @@ def show_view_headers(show=True):
 def populate_header_menu(label, menu):
 	selected_link = label.get_current_uri()
 	if selected_link is not None:
-		mi = gui_toolkits.StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+		mi = StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
 		mailto_al = parse_mailto(selected_link)['to'][0]
 		mi.connect('activate', lambda *_x: act_add_to_addressbook_manual(mailto_al))
 		menu.append(mi)
@@ -3065,14 +3079,14 @@ class TextBuffer(gtk.TextBuffer):
 
 def populate_composer_textview_menu(textview, menu):
 	pos = 0
-	mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Signature…"))
+	mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Signature…"))
 	menu_addsign = gui_toolkits.Menu()
 	for user_signature_name in gemlv.user_signature.iter_all():
 		submi = gtk.MenuItem(label = user_signature_name if user_signature_name is not None else _("Default"))
 		submi.connect('activate', lambda _x, user_signature_name: composer_text_buffer.update_namedrange('user_signature', gemlv.user_signature.byname(user_signature_name)), user_signature_name)
 		menu_addsign.append(submi)
 	menu_addsign.append(gtk.SeparatorMenuItem())
-	submi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
+	submi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove signature"))
 	submi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('user_signature'))
 	menu_addsign.append(submi)
 	mi.set_submenu(menu_addsign)
@@ -3080,10 +3094,10 @@ def populate_composer_textview_menu(textview, menu):
 	
 	pos += 1
 	if composer_text_buffer.get_namedrange_text('quoted_message'):
-		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
+		mi = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Remove quote"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.clear_namedrange('quoted_message'))
 	else:
-		mi = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
+		mi = StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Quote message"))
 		mi.connect('activate', lambda *_x: composer_text_buffer.update_namedrange('quoted_message', get_reply_quotation()))
 	menu.insert(mi, pos)
 	pos += 1
@@ -3119,64 +3133,6 @@ def get_all_parent_parts(part_asked):
 		else:
 			yield level, Parts[it][COL_PARTS_EML], Parts[it][COL_PARTS_INFO]
 
-def load_toolitems(toolbar, toolitems):
-	items = []
-	for label, stock, tip, fnc_left, fnc_right in toolitems:
-		if type(fnc_left) == str:
-			tbi = gtk.SeparatorToolItem()
-			if fnc_left == 'space':
-				tbi.set_draw(False)
-				tbi.set_expand(True)
-			elif fnc_left == 'separator':
-				tbi.set_draw(True)
-				tbi.set_expand(False)
-		elif isinstance(stock, gtk.ToolItem):
-			tbi = stock
-			if tip is not None:
-				tbi.set_tooltip_text(tip)
-			if isinstance(tbi, gtk.ToolButton):
-				if label is None:
-					tbi.set_label(tip)
-				else:
-					tbi.set_label(label)
-				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
-		else:
-			Lstocklabel = None
-			st = gtk.stock_lookup(stock)
-			if st:
-				Lstocklabel = re.sub('_', '', st[1])  # remove shortcut key from button
-			
-			if label is not None:
-				Llabel = label
-			elif Lstocklabel is not None:
-				Llabel = Lstocklabel
-			else:
-				Llabel = None
-			
-			if tip is not None:
-				Ltip = tip
-				if Llabel is None:
-					Llabel = Ltip
-			else:
-				if label is not None:
-					Ltip = Llabel
-				else:
-					Ltip = Lstocklabel
-			
-			if fnc_left is None and fnc_right is None:
-				tbi = gtk.ToolItem()
-				tbi.set_border_width(3)
-				tbi.add(gtk.image_new_from_icon_name(stock, toolbar.get_icon_size()))
-				tbi.set_tooltip_text(Ltip)
-			else:
-				tbi = gui_toolkits.StockToolButton(label=Llabel, stock=stock, tooltip=Ltip)
-				tbi.set_data('stock', stock)
-				tbi.set_data('label', label)
-				connect_loopless_signal(tbi, 'clicked', on_click_button, fnc_left)
-				connect_loopless_signal(tbi.child, 'button-press-event', on_press_button, fnc_right)
-		toolbar.insert(tbi, -1)
-		items.append(tbi)
-	return items
 
 COL_PARTS_EML, COL_PARTS_LABEL_MARKUP, COL_PARTS_ICONNAME, COL_PARTS_ICON, COL_PARTS_INFO = range(5)
 COL_ATTACHMENTS_EML, COL_ATTACHMENTS_LABEL_MARKUP, COL_ATTACHMENTS_ICONNAME, COL_ATTACHMENTS_ICON, COL_ATTACHMENTS_SIZE_LABEL, COL_ATTACHMENTS_CHECKSUM = range(6)
@@ -3294,7 +3250,7 @@ def act_send():
 	
 	aarea = dlg.get_action_area()
 	btn_cancel = aarea.children()[0]
-	btn_show_details = gui_toolkits.StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
+	btn_show_details = StockButton(label=_("Show Details"), stock=gtk.STOCK_INFO)
 	btn_show_details.connect('clicked', act_show_details_on_send_panel, dlg, details)
 	
 	aarea.pack_start(btn_show_details, False, True)
@@ -3392,7 +3348,7 @@ def sending_thread(dlg, progressbar, btn_cancel, btn_show_details, details_widge
 	dlg.get_action_area().pack_start(btn_close, False, False)
 	btn_close.show_all()
 	
-	btn_save_sent = gui_toolkits.StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
+	btn_save_sent = StockButton(stock=gtk.STOCK_SAVE, label=_("Save to Sent"))
 	btn_save_sent.connect('clicked', on_save_sent)
 	dlg.get_action_area().pack_start(btn_save_sent, False, False)
 	
@@ -3785,9 +3741,9 @@ class AddressBrowser(gtk.Window):
 		self.treeview = gtk.TreeView(self.listfilter)
 		self.selection = self.treeview.get_selection()
 		box_buttons = gtk.HBox(True, 2)
-		self.b_add = gui_toolkits.StockButton(stock=gtk.STOCK_ADD)
-		self.b_edit = gui_toolkits.StockButton(stock=gtk.STOCK_EDIT)
-		b_close = gui_toolkits.StockButton(stock=gtk.STOCK_CLOSE)
+		self.b_add = StockButton(stock=gtk.STOCK_ADD)
+		self.b_edit = StockButton(stock=gtk.STOCK_EDIT)
+		b_close = StockButton(stock=gtk.STOCK_CLOSE)
 		
 		self.set_modal(modal_window)
 		winname = 'addressbook'
@@ -4589,10 +4545,10 @@ def on_avatar_save(mi):
 def on_context_menu_on_avatar(event):
 	avatar_menu = gui_toolkits.Menu()
 	avatar_menu.append_menuitems([
-		gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_SAVE, config=[
+		StockMenuItem(stock_id=gtk.STOCK_SAVE, config=[
 			('connect', ('activate', on_avatar_save)),
 		]),
-		gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy image's URL"), config=[
+		StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy image's URL"), config=[
 			('connect', ('activate', lambda *_x: gtk.Clipboard().set_text(avatar_image.get_data('source-url')))),
 		]),
 	])
@@ -4857,7 +4813,7 @@ gui_toolkits.add_key_binding(win_main, '<Control>h', lambda a,b,c,d: show_view_h
 gui_toolkits.add_key_binding(win_main, '<Alt>a', lambda *_x: act_addressbook())
 
 box_main = gtk.VBox(False, 5)
-toolbar = gtk.Toolbar()
+toolbar = Toolbar()
 spanel_view_header = gtk.ScrolledWindow()
 panel_view = gtk.VPaned()
 panel_view_upper = gtk.VBox()
@@ -4880,15 +4836,14 @@ panel_btnbox2 = gtk.VBox()
 panel_btnbox3 = gtk.HBox()
 lbl_right = gtk.Label()
 btnbox_right = gtk.VBox(True, 10)
-btn_open = gui_toolkits.StockButton(stock=gtk.STOCK_OPEN)
-btn_save = gui_toolkits.StockButton(stock=gtk.STOCK_SAVE)
-btn_save_struct = gui_toolkits.StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
+btn_open = StockButton(stock=gtk.STOCK_OPEN)
+btn_save = StockButton(stock=gtk.STOCK_SAVE)
+btn_save_struct = StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
 panel_content = gtk.TextView(buffer=TextBuffer())
 hyperlink_context_menu = gui_toolkits.Menu()
-tb_controls = gtk.Toolbar()
-menubutton_filters = gtk.MenuToolButton(gtk.STOCK_ZOOM_FIT)
+tb_controls = Toolbar()
 menu_filters = gui_toolkits.Menu()
 
 win_main.add(box_main)
@@ -4970,59 +4925,72 @@ panel_content.connect('scroll-event', on_scroll_on_button_font, panel_content, g
 setup_textview_for_hyperlinks(panel_content)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
-menubutton_filters.set_homogeneous(False)
-menubutton_filters.set_menu(menu_filters)
-menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 
 
-toolbuttons = [
-	(_("Compose"), gtk.STOCK_EDIT, None, act_compose, None),
-	(_("Send MDN"), 'mail-reply-sender', _("Send a Message Disposition Notification"), act_dispos_notif, None),
-	(_("Reply"), 'mail-reply-sender', _("Reply")+'\n'+_("Right click:")+' '+_("Send a Message Disposition Notification"), (act_reply, COMPOSE_REPLY), act_dispos_notif),
-	(_("Reply to All"), 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_ALL), None),
-	(_("Reply to List"), 'mail-reply-all', None, (act_reply, COMPOSE_REPLY_LIST), None),
-	(_("Forward"), 'mail-forward', _("Forward envelope")+'\n'+_("Right click:")+' '+_("Forward letter"), (act_reply, COMPOSE_FORWARD_MSG), (act_reply, COMPOSE_FORWARD_BODY)),
-	(None, None, None, 'separator', None),
-	(_("Unsubscribe"), 'stop', None, act_unsubscribe, None),
-	(_("Report Spam"), 'mail-mark-junk', None, act_report_spam, None),
-	(_("Report Ham"), 'mail-mark-notjunk', None, (act_report_spam, False), None),
-	(None, None, None, 'space', None),
-	(None, gtk.STOCK_CLOSE, None, act_quit, None),
-]
-x, menubutton_mdn, x, x, menubutton_replytolist, x, x_, menubutton_unsubscribe, menubutton_spam, menubutton_ham, x_, menubutton_quit \
-= load_toolitems(toolbar, toolbuttons)
-l = menubutton_mdn.get_label()
-menubutton_mdn.set_data('saved-label', l)
-menubutton_mdn.set_markup(PMU_WARN + l + PMU_WARN_CLOSE)
+toolbar.append_items([
+	ActionStockToolButton(label=_("Compose"), iconname=gtk.STOCK_EDIT,
+		actions=((on_click_button, act_compose), None)),
+	GlobalNamedObject(ActionStockToolButton(label=_("Send MDN"), iconname='mail-reply-sender', tooltip=_("Send a Message Disposition Notification"),
+		actions=((on_click_button, act_dispos_notif), None)),
+		'menubutton_mdn'),
+	ActionStockToolButton(label=_("Reply"), iconname='mail-reply-sender', tooltip=_("Reply")+'\n'+_("Right click:")+' '+_("Send a Message Disposition Notification"),
+		actions=((on_click_button, (act_reply, COMPOSE_REPLY)), (on_press_button, act_dispos_notif))),
+	ActionStockToolButton(label=_("Reply to All"), iconname='mail-reply-all',
+		actions=((on_click_button, (act_reply, COMPOSE_REPLY_ALL)), None)),
+	GlobalNamedObject(ActionStockToolButton(label=_("Reply to List"), iconname='mail-reply-all',
+		actions=((on_click_button, (act_reply, COMPOSE_REPLY_LIST)), None)),
+		'menubutton_replytolist'),
+	ActionStockToolButton(label=_("Forward"), iconname='mail-forward', tooltip=_("Forward envelope")+'\n'+_("Right click:")+' '+_("Forward letter"),
+		actions=((on_click_button, (act_reply, COMPOSE_FORWARD_MSG)), (on_press_button, act_reply, COMPOSE_FORWARD_BODY))),
+	SeparatorToolItem(),
+	GlobalNamedObject(ActionStockToolButton(label=_("Unsubscribe"), iconname='stop',
+		actions=((on_click_button, act_unsubscribe), None)),
+		'menubutton_unsubscribe'),
+	GlobalNamedObject(ActionStockToolButton(label=_("Report Spam"), iconname='mail-mark-junk',
+		actions=((on_click_button, (act_report_spam, True)), None)),
+		'menubutton_spam'),
+	GlobalNamedObject(ActionStockToolButton(label=_("Report Ham"), iconname='mail-mark-notjunk',
+		actions=((on_click_button, (act_report_spam, False)), None)),
+		'menubutton_ham'),
+	SpacerToolItem(),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_CLOSE, actions=((on_click_button, act_quit), None)),
+		'menubutton_quit'),
+])
+
+def manipulate_menubutton_mdn_label():
+	l = menubutton_mdn.get_label()
+	menubutton_mdn.set_data('saved-label', l)
+	menubutton_mdn.set_markup(PMU_WARN + l + PMU_WARN_CLOSE)
+manipulate_menubutton_mdn_label()
 setup_treeview__icon_label(panel_parts)
 
-def ToolItemDeclaration_wrap(tv):
-	return (_("Wrap"), gtk.STOCK_JUSTIFY_LEFT, _("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"), (act_wrap, tv), (act_wrap, tv, -1))
-def ToolItemDeclaration_font(tv):
-	return (None, gtk.STOCK_SELECT_FONT, _("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"), (act_font, tv), (act_font_switch, tv))
+tb_controls.append_items([
+	GlobalNamedObject(ActionStockToolButton(iconname='emblem-generic', tooltip=_("Unimportant")), 'stck_unimp'),
+	GlobalNamedObject(ActionStockToolButton(iconname='emblem-important', tooltip=_("Important")), 'stck_imp'),
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-reply-sender', tooltip=_("Replied")), 'stck_repl'),
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-forward', tooltip=_("Forwarded")), 'stck_fwd'),
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-mark-read', tooltip=_("MDN is sent")), 'stck_mdn'),
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-mark-junk', tooltip=_("Spam")), 'stck_spam'),
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-signed-verified', tooltip=_("Valid signature"), actions=((on_click_button, show_signature_info), None)), 'stck_sign_good'),
+	GlobalNamedObject(ActionStockToolButton(iconname='dialog-warning', tooltip=_("Invalid signature"), actions=((on_click_button, show_signature_info), None)), 'stck_sign_bad'),
+	GlobalNamedObject(LabelsToolItem(), 'footer_message_label'),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_OPEN, actions=((on_click_button, act_open), None)), 'btn_open2'),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_SAVE, tooltip=_("Save")+'\n'+_("Right click:")+' '+_("Save with keeping structure"),
+		actions=((on_click_button, act_save), (on_press_button, act_save_struct))), 'btn_save2'),
+	SeparatorToolItem(),
+	GlobalNamedObject(ActionMenuToolButton(iconname=gtk.STOCK_ZOOM_FIT, label=_("Unfilter"), tooltip=_("Filter / Unfilter"), actions=((on_click_button, act_view_source), None)), 'menubutton_filters'),
+	ActionStockToolButton(iconname=gtk.STOCK_JUSTIFY_LEFT, label=_("Wrap"), tooltip=_("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"),
+		actions=((on_click_button, (act_wrap, panel_content)), (on_press_button, (act_wrap, panel_content, -1)))),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
+		actions=((on_click_button, (act_font, panel_content)), (on_press_button, (act_font_switch, panel_content)))), 'btn_font')
+])
 
-toolbuttons = [
-	(None, 'emblem-generic', _("Unimportant"), None, None),
-	(None, 'emblem-important', _("Important"), None, None),
-	(None, 'mail-reply-sender', _("Replied"), None, None),
-	(None, 'mail-forward', _("Forwarded"), None, None),
-	(None, 'mail-mark-read', _("MDN is sent"), None, None),
-	(None, 'mail-mark-junk', _("Spam"), None, None),
-	(None, 'mail-signed-verified', _("Valid signature"), show_signature_info, None),
-	(None, 'dialog-warning', _("Invalid signature"), show_signature_info, None),
-	(None, gui_toolkits.LabelsToolItem(), None, None, None),
-	(None, gtk.STOCK_OPEN, None, act_open, None),
-	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save with keeping structure"), act_save, act_save_struct),
-	(None, None, None, 'separator', None),
-	(_("Unfilter"), menubutton_filters, _("Filter / Unfilter"), act_view_source, None),
-	ToolItemDeclaration_wrap(panel_content),
-	ToolItemDeclaration_font(panel_content),
-]
-stck_unimp, stck_imp, stck_repl, stck_fwd, stck_mdn, stck_spam, stck_sign_good, stck_sign_bad, footer_message_label, btn_open2, btn_save2, x_, x, x, btn_font \
-= load_toolitems(tb_controls, toolbuttons)
 btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 footer_message_label.set_expand(True)
 footer_message_label.connect('labels-updated', lambda lti: map(lambda label: label.set_ellipsize(pango.ELLIPSIZE_MIDDLE), lti.labels))
+menubutton_filters.set_homogeneous(False)
+menubutton_filters.set_menu(menu_filters)
+menubutton_filters.set_arrow_tooltip_text(_("Filters"))
 
 
 ### Build Composer GUI ###
@@ -5039,7 +5007,7 @@ gui_toolkits.add_key_binding(win_comp, '<Control>h', lambda *_x: act_toggle_comp
 gui_toolkits.add_key_binding(win_comp, '<Alt>a', lambda *_x: act_addressbook())
 
 box_compose = gtk.VBox()
-tb_compose = gtk.Toolbar()
+tb_compose = Toolbar()
 panel_compose = gtk.VPaned()
 panel_upper = gtk.HPaned()
 entry_subject = gtk.Entry()
@@ -5059,7 +5027,7 @@ frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
 composer_text_buffer = TextBuffer()
 panel_edit_message = gtk.TextView(composer_text_buffer)
-tb_comp_controls = gtk.Toolbar()
+tb_comp_controls = Toolbar()
 
 win_comp.add(box_compose)
 box_compose.pack_start(tb_compose, False, True)
@@ -5124,48 +5092,49 @@ menu_add_header.append_menuitems([
 		('set_data', ('chname', name)),
 		lambda mi: connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_clicked),
 	]) for name in SenderHeaders] + [
-	configured_object(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient")), [
+	configured_object(StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Recipient")), [
 		lambda mi: connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, 'To'),
 	]),
 	gtk.SeparatorMenuItem(),
-	configured_object(gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header")), [
+	configured_object(StockMenuItem(stock_id=gtk.STOCK_ADD, label=_("Add Custom Header")), [
 		lambda mi: connect_loopless_signal(mi, 'activate', act_composer_header_menuitem_clicked, ''),
 	]),
-	configured_object(gtk.CheckMenuItem(_("Show Custom Headers")), [
+	configured_object(GlobalNamedObject(gtk.CheckMenuItem(_("Show Custom Headers")), 'menuitem_composer_show_all_headers'), [
 		lambda mi: connect_loopless_signal(mi, 'toggled', act_composer_header_menuitem_all_clicked),
-		lambda mi: globals().__setitem__('menuitem_composer_show_all_headers', mi),
 	]),
 ])
 menu_add_header.show_all()
 
 # context menu on attachments panel (composer mode)
-menuitem_comp_att_open_mem = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
+menuitem_comp_att_open_mem = StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open attachment"))
 menuitem_comp_att_open_mem.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_memory)
 menu_composer_attachments.append(menuitem_comp_att_open_mem)
-menuitem_comp_att_open_disk = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
+menuitem_comp_att_open_disk = StockMenuItem(stock_id=gtk.STOCK_OPEN, label=_("Open original file"))
 menuitem_comp_att_open_disk.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_from_disk)
 menu_composer_attachments.append(menuitem_comp_att_open_disk)
-menuitem_comp_att_open_dir = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_DIRECTORY, label=_("Open original directory"))
+menuitem_comp_att_open_dir = StockMenuItem(stock_id=gtk.STOCK_DIRECTORY, label=_("Open original directory"))
 menuitem_comp_att_open_dir.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_open_dir)
 menu_composer_attachments.append(menuitem_comp_att_open_dir)
-menuitem_comp_att_rename = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
+menuitem_comp_att_rename = StockMenuItem(stock_id=gtk.STOCK_EDIT, label=_("Rename"))
 menuitem_comp_att_rename.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_rename)
 menu_composer_attachments.append(menuitem_comp_att_rename)
-menuitem_comp_att_detach = gui_toolkits.StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
+menuitem_comp_att_detach = StockMenuItem(stock_id=gtk.STOCK_REMOVE, label=_("Detach"))
 menuitem_comp_att_detach.connect('activate', act_composer_attachment_menu_item_activated, act_composer_attachment_menu_detach)
 menu_composer_attachments.append(menuitem_comp_att_detach)
 menu_composer_attachments.show_all()
 
-toolbuttons = [
-	(_("Send"), 'mail-send', _("Send")+'\n'+_("Right click:")+' '+_("Save As in ready-to-send format"), act_send, act_send_to_file),
-	(None, gtk.STOCK_SAVE, _("Save")+'\n'+_("Right click:")+' '+_("Save As..."), act_save_edit, (act_save_edit, True)),
-	(_("Addressbook"), 'x-office-address-book', None, act_addressbook, None),
-	(_("Attach Files"), 'mail-attachment', None, act_attach, None),
-	(None, None, None, 'space', None),
-	(None, gtk.STOCK_CLOSE, None, act_close_edit, None),
-]
-menubutton_send, menubutton_save_draft, x, x, x_, x \
-= load_toolitems(tb_compose, toolbuttons)
+tb_compose.append_items([
+	GlobalNamedObject(ActionStockToolButton(iconname='mail-send', label=_("Send"), tooltip=_("Send")+'\n'+_("Right click:")+' '+_("Save As in ready-to-send format"),
+		actions=((on_click_button, act_send), (on_press_button, act_send_to_file))), 'menubutton_send'),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_SAVE, tooltip=_("Save")+'\n'+_("Right click:")+' '+_("Save As..."),
+		actions=((on_click_button, act_save_edit), (on_press_button, (act_save_edit, True)))), 'menubutton_save_draft'),
+	ActionStockToolButton(iconname='x-office-address-book', label=_("Addressbook"),
+		actions=((on_click_button, act_addressbook), None)),
+	ActionStockToolButton(iconname='mail-attachment', label=_("Attach Files"),
+		actions=((on_click_button, act_attach), None)),
+	SpacerToolItem(),
+	ActionStockToolButton(iconname=gtk.STOCK_CLOSE, actions=((on_click_button, act_close_edit), None)),
+])
 
 # Add columns to Composer's Attachments panel
 setup_treeview__icon_label(panel_attachments, label_edit_cb=rename_attachment)
@@ -5180,14 +5149,14 @@ panel_attachments.append_column(tvc)
 [CustomHeadersStore.append([h]) for h in sorted(AdvancedHeaders)]
 
 toolbuttons = [
-	(None, gui_toolkits.LabelsToolItem(), None, None, None),
+	(None, LabelsToolItem(), None, None, None),
 	(None, None, None, 'space', None),
-	(None, gui_toolkits.StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
-	(None, gui_toolkits.StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
-	(None, gui_toolkits.StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
+	(None, StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
+	(None, StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
+	(None, StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
 	(None, None, None, 'separator', None),
-	(_("Unimportant"), gui_toolkits.StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
-	(_("Important"), gui_toolkits.StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
+	(_("Unimportant"), StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
+	(_("Important"), StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
 	(None, None, None, 'separator', None),
 	(None, gtk.STOCK_EDIT, _("Edit with External Program"), act_edit_external, None),
 	ToolItemDeclaration_wrap(panel_edit_message),

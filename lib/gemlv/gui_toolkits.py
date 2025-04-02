@@ -4,6 +4,8 @@ import gtk
 import glib
 from gemlv.constants import *
 import gobject
+import re
+from pythonutils import coalesce
 
 MOUSE_BUTTON_LEFT = 1
 MOUSE_BUTTON_MIDDLE = 2
@@ -91,30 +93,33 @@ class StockToggleToolButton(gtk.ToggleToolButton):
 		if stock not in gtk.stock_list_ids():
 			self.set_icon_name(stock)
 
-class Menu(gtk.Menu):
-	def remove_all_menuitems(self):
-		for mi in self.get_children():
-			self.remove(mi)
-	def append_menuitems(self, items):
-		for mi in items:
-			self.append(mi)
+class Toolbar(gtk.Toolbar):
+	def append_items(self, items):
+		for it in items:
+			self.insert(it, -1)
 
-class StockMenuItem(gtk.ImageMenuItem):
-	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None, config=[]):
-		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
-		if label is not None:
-			self.set_label(label)
-		if icon_name is not None:
-			i = gtk.Image()
-			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
-			self.set_image(i)
-		for step in config:
-			method = getattr(self, step[0])
-			method(*step[1])
+class StockToolIcon(gtk.ToolItem):
+	def __init__(self, iconname, tooltiptext=None, toolbar=None):
+		super(self.__class__, self).__init__()
+		self.set_border_width(3)
+		self.add(gtk.image_new_from_icon_name(iconname, toolbar.get_icon_size() if toolbar is not None else gtk.ICON_SIZE_SMALL_TOOLBAR))
+		self.set_tooltip_text(tooltiptext)
+
+class SeparatorToolItem(gtk.SeparatorToolItem):
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		self.set_draw(True)
+		self.set_expand(False)
+
+class SpacerToolItem(gtk.SeparatorToolItem):
+	def __init__(self):
+		super(self.__class__, self).__init__()
+		self.set_draw(False)
+		self.set_expand(True)
 
 class StockToolButton(gtk.ToolButton):
 	def __init__(self, label=None, stock=None, tooltip=None):
-		super(self.__class__, self).__init__()
+		super(gtk.ToolButton, self).__init__()
 		if stock is not None:
 			if stock in gtk.stock_list_ids():
 				if stock is not None: self.set_stock_id(stock)
@@ -137,6 +142,60 @@ class StockToolButton(gtk.ToolButton):
 	def set_markup(self, markup):
 		lbl = self.__get_children()[1]
 		lbl.set_markup(markup)
+
+class BaseActionToolItem(object):
+	@staticmethod
+	def _preinit(label, iconname, tooltip):
+		iconlabel = None
+		stock = gtk.stock_lookup(iconname)
+		if stock: iconlabel = re.sub('_', '', stock[1])  # remove shortcut key from button label
+		label = coalesce(label, iconlabel, tooltip)
+		tooltip = coalesce(tooltip, label, iconlabel)
+		return (label, tooltip)
+	
+	def _config(self, actions, iconname, label):
+		act_left_click, act_right_click = actions[:]
+		if act_left_click is not None:
+			connect_loopless_signal(self, 'clicked', *act_left_click)
+		if act_right_click is not None:
+			connect_loopless_signal(self.child, 'button-press-event', *act_right_click)
+		self.set_data('stock', iconname)
+		self.set_data('label', label)
+
+class ActionStockToolButton(BaseActionToolItem, StockToolButton):
+	def __init__(self, actions=(None, None), label=None, iconname=None, tooltip=None):
+		(label, tooltip) = BaseActionToolItem._preinit(label, iconname, tooltip)
+		super(self.__class__, self).__init__(label=label, stock=iconname, tooltip=tooltip)
+		self._config(actions, iconname, label)
+
+class ActionMenuToolButton(BaseActionToolItem, gtk.MenuToolButton):
+	def __init__(self, actions=(None, None), label=None, iconname=None, tooltip=None):
+		super(self.__class__, self).__init__(iconname)
+		(label, tooltip) = BaseActionToolItem._preinit(label, iconname, tooltip)
+		self.set_label(label)
+		self.set_tooltip_text(tooltip)
+		self._config(actions, iconname, label)
+
+class Menu(gtk.Menu):
+	def remove_all_menuitems(self):
+		for mi in self.get_children():
+			self.remove(mi)
+	def append_menuitems(self, items):
+		for mi in items:
+			self.append(mi)
+
+class StockMenuItem(gtk.ImageMenuItem):
+	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None, config=[]):
+		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
+		if label is not None:
+			self.set_label(label)
+		if icon_name is not None:
+			i = gtk.Image()
+			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
+			self.set_image(i)
+		for step in config:
+			method = getattr(self, step[0])
+			method(*step[1])
 
 class StockButton(gtk.Button):
 	def __init__(self, label=None, stock=None, use_underline=True, icon_size=None):
