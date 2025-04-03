@@ -103,7 +103,6 @@ from gemlv.sysutils import new_pipe_handles
 from gemlv.sysutils import unlink_or_else
 import gemlv.user_signature
 from gemlv.pythonutils import BasicReuseable
-from gemlv.pythonutils import Cyclelist
 from gemlv.pythonutils import SubstractableList
 from gemlv.pythonutils import DefaultingDict
 from gemlv.pythonutils import MultikeyUnionlistDict
@@ -116,6 +115,7 @@ from gemlv.pythonutils import sorted_list_uniq
 from gemlv.pythonutils import filter_nones
 from gemlv.pythonutils import configured_object
 import gemlv.gui_toolkits as gui_toolkits
+from gemlv.gui_toolkits import TextView
 from gemlv.gui_toolkits import Toolbar
 from gemlv.gui_toolkits import SeparatorToolItem
 from gemlv.gui_toolkits import SpacerToolItem
@@ -2829,10 +2829,6 @@ def act_view_source():
 		filt = ('', None, False)
 	load_part(get_part_by_itpath(), filt)
 
-def act_wrap(tv, i=1):
-	modes = Cyclelist([gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE], at=tv.get_wrap_mode())
-	tv.set_wrap_mode(modes.turn(i))
-
 def get_current_font(txtv):
 	pctx = txtv.get_pango_context()
 	fdsc = pctx.get_font_description()
@@ -4843,7 +4839,7 @@ btn_save = StockButton(stock=gtk.STOCK_SAVE)
 btn_save_struct = StockButton(label=_("Keep Structure"), stock=gtk.STOCK_SAVE)
 panel_content_image = gtk.Frame()
 spanel_content = gtk.ScrolledWindow()
-panel_content = gtk.TextView(buffer=TextBuffer())
+panel_content = TextView(buffer=TextBuffer())
 hyperlink_context_menu = gui_toolkits.Menu()
 tb_controls = Toolbar()
 menu_filters = gui_toolkits.Menu()
@@ -4982,7 +4978,7 @@ tb_controls.append_items([
 	SeparatorToolItem(),
 	GlobalNamedObject(ActionMenuToolButton(iconname=gtk.STOCK_ZOOM_FIT, label=_("Unfilter"), tooltip=_("Filter / Unfilter"), actions=((on_click_button, act_view_source), None)), 'menubutton_filters'),
 	ActionStockToolButton(iconname=gtk.STOCK_JUSTIFY_LEFT, label=_("Wrap"), tooltip=_("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"),
-		actions=((on_click_button, (act_wrap, panel_content)), (on_press_button, (act_wrap, panel_content, -1)))),
+		actions=((on_click_button, (panel_content.cycle_wrap_mode, +1)), (on_press_button, (panel_content.cycle_wrap_mode, -1)))),
 	configured_object(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
 		actions=((on_click_button, (act_font, panel_content)), (on_press_button, (act_font_switch, panel_content)))), [
 			('connect', ('scroll-event', on_scroll_on_button_font, panel_content, None)),
@@ -5029,7 +5025,7 @@ panel_subject.set_border_width(4)
 frame_edit = gtk.Frame()
 spanel_edit_message = gtk.ScrolledWindow()
 composer_text_buffer = TextBuffer()
-panel_edit_message = gtk.TextView(composer_text_buffer)
+panel_edit_message = TextView(composer_text_buffer)
 tb_comp_controls = Toolbar()
 
 win_comp.add(box_compose)
@@ -5167,7 +5163,7 @@ tb_comp_controls.append_items([
 	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_EDIT, tooltip=_("Edit with External Program"),
 		actions=((on_click_button, act_edit_external), None)), 'menubutton_edit_external'),
 	ActionStockToolButton(iconname=gtk.STOCK_JUSTIFY_LEFT, label=_("Wrap"), tooltip=_("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"),
-		actions=((on_click_button, (act_wrap, panel_edit_message)), (on_press_button, (act_wrap, panel_edit_message, -1)))),
+		actions=((on_click_button, (panel_edit_message.cycle_wrap_mode, +1)), (on_press_button, (panel_edit_message.cycle_wrap_mode, -1)))),
 	configured_object(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
 		actions=((on_click_button, (act_font, panel_edit_message)), (on_press_button, (act_font_switch, panel_edit_message)))), [
 			('connect', ('scroll-event', on_scroll_on_button_font, panel_edit_message, None)),

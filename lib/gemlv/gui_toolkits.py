@@ -435,3 +435,9 @@ def connect_loopless_signal(gobject, signal_name, func, *user_data):
 	data = {'user_data': user_data}
 	handler = gobject.connect(signal_name, _call_loopless_handler, func, data)
 	data['handler-id'] = handler
+
+class TextView(gtk.TextView):
+	def cycle_wrap_mode(self, direction=+1, modes=[gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE]):
+		cur = self.get_wrap_mode()
+		newidx = ((modes.index(cur) + direction) % len(modes)) if cur in modes else 0
+		self.set_wrap_mode(modes[newidx])
