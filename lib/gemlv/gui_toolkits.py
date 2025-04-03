@@ -89,7 +89,7 @@ class LabelsToolItem(gtk.ToolItem):
 
 class StockToggleToolButton(gtk.ToggleToolButton):
 	def __init__(self, stock=None):
-		super(self.__class__, self).__init__(stock)
+		super(gtk.ToggleToolButton, self).__init__(stock)
 		if stock not in gtk.stock_list_ids():
 			self.set_icon_name(stock)
 

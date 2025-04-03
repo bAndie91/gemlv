@@ -121,6 +121,7 @@ from gemlv.gui_toolkits import SeparatorToolItem
 from gemlv.gui_toolkits import SpacerToolItem
 from gemlv.gui_toolkits import LabelsToolItem
 from gemlv.gui_toolkits import StockButton
+from gemlv.gui_toolkits import StockToolIcon
 from gemlv.gui_toolkits import StockToolButton
 from gemlv.gui_toolkits import StockToggleToolButton
 from gemlv.gui_toolkits import ActionStockToolButton
@@ -4966,12 +4967,12 @@ manipulate_menubutton_mdn_label()
 setup_treeview__icon_label(panel_parts)
 
 tb_controls.append_items([
-	GlobalNamedObject(ActionStockToolButton(iconname='emblem-generic', tooltip=_("Unimportant")), 'stck_unimp'),
-	GlobalNamedObject(ActionStockToolButton(iconname='emblem-important', tooltip=_("Important")), 'stck_imp'),
-	GlobalNamedObject(ActionStockToolButton(iconname='mail-reply-sender', tooltip=_("Replied")), 'stck_repl'),
-	GlobalNamedObject(ActionStockToolButton(iconname='mail-forward', tooltip=_("Forwarded")), 'stck_fwd'),
-	GlobalNamedObject(ActionStockToolButton(iconname='mail-mark-read', tooltip=_("MDN is sent")), 'stck_mdn'),
-	GlobalNamedObject(ActionStockToolButton(iconname='mail-mark-junk', tooltip=_("Spam")), 'stck_spam'),
+	GlobalNamedObject(StockToolIcon(iconname='emblem-generic', tooltiptext=_("Unimportant")), 'stck_unimp'),
+	GlobalNamedObject(StockToolIcon(iconname='emblem-important', tooltiptext=_("Important")), 'stck_imp'),
+	GlobalNamedObject(StockToolIcon(iconname='mail-reply-sender', tooltiptext=_("Replied")), 'stck_repl'),
+	GlobalNamedObject(StockToolIcon(iconname='mail-forward', tooltiptext=_("Forwarded")), 'stck_fwd'),
+	GlobalNamedObject(StockToolIcon(iconname='mail-mark-read', tooltiptext=_("MDN is sent")), 'stck_mdn'),
+	GlobalNamedObject(StockToolIcon(iconname='mail-mark-junk', tooltiptext=_("Spam")), 'stck_spam'),
 	GlobalNamedObject(ActionStockToolButton(iconname='mail-signed-verified', tooltip=_("Valid signature"), actions=((on_click_button, show_signature_info), None)), 'stck_sign_good'),
 	GlobalNamedObject(ActionStockToolButton(iconname='dialog-warning', tooltip=_("Invalid signature"), actions=((on_click_button, show_signature_info), None)), 'stck_sign_bad'),
 	GlobalNamedObject(LabelsToolItem(), 'footer_message_label'),
@@ -5155,12 +5156,12 @@ tb_comp_controls.append_items([
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='dialog-password', tooltip=_("Encrypt")), 'toggle_encrypt'),
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='mail-signed', tooltip=_("Crypto-Sign")), 'toggle_sign'),
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='mail-mark-read', tooltip=_("Ask Disposition Notification"),
-		actions=((on_click_button, act_req_dispos_notif), None, on_toggled)), 'toggle_rqdn'),
+		actions=((on_click_button, act_req_dispos_notif), None, (on_toggled,))), 'toggle_rqdn'),
 	SeparatorToolItem(),
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-generic', label=_("Unimportant"),
-		actions=((on_click_button, act_importance), None, on_toggled)), 'toggle_unimportant'),
+		actions=((on_click_button, act_importance), None, (on_toggled,))), 'toggle_unimportant'),
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-important', label=_("Important"),
-		actions=((on_click_button, act_importance), None, on_toggled)), 'toggle_important'),
+		actions=((on_click_button, act_importance), None, (on_toggled,))), 'toggle_important'),
 	SeparatorToolItem(),
 	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_EDIT, tooltip=_("Edit with External Program"),
 		actions=((on_click_button, act_edit_external), None)), 'menubutton_edit_external'),
