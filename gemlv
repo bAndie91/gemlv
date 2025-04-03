@@ -4983,11 +4983,12 @@ tb_controls.append_items([
 	GlobalNamedObject(ActionMenuToolButton(iconname=gtk.STOCK_ZOOM_FIT, label=_("Unfilter"), tooltip=_("Filter / Unfilter"), actions=((on_click_button, act_view_source), None)), 'menubutton_filters'),
 	ActionStockToolButton(iconname=gtk.STOCK_JUSTIFY_LEFT, label=_("Wrap"), tooltip=_("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"),
 		actions=((on_click_button, (act_wrap, panel_content)), (on_press_button, (act_wrap, panel_content, -1)))),
-	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
-		actions=((on_click_button, (act_font, panel_content)), (on_press_button, (act_font_switch, panel_content)))), 'btn_font')
+	configured_object(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
+		actions=((on_click_button, (act_font, panel_content)), (on_press_button, (act_font_switch, panel_content)))), [
+			('connect', ('scroll-event', on_scroll_on_button_font, panel_content, None)),
+		]),
 ])
 
-btn_font.connect('scroll-event', on_scroll_on_button_font, panel_content, None)
 footer_message_label.set_expand(True)
 footer_message_label.connect('labels-updated', lambda lti: map(lambda label: label.set_ellipsize(pango.ELLIPSIZE_MIDDLE), lti.labels))
 menubutton_filters.set_homogeneous(False)
