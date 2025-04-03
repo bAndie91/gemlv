@@ -124,6 +124,7 @@ from gemlv.gui_toolkits import StockButton
 from gemlv.gui_toolkits import StockToolButton
 from gemlv.gui_toolkits import StockToggleToolButton
 from gemlv.gui_toolkits import ActionStockToolButton
+from gemlv.gui_toolkits import ActionStockToggleToolButton
 from gemlv.gui_toolkits import ActionMenuToolButton
 from gemlv.gui_toolkits import StockMenuItem
 from gemlv.gui_toolkits import connect_loopless_signal
@@ -5148,26 +5149,28 @@ panel_attachments.append_column(tvc)
 
 [CustomHeadersStore.append([h]) for h in sorted(AdvancedHeaders)]
 
-toolbuttons = [
-	(None, LabelsToolItem(), None, None, None),
-	(None, None, None, 'space', None),
-	(None, StockToggleToolButton('dialog-password'), _("Encrypt"), None, None),
-	(None, StockToggleToolButton('mail-signed'), _("Crypto-Sign"), None, None),
-	(None, StockToggleToolButton('mail-mark-read'), _("Ask Disposition Notification"), act_req_dispos_notif, None),
-	(None, None, None, 'separator', None),
-	(_("Unimportant"), StockToggleToolButton('emblem-generic'), _("Unimportant"), act_importance, None),
-	(_("Important"), StockToggleToolButton('emblem-important'), _("Important"), act_importance, None),
-	(None, None, None, 'separator', None),
-	(None, gtk.STOCK_EDIT, _("Edit with External Program"), act_edit_external, None),
-	ToolItemDeclaration_wrap(panel_edit_message),
-	ToolItemDeclaration_font(panel_edit_message),
-]
-tb_comp_label, x_, toggle_encrypt, toggle_sign, toggle_rqdn, x_, toggle_unimportant, toggle_important, x_, menubutton_edit_external, x, btn_font2 \
-= load_toolitems(tb_comp_controls, toolbuttons)
-connect_loopless_signal(toggle_rqdn, 'toggled', on_toggled)
-connect_loopless_signal(toggle_unimportant, 'toggled', on_toggled)
-connect_loopless_signal(toggle_important, 'toggled', on_toggled)
-btn_font2.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, None)
+tb_comp_controls.append_items([
+	GlobalNamedObject(LabelsToolItem(), 'tb_comp_label'),
+	SpacerToolItem(),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='dialog-password', tooltip=_("Encrypt")), 'toggle_encrypt'),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='mail-signed', tooltip=_("Crypto-Sign")), 'toggle_sign'),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='mail-mark-read', tooltip=_("Ask Disposition Notification"),
+		actions=((on_click_button, act_req_dispos_notif), None, on_toggled)), 'toggle_rqdn'),
+	SeparatorToolItem(),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-generic', label=_("Unimportant"),
+		actions=((on_click_button, act_importance), None, on_toggled)), 'toggle_unimportant'),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-important', label=_("Important"),
+		actions=((on_click_button, act_importance), None, on_toggled)), 'toggle_important'),
+	SeparatorToolItem(),
+	GlobalNamedObject(ActionStockToolButton(iconname=gtk.STOCK_EDIT, tooltip=_("Edit with External Program"),
+		actions=((on_click_button, act_edit_external), None)), 'menubutton_edit_external'),
+	ActionStockToolButton(iconname=gtk.STOCK_JUSTIFY_LEFT, label=_("Wrap"), tooltip=_("Soft / Hard / No Wrap")+'\n'+_("Right click:")+' '+_("No / Soft / Hard Wrap"),
+		actions=((on_click_button, (act_wrap, panel_edit_message)), (on_press_button, (act_wrap, panel_edit_message, -1)))),
+	configured_object(ActionStockToolButton(iconname=gtk.STOCK_SELECT_FONT, tooltip=_("Change Font")+'\n'+_("Right click:")+' '+_("monospace")+'\n'+_("Scroll: zoom +/-"),
+		actions=((on_click_button, (act_font, panel_edit_message)), (on_press_button, (act_font_switch, panel_edit_message)))), [
+			('connect', ('scroll-event', on_scroll_on_button_font, panel_edit_message, None)),
+		]),
+])
 
 
 if cliArgs.compose:

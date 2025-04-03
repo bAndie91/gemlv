@@ -118,17 +118,13 @@ class SpacerToolItem(gtk.SeparatorToolItem):
 		self.set_expand(True)
 
 class StockToolButton(gtk.ToolButton):
-	def __init__(self, label=None, stock=None, tooltip=None):
+	def __init__(self, stock=None):
 		super(gtk.ToolButton, self).__init__()
 		if stock is not None:
 			if stock in gtk.stock_list_ids():
 				if stock is not None: self.set_stock_id(stock)
 			else:
 				self.set_icon_name(stock)
-		if label is not None:
-			self.set_label(label)
-		if tooltip is not None:
-			self.set_tooltip_text(tooltip)
 	def set_pixbuf(self, pxb):
 		btn = self.get_children()[0]
 		x = btn.get_children()[0]
@@ -144,37 +140,39 @@ class StockToolButton(gtk.ToolButton):
 		lbl.set_markup(markup)
 
 class BaseActionToolItem(object):
-	@staticmethod
-	def _preinit(label, iconname, tooltip):
+	def __init__(self, actions, label, iconname, tooltip):
+		self.set_data('stock', iconname)
 		iconlabel = None
 		stock = gtk.stock_lookup(iconname)
 		if stock: iconlabel = re.sub('_', '', stock[1])  # remove shortcut key from button label
 		label = coalesce(label, iconlabel, tooltip)
 		tooltip = coalesce(tooltip, label, iconlabel)
-		return (label, tooltip)
-	
-	def _config(self, actions, iconname, label):
+		self.set_data('label', label)
+		self.set_label(label)
+		self.set_tooltip_text(tooltip)
+		
 		act_left_click, act_right_click = actions[:]
 		if act_left_click is not None:
 			connect_loopless_signal(self, 'clicked', *act_left_click)
 		if act_right_click is not None:
 			connect_loopless_signal(self.child, 'button-press-event', *act_right_click)
-		self.set_data('stock', iconname)
-		self.set_data('label', label)
 
 class ActionStockToolButton(BaseActionToolItem, StockToolButton):
 	def __init__(self, actions=(None, None), label=None, iconname=None, tooltip=None):
-		(label, tooltip) = BaseActionToolItem._preinit(label, iconname, tooltip)
-		super(self.__class__, self).__init__(label=label, stock=iconname, tooltip=tooltip)
-		self._config(actions, iconname, label)
+		StockToolButton.__init__(self, stock=iconname)
+		BaseActionToolItem.__init__(self, actions, label, iconname, tooltip)
+
+class ActionStockToggleToolButton(BaseActionToolItem, StockToggleToolButton):
+	def __init__(self, actions=(None, None, None), label=None, iconname=None, tooltip=None):
+		StockToggleToolButton.__init__(self, stock=iconname)
+		BaseActionToolItem.__init__(self, actions[0:2], label, iconname, tooltip)
+		if actions[2] is not None:
+			connect_loopless_signal(self, 'toggled', *actions[2])
 
 class ActionMenuToolButton(BaseActionToolItem, gtk.MenuToolButton):
 	def __init__(self, actions=(None, None), label=None, iconname=None, tooltip=None):
-		super(self.__class__, self).__init__(iconname)
-		(label, tooltip) = BaseActionToolItem._preinit(label, iconname, tooltip)
-		self.set_label(label)
-		self.set_tooltip_text(tooltip)
-		self._config(actions, iconname, label)
+		gtk.MenuToolButton.__init__(self, iconname)
+		BaseActionToolItem.__init__(self, actions, label, iconname, tooltip)
 
 class Menu(gtk.Menu):
 	def remove_all_menuitems(self):
