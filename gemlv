@@ -822,6 +822,7 @@ class TextViewHyperlink(dict):
 		self.visited = True
 
 def hyperlinkify(tview, bufr, pos_start, pos_end, uri, title):
+	"make a given portion of text in a TextView behave like a hyperlink"
 	bufr.apply_tag_to_range('hyperlink', pos_start, pos_end)
 	bufr.get_data('hyperlinks').append(TextViewHyperlink(textview=tview, pos_start=pos_start, pos_end=pos_end, uri=uri, title=title))
 
@@ -892,6 +893,7 @@ def track_mouse_over_textview(tview, event):
 
 def show_onhover_hyperlink(text):
 	footer_message_label.set_labels([text] if text is not None else [])
+
 
 def get_gpg_signed_data_from_mime_part(eml):
 	gpg_msg = eml.as_string().replace('\n', '\r\n')
@@ -1157,8 +1159,8 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			for s in pipereader(content, cmd, args):
 				bufr.insert(bufr.get_end_iter(), s)
 				loaded_text += s
-			highlight_hyperlinks(panel_content)
 			panel_content.set_sensitive(True)
+		highlight_hyperlinks(panel_content)
 		panel_btnbox.hide()
 		panel_content_image.hide()
 		spanel_content.show()
