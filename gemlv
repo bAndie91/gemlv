@@ -780,7 +780,7 @@ def highlight_hyperlinks(tview):
 	
 	re_hyperlink = r'([a-z+-]+://[^\s]+|mailto:[^\s@]+@[a-z0-9_.-]+)'
 	html_renderer_numbered_links = {}
-	for match in re.finditer(r'^\s*(\d+)\.\s+' + re_hyperlink, text, re.I | re.M):
+	for match in re.finditer(r'^\s*(\d+)\.\s+(?:|[^\n]+\n\s*)' + re_hyperlink, text, re.I | re.M):
 		html_renderer_numbered_links[match.group(1)] = match.group(2)
 	for match in re.finditer(r'\[(\d+)\]', text, re.I):
 		num = match.group(1)
@@ -816,7 +816,11 @@ class TextViewHyperlink(dict):
 			self['textview'].get_buffer().apply_tag_to_range('hyperlink-visited', self['pos_start'], self['pos_end'])
 	def open(self, opener=None, *pargs, **kwargs):
 		if opener is None:
-			gtk.show_uri(None, self.uri, *pargs, **kwargs)
+			try:
+				gtk.show_uri(None, self.uri, *pargs, **kwargs)
+			except Exception as e:
+				save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+				display_error(e, "URI = "+self.uri, async=True)
 		else:
 			run_async(opener[0], opener[1:] + [self.uri], *pargs, **kwargs)
 		self.visited = True
