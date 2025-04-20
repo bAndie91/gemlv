@@ -361,8 +361,9 @@ def extract_text_from_error_like_object(e):
 
 def display_error(e, suppl_text='', async=False, icon=gtk.MESSAGE_ERROR):
 	(text, suppl_text_add) = extract_text_from_error_like_object(e)
-	if suppl_text != '': suppl_text += '\n'
-	suppl_text += suppl_text_add
+	if suppl_text_add is not None:
+		if suppl_text != '': suppl_text += '\n'
+		suppl_text += suppl_text_add
 	
 	dlg = gtk.MessageDialog(gui_toolkits.get_current_window(), gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT, icon, gtk.BUTTONS_OK, text)
 	dlg.set_transient_for(gui_toolkits.get_current_window())
