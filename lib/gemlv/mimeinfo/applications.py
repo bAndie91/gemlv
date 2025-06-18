@@ -6,6 +6,7 @@ import os
 import sys
 import re
 import xdg.BaseDirectory
+import xdg.DesktopEntry
 
 global subclasses
 global _hashed_subclasses
@@ -50,17 +51,11 @@ def _find_files(basename, typechecker, dirs):
 		if typechecker(path) and os.access(path, os.R_OK):
 			yield path
 
-class DesktopEntry(object):
-	def __init__(self, path):
-		self.path = path
-	def __repr__(self):
-		return "<%s path=\"%s\">" % (self.__class__.__name__, self.path)
-
 def _find_file(lst):
 	for basename in lst:
 		path = first(data_files(os.path.join('applications', basename)))
 		if path is not None:
-			return DesktopEntry(path)
+			return xdg.DesktopEntry.DesktopEntry(path)
 	return None
 
 def _read_map_files(name, lst=None):
@@ -154,7 +149,7 @@ def _others(mimetype):
 		for file in _read_list(mimetype, [cache]):
 			path = os.path.join(dir, file)
 			if not (os.path.isfile(path) and os.access(path, os.R_OK)): continue
-			lst.append(DesktopEntry(path))
+			lst.append(xdg.DesktopEntry.DesktopEntry(path))
 	return lst
 
 def _read_list(mimetype, paths):
