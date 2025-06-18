@@ -1,5 +1,7 @@
 #!/usr/bin/env python2.7
 
+# this is a crude translation of File::MimeInfo::Applications(3pm)
+
 from __future__ import print_function
 
 import os

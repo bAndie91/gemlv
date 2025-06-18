@@ -66,7 +66,7 @@ except ImportError:
 	fuzzywuzzy = None
 import uuid
 import xdg.BaseDirectory
-import mimeinfo.applications
+import gemlv.mimeinfo.applications  # will move up from under the gemlv namespace
 try:
 	import gemlv.imagerotation
 except ImportError as exc:
@@ -884,8 +884,15 @@ def on_hyperlink_event(tag, tview, event, itr):
 			return True
 
 def populate_open_with_menu(parent_menuitem, uri):
+	try:
+		scheme = uri.split(':')[0]
+	except:
+		return
 	submenu = Menu()
-	for mi in:
+	for mimeapp in gemlv.mimeinfo.applications.mime_applications_all('x-scheme-handler/'+scheme):
+		mi = MenuItem(icon=, config=[
+			('connect', ('activate', lambda mi, uri: TODO, uri)),
+		])
 		submenu.append(mi)
 	parent_menuitem.set_submenu(submenu)
 
