@@ -1,10 +1,12 @@
 
 LIB_PREFIX = /usr/lib/python2.7
 
+.PHONY: default
 default:
 	@echo "maybe interested in: install, install-libs, locales"
 	@false
 
+.PHONY: install
 install: install-libs locales
 	cp -v --no-preserve=ownership usr/share/applications/gemlv.desktop /usr/share/applications/
 	cp -v --no-preserve=ownership usr/share/applications/gemlv-compose.desktop /usr/share/applications/
@@ -38,16 +40,19 @@ install: install-libs locales
 	git describe --tags > /usr/share/doc/gemlv/VERSION
 	git show -s --format=%H > /usr/share/doc/gemlv/COMMIT
 
+.PHONY: install-libs
 install-libs:
 	mkdir -p $(LIB_PREFIX)/gemlv
 	cp -v --no-preserve=ownership -r lib/gemlv/*.py $(LIB_PREFIX)/gemlv/
 
-locales:
-	for f in usr/share/locale/*/LC_MESSAGES/gemlv.po; \
-	do \
-	  msgfmt -o "$${f%.*}".mo "$$f"; \
-	done
+I18N_FILES = $(patsubst %.po,%.mo,$(wildcard usr/share/locale/*/LC_MESSAGES/gemlv.po))
 
+.PHONY: locales
+locales: $(I18N_FILES)
+$(I18N_FILES): %.mo: %.po
+	msgfmt -o $@ $<
+
+.PHONY: uninstall
 uninstall:
 	[ ! -e /usr/share/applications/gemlv.desktop ] || rm -v /usr/share/applications/gemlv.desktop
 	[ ! -e /usr/share/applications/gemlv-compose.desktop ] || rm -v /usr/share/applications/gemlv-compose.desktop
@@ -79,6 +84,7 @@ uninstall:
 	
 	rm -v /usr/share/locale/*/LC_MESSAGES/gemlv.mo
 
+.PHONY: install-for-user
 install-for-user:
 	cp usr/share/applications/gemlv.desktop ~/.local/share/applications/
 	cp usr/share/applications/gemlv-compose.desktop ~/.local/share/applications/
@@ -86,11 +92,13 @@ install-for-user:
 	mkdir -p ~/.config/gemlv/
 	cp filters.conf ~/.config/gemlv/
 
+.PHONY: uninstall-for-user
 uninstall-for-user:
 	[ ! -e ~/.local/share/applications/gemlv-compose.desktop ] || rm ~/.local/share/applications/gemlv-compose.desktop
 	[ ! -e ~/.local/share/applications/gemlv.desktop ] || rm ~/.local/share/applications/gemlv.desktop
 	update-desktop-database ~/.local/share/applications/
 	[ ! -e ~/.config/gemlv/filters.conf ] || rm ~/.config/gemlv/filters.conf
 
+.PHONY: install-deps
 install-deps:
 	apt install razor pyzor bogofilter

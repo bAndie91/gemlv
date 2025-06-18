@@ -66,6 +66,7 @@ except ImportError:
 	fuzzywuzzy = None
 import uuid
 import xdg.BaseDirectory
+import mimeinfo.applications
 try:
 	import gemlv.imagerotation
 except ImportError as exc:
@@ -859,10 +860,12 @@ def on_hyperlink_event(tag, tview, event, itr):
 		elif event.button == gui_toolkits.MOUSE_BUTTON_RIGHT:
 			# build context menu for a hyperlink in the TextView:
 			hyperlink_context_menu.remove_all_menuitems()
+			open_with_menuitem = StockMenuItem(label=_("Open with..."))
 			menuitems = [
 				StockMenuItem(stock_id=gtk.STOCK_JUMP_TO, config=[
 					('connect', ('activate', lambda mi, link, timestamp: link.open(None, timestamp), link, event.time)),
 				]),
+				open_with_menuitem,
 				StockMenuItem(stock_id=gtk.STOCK_OPEN, config=[
 					('connect', ('activate', lambda mi, link: link.open([cliArgs.opener] + cliArgs.opener_args), link)),
 				]),
@@ -877,7 +880,14 @@ def on_hyperlink_event(tag, tview, event, itr):
 			hyperlink_context_menu.append_menuitems(menuitems)
 			hyperlink_context_menu.show_all()
 			hyperlink_context_menu.popup(None, None, None, event.button, event.time)
+			populate_open_with_menu(open_with_menuitem, link.uri)
 			return True
+
+def populate_open_with_menu(parent_menuitem, uri):
+	submenu = Menu()
+	for mi in:
+		submenu.append(mi)
+	parent_menuitem.set_submenu(submenu)
 
 def track_mouse_over_textview(tview, event):
 	tbuf = tview.get_buffer()

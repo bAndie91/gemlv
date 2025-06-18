@@ -565,3 +565,6 @@ msgstr "Kép URL címének másolása"
 
 msgid "Error while setting the Queue ID on the email file being edited and sent."
 msgstr "Hiba a Queue ID beállítása során az épp szerkesztett és elküldött Email fájlon."
+
+msgid "Open with..."
+msgstr "Megnyitás ezzel..."
