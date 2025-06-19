@@ -22,6 +22,10 @@ aliases = {}
 _hashed_aliases = False
 
 
+
+# this is a crude translation of File::DesktopEntry(3pm)
+
+
 class DesktopEntryIsNotAnApplication(Exception):
 	pass
 
@@ -68,7 +72,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 					for subdir in subdirs:
 						if subdir['size'] < preferred_size:
 							smallicondirs.insert(0, subdir['path'])
-						else
+						else:
 							icondirs.append(subdir['path'])
 					icondirs.extend(glob.glob(icondir+'/scalable/*'))
 					for subdir in smallicondirs:
@@ -97,7 +101,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 		"""
 		args = []
 		while re.search(r'\S', s):
-			match = re.match(r'^([\'"])', s):
+			match = re.match('^([\'"])', s)
 			if match:
 				q = match.group(1);
 				sub = RegexSubst(r'^(' + q + r'(\\.|[^' + q + r'])*' + q + r')', '', s, count=1, flags=re.S)
@@ -110,7 +114,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 				args.append(sub.group(1))
 		args = [arg for arg in args if len(arg or '')]
 		for arg in args:
-			match = re.match(r'^(["\'])(.*)\1$', arg, flags=re.S)
+			match = re.match('^(["\'])(.*)'+r'\1$', arg, flags=re.S)
 			if match:
 				arg = match.group(2)
 				arg = re.sub(r'\\(["`\$\\])', '\\1')  # remove backslashes
@@ -123,7 +127,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 		qwords = []
 		for word in words:
 			if word is None: continue
-			match = re.search(r'([\s"\'`\\<>~\|\&;\$\*\?#\(\)])', word)  # reserved chars
+			match = re.search('([\s"\'`'+r'\\<>~\|\&;\$\*\?#\(\)])', word)  # reserved chars
 			if match:
 				qword = re.sub(r'(["`\$\\]', '\\\\1', word)  # add backslashes
 				qword = '"' + qword + '"'  # add quotes
@@ -184,7 +188,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 			if re.search(r'^\w+://', arg):
 				uris.append(arg)
 			else:
-				uris.append('file://' + _path_to_uri(arg))
+				uris.append('file://' + self._path_to_uri(arg))
 		return uris
 	
 	def expand_format_code(self, code, args):
@@ -201,16 +205,16 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 		
 		# Check format
 		seen = 0
-		for s in format;
+		for s in format:
 			s = s.replace('%%', '')
 			if re.search(r'%[fFuUdD]', s):
 				seen += 1
 			
 			if not re.search(r'^%[FUD]$', s) and re.search(r'%[FUD]', s):
-				raise DesktopEntryExecFormatError("Exec key for '%s' contains '%%F\', '%%U' or '%%D' at the wrong place." % (self.getName(),))
+				raise DesktopEntryExecFormatError("Exec key for '%s' contains '%%F', '%%U' or '%%D' at the wrong place." % (self.getName(),))
 			match = re.search(r'(%[^fFuUdDnNickvm])', s)
 			if match:
-				raise DesktopEntryExecFormatError("Exec key for '%s' contains unknown field code '%s'." % (self.getName(), match.group(1))
+				raise DesktopEntryExecFormatError("Exec key for '%s' contains unknown field code '%s'." % (self.getName(), match.group(1),))
 			if len(args) > 1 and re.search(r'%[fud]', s):
 				raise DesktopEntryExecFormatError("Application '%s' takes only one argument, not %d." % (self.getName(), len(args),))
 			if re.search(r'%[nNvm]', s):
@@ -233,7 +237,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 					x = self._uris(args)
 				else:
 					x = self._dirs(args)
-				execargs.append(x)
+				execargs.extend(x)
 			elif s == '%i':
 				icon = self.get('Icon')
 				if icon is not None:
@@ -313,7 +317,7 @@ def _find_file(lst):
 	for basename in lst:
 		path = first(data_files(os.path.join('applications', basename)))
 		if path is not None:
-			return xdg.DesktopEntry.DesktopEntry(path)
+			return DesktopEntry(path)
 	return None
 
 def _read_map_files(name, lst=None):
@@ -407,7 +411,7 @@ def _others(mimetype):
 		for file in _read_list(mimetype, [cache]):
 			path = os.path.join(dir, file)
 			if not (os.path.isfile(path) and os.access(path, os.R_OK)): continue
-			lst.append(xdg.DesktopEntry.DesktopEntry(path))
+			lst.append(DesktopEntry(path))
 	return lst
 
 def _read_list(mimetype, paths):
