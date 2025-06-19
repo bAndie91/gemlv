@@ -1,6 +1,5 @@
 #!/usr/bin/env python2.7
 
-# this is a crude translation of File::MimeInfo::Applications(3pm)
 
 from __future__ import print_function
 
@@ -9,6 +8,8 @@ import sys
 import re
 import xdg.BaseDirectory
 import xdg.DesktopEntry
+import glob
+import gtk
 
 global subclasses
 global _hashed_subclasses
@@ -19,6 +20,204 @@ subclasses = {}
 _hashed_subclasses = False
 aliases = {}
 _hashed_aliases = False
+
+
+class DesktopEntryIsNotAnApplication(Exception):
+	pass
+
+class DesktopEntryExecFormatError(Exception):
+	pass
+
+class RegexSubst(object):
+	"""
+	An object remembering what was matched during the regexp substitution.
+	The constructor is very similar to the re.sub() one,
+	but does not handle group references (eg. "\\1") in 'replacement' parameter.
+	You probably want to invoke it by count=1 keyword argument.
+	"""
+	def __init__(self, pattern, replacement, string, **kwargs):
+		self.match = None
+		self.replacement = replacement
+		self.result = re.sub(pattern, self.replacer, string, **kwargs)
+	def replacer(self, match):
+		self.match = match
+		return self.replacement
+	def group(self, gnum=0):
+		if self.match is None:
+			return None
+		try:
+			return self.match.group(gnum)
+		except IndexError:
+			return None
+
+class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
+	def icon_file(self, preferred_size):
+		iconpath = None
+		iconname = self.getIcon()
+		if iconname:
+			preferred_size_px = gtk.icon_size_lookup(preferred_size)[0]
+			if iconname.startswith('/'):
+				iconpath = iconname
+			else:
+				icondirs = []
+				for c in 'hicolor', 'locolor', 'gnome':
+					icondir = "/usr/share/icons/" + c
+					smallicondirs = []
+					subdirs = [{'path': path, 'size': re.search(r'/([0-9]+)x([0-9]+)', path).group(1)} for path in glob.glob(icondir+'/*x*/*')]
+					subdirs.sort(key = lambda it: it['size'])
+					for subdir in subdirs:
+						if subdir['size'] < preferred_size:
+							smallicondirs.insert(0, subdir['path'])
+						else
+							icondirs.append(subdir['path'])
+					icondirs.extend(glob.glob(icondir+'/scalable/*'))
+					for subdir in smallicondirs:
+						icondirs.append(subdir)
+				icondirs.append('/usr/share/pixmaps')
+				
+				for icondir in icondirs:
+					for iconext in 'png', 'xpm', 'svg':
+						if os.path.extsep in iconname:
+							iconpath_test = os.path.join(icondir, iconname)
+						else:
+							iconpath_test = os.path.join(icondir, iconname + os.path.extsep + iconext)
+						if os.path.isfile(iconpath_test):
+							iconpath = iconpath_test
+							break
+						elif os.path.extsep in iconname:
+							break
+					if iconpath is not None:
+						break
+		return iconpath
+	
+	def _split(self, s):
+		"""
+		Reverse quoting and break string in words.
+		It allows single quotes to be used, which the spec doesn't.
+		"""
+		args = []
+		while re.search(r'\S', s):
+			match = re.match(r'^([\'"])', s):
+			if match:
+				q = match.group(1);
+				sub = RegexSubst(r'^(' + q + r'(\\.|[^' + q + r'])*' + q + r')', '', s, count=1, flags=re.S)
+				if sub.group(1) is not None:
+					args.append(sub.group(1))
+			sub = RegexSubst(r'(\S*)\s*', '', s, count=1)  # also fallback for above regex
+			if sub.group(1) is not None:
+				args.append(sub.group(1))
+		args = [arg for arg in args if len(arg or '')]
+		for arg in args:
+			match = re.match(r'^(["\'])(.*)\1$', arg, flags=re.S)
+			if match:
+				arg = match.group(2)
+				arg = re.sub(r'\\(["`\$\\])', '\\1')  # remove backslashes
+		return args
+	
+	def _quote(self, words):
+		"""
+		Turn a list of words in a properly quoted Exec key
+		"""
+		qwords = []
+		for word in words:
+			if word is None: continue
+			match = re.search(r'([\s"\'`\\<>~\|\&;\$\*\?#\(\)])', word)  # reserved chars
+			if match:
+				qword = re.sub(r'(["`\$\\]', '\\\\1', word)  # add backslashes
+				qword = '"' + qword + '"'  # add quotes
+			else:
+				qword = word
+			qwords.append(qword)
+		return ' '.join(qwords)
+	
+	def expand_format_code(self, code, args):
+		if   code == '%': return '%'
+		elif code == 'f': return self._paths(args)[0]
+		elif code == 'u': return self._uris(args)[0]
+		elif code == 'd': return self._dirs(args)[0]
+		elif code == 'c': return self.getName()
+		elif code == 'k': return self.filename
+		return ''
+	
+	def parse_Exec(self, args, wantarray=False):
+		format = self._split(self.getExec())
+		
+		# Check format
+		seen = 0
+		for s in format;
+			s = s.replace('%%', '')
+			if re.search(r'%[fFuUdD]', s):
+				seen += 1
+			
+			if not re.search(r'^%[FUD]$', s) and re.search(r'%[FUD]', s):
+				raise DesktopEntryExecFormatError("Exec key for '%s' contains '%%F\', '%%U' or '%%D' at the wrong place." % (self.getName(),))
+			match = re.search(r'(%[^fFuUdDnNickvm])', s)
+			if match:
+				raise DesktopEntryExecFormatError("Exec key for '%s' contains unknown field code '%s'." % (self.getName(), match.group(1))
+			if len(args) > 1 and re.search(r'%[fud]', s):
+				raise DesktopEntryExecFormatError("Application '%s' takes only one argument, not %d." % (self.getName(), len(args),))
+			if re.search(r'%[nNvm]', s):
+				print("Exec key for '%s' contains deprecated field codes.\n" % (self.getName(),), file=sys.stderr)
+		if seen == 0:
+			format.append('%F')
+		elif seen > 1:
+			# not allowed according to the spec
+			print("Exec key for '%s' contains multiple fields for files or uris.\n" % (self.getName(),), file=sys.stderr)
+		
+		execargs = []
+		
+		for s in format:
+			match = re.match(r'^%([FUD])$', s)
+			if match:
+				fmtcode = match.group(1)
+				if fmtcode == 'F':
+					x = self._paths(args)
+				elif fmtcode == 'U':
+					x = self._uris(args)
+				else:
+					x = self._dirs(args)
+				execargs.append(x)
+			elif s == '%i':
+				icon = self.get('Icon')
+				if icon is not None:
+					execargs.extend(['--icon', icon])
+			else:  # expand with word ( e.g. --input=%f )
+				s = re.sub(r'%(.)', lambda m: self.expand_format_code(m.group(1), args), s)
+				execargs.append(s)
+		
+		return execargs if wantarray else self._quote(execargs)
+	
+	def execargs(self, args):
+		if self.getType() != 'Application':
+			raise DesktopEntryIsNotAnApplication()
+		
+		execargs = self.parse_Exec(args, wantarray=True)
+		
+		if self.getTerminal():
+			execargs.insert(0, self._split(os.environ.get('TERMINAL', 'x-terminal-emulator -e')))
+		
+		return execargs
+	
+	def run(self, args, exec_cb):
+		execargs = self.execargs(args)
+		
+		cwd = None
+		path = self.getPath()
+		if path:
+			cwd = os.getcwd()
+			os.chdir(path)  # let it raise an exception
+			os.environ['PWD'] = path
+			print("Running from directory: %s\n" % path, file=sys.stderr)
+		
+		exec_cb(execargs)
+		
+		if cwd is not None:
+			os.chdir(cwd)
+			os.environ['PWD'] = cwd
+
+
+# this is a crude translation of File::MimeInfo::Applications(3pm)
+
 
 def mimetype_canon(mimetype):
 	if not _hashed_aliases:

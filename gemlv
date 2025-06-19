@@ -889,9 +889,9 @@ def populate_open_with_menu(parent_menuitem, uri):
 	except:
 		return
 	submenu = Menu()
-	for mimeapp in gemlv.mimeinfo.applications.mime_applications_all('x-scheme-handler/'+scheme):
-		mi = MenuItem(icon=, config=[
-			('connect', ('activate', lambda mi, uri: TODO, uri)),
+	for de in gemlv.mimeinfo.applications.mime_applications_all('x-scheme-handler/'+scheme):
+		mi = StockMenuItem(label=de.getName(), icon_file=de.icon_file(gtk.ICON_SIZE_MENU), config=[
+			('connect', ('activate', lambda mi, de, uri: de, de, uri)),
 		])
 		submenu.append(mi)
 	parent_menuitem.set_submenu(submenu)
@@ -1143,7 +1143,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 				content_description = eml.header['Content-Description'].decoded
 				if content_description:
 					label += '\n' + _("Content Description by sender") + ": %s%s%s" % (PMU_MIME, glib.markup_escape_text(content_description), PMU_MIME_CLOSE)
-				label += '\n' + _("Size") + ": %s" % human_size(eml.size_decoded_approx)
+				label += '\n' + _("Size") + " ≈ %s" % human_size(eml.size_decoded_approx)
 				lbl_right.set_markup(label)
 				load_content_ok = True
 				
@@ -3696,7 +3696,7 @@ def on_after_save_draft():
 
 def update_composer_status_message():
 	if NewEmail is None: return
-	status_msgs = [_("Size") + ": %s" % human_size(NewEmail.size_approx)]
+	status_msgs = [_("Size") + " ≈ %s" % human_size(NewEmail.size_approx)]
 	x_sent_date_last = composer_headers.value[HDR_XSD]
 	if x_sent_date_last:
 		try:

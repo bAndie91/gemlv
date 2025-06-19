@@ -183,14 +183,22 @@ class Menu(gtk.Menu):
 			self.append(mi)
 
 class StockMenuItem(gtk.ImageMenuItem):
-	def __init__(self, stock_id=None, icon_name=None, accel_group=None, label=None, config=[]):
+	def __init__(self, stock_id=None, icon_name=None, icon_file=None, accel_group=None, label=None, config=[]):
 		super(self.__class__, self).__init__(stock_id=stock_id, accel_group=accel_group)
 		if label is not None:
 			self.set_label(label)
+		
+		icon = None
+		if icon_name is not None or icon_file is not None:
+			icon = gtk.Image()
 		if icon_name is not None:
-			i = gtk.Image()
-			i.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
-			self.set_image(i)
+			icon.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
+		elif icon_file is not None:
+			icon.set_from_file(icon_file)
+		
+		if icon is not None:
+			self.set_image(icon)
+		
 		for step in config:
 			method = getattr(self, step[0])
 			method(*step[1])
