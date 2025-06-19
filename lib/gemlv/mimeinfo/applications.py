@@ -117,7 +117,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 			match = re.match('^(["\'])(.*)'+r'\1$', arg, flags=re.S)
 			if match:
 				arg = match.group(2)
-				arg = re.sub(r'\\(["`\$\\])', '\\1')  # remove backslashes
+				arg = re.sub(r'\\(["`\$\\])', lambda m: m.group(1))  # remove backslashes
 		return args
 	
 	def _quote(self, words):
@@ -129,7 +129,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 			if word is None: continue
 			match = re.search('([\s"\'`'+r'\\<>~\|\&;\$\*\?#\(\)])', word)  # reserved chars
 			if match:
-				qword = re.sub(r'(["`\$\\]', '\\\\1', word)  # add backslashes
+				qword = re.sub(r'(["`\$\\])', lambda m: '\\'+m.group(1), word)  # add backslashes
 				qword = '"' + qword + '"'  # add quotes
 			else:
 				qword = word
