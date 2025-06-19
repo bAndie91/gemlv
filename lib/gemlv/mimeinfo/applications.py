@@ -101,9 +101,11 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 			if match:
 				q = match.group(1);
 				sub = RegexSubst(r'^(' + q + r'(\\.|[^' + q + r'])*' + q + r')', '', s, count=1, flags=re.S)
+				s = sub.result
 				if sub.group(1) is not None:
 					args.append(sub.group(1))
 			sub = RegexSubst(r'(\S*)\s*', '', s, count=1)  # also fallback for above regex
+			s = sub.result
 			if sub.group(1) is not None:
 				args.append(sub.group(1))
 		args = [arg for arg in args if len(arg or '')]
@@ -129,6 +131,61 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 				qword = word
 			qwords.append(qword)
 		return ' '.join(qwords)
+	
+	def _uri_to_path(self, uri):
+		import urllib2
+		x = uri.encode('utf8')
+		x = urllib2.unquote(x)
+		return x.decode('utf8')
+	
+	def _path_to_uri(self, path):
+		import urllib2
+		path = os.path.abspath(path)
+		prefix, filename = os.path.split(path)
+		uri = '/'.join([urllib2.quote(path_element) for path_element in os.path.join(prefix, filename).split(os.path.sep)])
+		return uri
+	
+	def _paths(self, args):
+		"""
+		Check if we need to convert file:// uris to paths
+		support file:/path file://localhost/path and file:///path
+		A path like file://host/path is replace by smb://host/path
+		which the app probably can't open
+		"""
+		paths = []
+		for arg in args:
+			sub = RegexSubst(r'^file:(?://localhost/+|/|///+)(?!/)', '/', arg, count=1, flags=re.I)
+			if sub.match:
+				arg = sub.result
+				arg = self._uri_to_path(arg)
+			arg = re.sub(r'^file://(?!/)', 'smb://', arg, count=1, flags=re.I)
+			paths.append(arg)
+		return paths
+	
+	def _dirs(self, args):
+		"""
+		Like _paths, but makes the path a directory
+		"""
+		dirs = []
+		for path in self._paths(args):
+			if os.path.isdir(path):
+				dirs.append(path)
+			else:
+				prefix, filename = os.path.split(path)
+				dirs.append(prefix)
+		return dirs
+	
+	def _uris(self, args):
+		"""
+		Convert paths to file:// uris
+		"""
+		uris = []
+		for arg in args:
+			if re.search(r'^\w+://', arg):
+				uris.append(arg)
+			else:
+				uris.append('file://' + _path_to_uri(arg))
+		return uris
 	
 	def expand_format_code(self, code, args):
 		if   code == '%': return '%'
