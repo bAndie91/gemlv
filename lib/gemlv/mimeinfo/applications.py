@@ -55,6 +55,9 @@ class RegexSubst(object):
 			return None
 
 class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
+	def __repr__(self):
+		return "<%s file=\"%s\">" % (self.__class__.__name__, self.filename)
+	
 	def icon_file(self, preferred_size):
 		iconpath = None
 		iconname = self.getIcon()
@@ -156,46 +159,40 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 		A path like file://host/path is replace by smb://host/path
 		which the app probably can't open
 		"""
-		paths = []
 		for arg in args:
 			sub = RegexSubst(r'^file:(?://localhost/+|/|///+)(?!/)', '/', arg, count=1, flags=re.I)
 			if sub.match:
 				arg = sub.result
 				arg = self._uri_to_path(arg)
 			arg = re.sub(r'^file://(?!/)', 'smb://', arg, count=1, flags=re.I)
-			paths.append(arg)
-		return paths
+			yield arg
 	
 	def _dirs(self, args):
 		"""
 		Like _paths, but makes the path a directory
 		"""
-		dirs = []
 		for path in self._paths(args):
 			if os.path.isdir(path):
-				dirs.append(path)
+				yield path
 			else:
 				prefix, filename = os.path.split(path)
-				dirs.append(prefix)
-		return dirs
+				yield prefix
 	
 	def _uris(self, args):
 		"""
 		Convert paths to file:// uris
 		"""
-		uris = []
 		for arg in args:
-			if re.search(r'^\w+://', arg):
-				uris.append(arg)
+			if re.search(r'^(mailto:|\w+://)', arg):  # File::DesktopEntry(3pm) 0.22 does not take "mailto:" URLs into account, only searches "^\w+://" here.
+				yield arg
 			else:
-				uris.append('file://' + self._path_to_uri(arg))
-		return uris
+				yield 'file://' + self._path_to_uri(arg)
 	
 	def expand_format_code(self, code, args):
 		if   code == '%': return '%'
-		elif code == 'f': return self._paths(args)[0]
-		elif code == 'u': return self._uris(args)[0]
-		elif code == 'd': return self._dirs(args)[0]
+		elif code == 'f': return first(self._paths(args))
+		elif code == 'u': return first(self._uris(args))
+		elif code == 'd': return first(self._dirs(args))
 		elif code == 'c': return self.getName()
 		elif code == 'k': return self.filename
 		return ''
@@ -255,7 +252,7 @@ class DesktopEntry(xdg.DesktopEntry.DesktopEntry):
 		execargs = self.parse_Exec(args, wantarray=True)
 		
 		if self.getTerminal():
-			execargs.insert(0, self._split(os.environ.get('TERMINAL', 'x-terminal-emulator -e')))
+			execargs = self._split(os.environ.get('TERMINAL', 'x-terminal-emulator -e')) + execargs
 		
 		return execargs
 	
@@ -369,7 +366,7 @@ def mimetype_isa(mimetype, parent=None):
 		subc.append('text/plain')
 	if not mimetype.startswith('inode/'):
 		subc.append('application/octet-stream')
-
+	
 	if parent:
 		return len([True for x in subc if x == parent])
 	else:
@@ -382,7 +379,10 @@ def mime_applications(mimetype):
 def mime_applications_all(mimetype):
 	apps = []
 	apps.extend(mime_applications(mimetype))
-	apps.extend([a for a in [mime_applications(m) for m in mimetype_isa(mimetype)] if n is not None])
+	for parent in mimetype_isa(mimetype):
+		for app in mime_applications(parent):
+			if app is not None:
+				apps.append(app)
 	return apps
 
 def _default(mimetype):

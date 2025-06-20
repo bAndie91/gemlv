@@ -874,7 +874,11 @@ def on_hyperlink_event(tag, tview, event, itr):
 				]),
 			]
 			if link.uri.startswith('mailto:'):
-				menuitems.insert(2, StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+				addr = parse_mailto(link.uri)['to'][0].email
+				menuitems.insert(2, StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy Email address"), config=[
+					('connect', ('activate', lambda mi, addr: gtk.Clipboard().set_text(addr), addr)),
+				]))
+				menuitems.insert(3, StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
 					('connect', ('activate', lambda mi, uri: act_add_to_addressbook_manual(AddressLine(MimeDecoded(uri))), link.uri)),
 				]))
 			hyperlink_context_menu.append_menuitems(menuitems)
@@ -888,13 +892,26 @@ def populate_open_with_menu(parent_menuitem, uri):
 		scheme = uri.split(':')[0]
 	except:
 		return
-	submenu = Menu()
+	submenu = gui_toolkits.Menu()
 	for de in gemlv.mimeinfo.applications.mime_applications_all('x-scheme-handler/'+scheme):
 		mi = StockMenuItem(label=de.getName(), icon_file=de.icon_file(gtk.ICON_SIZE_MENU), config=[
-			('connect', ('activate', lambda mi, de, uri: de, de, uri)),
+			('connect', ('activate', open_with_menuitem_clicked, de, uri)),
+			('set_tooltip_text', (de.getExec(),)),
 		])
 		submenu.append(mi)
+	submenu.show_all()
 	parent_menuitem.set_submenu(submenu)
+
+def open_with_menuitem_clicked(mi, de, uri):
+	try:
+		de.run([uri], run_desktopentry)
+	except Exception as e:
+		traceback.print_exc()
+		save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
+		display_error(e)
+
+def run_desktopentry(args):
+	run_async(args[0], args[1:])
 
 def track_mouse_over_textview(tview, event):
 	tbuf = tview.get_buffer()
@@ -2962,10 +2979,17 @@ def show_view_headers(show=True):
 def populate_header_menu(label, menu):
 	selected_link = label.get_current_uri()
 	if selected_link is not None:
-		mi = StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"))
+		open_with_menuitem = StockMenuItem(label=_("Open with..."))
+		populate_open_with_menu(open_with_menuitem, selected_link)
+		menu.append(open_with_menuitem)
+		
 		mailto_al = parse_mailto(selected_link)['to'][0]
-		mi.connect('activate', lambda *_x: act_add_to_addressbook_manual(mailto_al))
-		menu.append(mi)
+		menu.append(StockMenuItem(stock_id=gtk.STOCK_COPY, label=_("Copy Email address"), config=[
+			('connect', ('activate', lambda *_x: gtk.Clipboard().set_text(mailto_al.email))),
+		]))
+		menu.append(StockMenuItem(icon_name='contact-new', label=_("Add to addressbook"), config=[
+			('connect', ('activate', lambda *_x: act_add_to_addressbook_manual(mailto_al))),
+		]))
 	
 	menu.append(gtk.SeparatorMenuItem())
 	mi = gtk.CheckMenuItem(_("Show All Headers"))

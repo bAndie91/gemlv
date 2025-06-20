@@ -194,7 +194,8 @@ class StockMenuItem(gtk.ImageMenuItem):
 		if icon_name is not None:
 			icon.set_from_icon_name(icon_name, gtk.ICON_SIZE_MENU)
 		elif icon_file is not None:
-			icon.set_from_file(icon_file)
+			pxb = gtk.gdk.pixbuf_new_from_file_at_size(icon_file, *gtk.icon_size_lookup(gtk.ICON_SIZE_MENU))
+			icon.set_from_pixbuf(pxb)
 		
 		if icon is not None:
 			self.set_image(icon)

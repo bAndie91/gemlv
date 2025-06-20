@@ -568,3 +568,6 @@ msgstr "Hiba a Queue ID beállítása során az épp szerkesztett és elküldöt
 
 msgid "Open with..."
 msgstr "Megnyitás ezzel..."
+
+msgid "Copy Email address"
+msgstr "Email cím másolása"
