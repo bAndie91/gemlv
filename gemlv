@@ -564,8 +564,7 @@ def get_iterator_from_pos(treeview, x, y):
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
 	saved_font = Props['ui/view/font']
-	if saved_font is not None: change_font(panel_content, saved_font)
-	panel_content.set_data('saved-font', get_current_font(panel_content))
+	if saved_font is not None: panel_content.font = saved_font
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
 
@@ -2347,7 +2346,6 @@ def open_composer(reason):
 	Attachments.clear()
 	
 	win_comp.show_all()
-	panel_edit_message.set_data('saved-font', get_current_font(panel_edit_message))
 	menuitem_composer_show_all_headers.set_active(False)
 	composer_headers.remove_all()
 	
@@ -2870,57 +2868,34 @@ def act_view_source():
 		filt = ('', None, False)
 	load_part(get_part_by_itpath(), filt)
 
-def get_current_font(txtv):
-	pctx = txtv.get_pango_context()
-	fdsc = pctx.get_font_description()
-	s = fdsc.to_string()
-	m = re.search('\s(\d+)(\s|$)', s)
-	if m: pt = int(m.group(1))
-	else: pt = 12
-	return {'family': fdsc.get_family().lower(), 'string': s.lower(), 'size': pt, 'desc': fdsc,}
-
-def act_font_switch(tv):
-	font = get_current_font(tv)
-	if font['family'] != 'monospace':
-		tv.set_data('saved-font', font)
-		f = tv.get_data('saved-font-monospace')
-		if f is None: f = 'monospace 12'
-		else: f = f['string']
+def act_font_switch(tview):
+	propkey = tview.get_data('font-property-key')
+	if tview.font.fixed_width:
+		tview.font = Props[propkey+'-varwidth'] or 'sans 12'
 	else:
-		f = tv.get_data('saved-font')['string']
-	Props['ui/view/font'] = f
-	change_font(tv, f)
+		tview.font = Props[propkey+'-monospace'] or 'monospace 12'
 
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
 	dlg.set_transient_for(gui_toolkits.get_current_window())
 	dlg.set_modal(True)
-	dlg.set_font_name(tv.get_data('saved-font')['string'])
+	dlg.set_font_name(tv.font.string)
 	if dlg.run() == gtk.RESPONSE_OK:
-		font_name = dlg.get_font_name()
-		Props['ui/view/font'] = font_name
-		change_font(tv, font_name)
-		font = get_current_font(tv)
-		if font['family'] == 'monospace':
-			key = 'saved-font-monospace'
-		else:
-			key = 'saved-font'
-		tv.set_data(key, font)
+		tv.font = dlg.get_font_name()
 	dlg.destroy()
+
+def on_textview_font_changed(tview, oldfont, newfont):
+	propkey = tview.get_data('font-property-key')
+	for propkey in propkey, propkey + ('-monospace' if newfont.family == 'monospace' else '-varwidth'):
+		Props[propkey] = newfont.string
 
 def on_scroll_on_button_font(wdg, evt, textview, modmask):
 	if modmask is None or (evt.state & modmask) != 0:
 		delta = +1 if evt.direction == gtk.gdk.SCROLL_UP else -1
-		pctx = textview.get_pango_context()
-		font = pctx.get_font_description()
+		font = textview.font.desc
 		font.set_size(font.get_size() + delta * pango.SCALE)
-		textview.modify_font(font)
-		textview.set_data('saved-font', get_current_font(panel_content))
-		Props['ui/view/font'] = str(font)
+		textview.font = font
 		return True
-
-def change_font(tv, s):
-	tv.modify_font(pango.FontDescription(s))
 
 def on_select_parts(selection):
 	itpaths = selection.get_selected_rows()[1]
@@ -4965,6 +4940,8 @@ panel_content.set_editable(False)
 panel_content.set_wrap_mode(getattr(gtk, 'WRAP_'+((Props['ui/view/body/wrapmode'] or 'WORD').upper().replace('-', '_'))))
 panel_content.connect('notify::wrap-mode', lambda tv, wrapmode: timer2_once(1.5, lambda: Props.__setitem__('ui/view/body/wrapmode', tv.get_wrap_mode().value_nick)))
 panel_content.connect('scroll-event', on_scroll_on_button_font, panel_content, gtk.gdk.CONTROL_MASK)
+panel_content.set_data('font-property-key', 'ui/view/font')
+panel_content.connect('font-changed', on_textview_font_changed)
 setup_textview_for_hyperlinks(panel_content)
 tb_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_controls.set_style(gtk.TOOLBAR_ICONS)
@@ -5126,6 +5103,8 @@ composer_text_buffer.add_pattern_format(r'(?<!\w)_(?!_)([^ ]+?)(?<!_)_(?!\w)', s
 composer_text_buffer.add_pattern_format(r'(?<!\w)((__|\*\*).+?\2)(?!\w)', weight=pango.WEIGHT_BOLD)
 panel_edit_message.connect('scroll-event', on_scroll_on_button_font, panel_edit_message, gtk.gdk.CONTROL_MASK)
 panel_edit_message.connect('populate-popup', populate_composer_textview_menu)
+panel_edit_message.set_data('font-property-key', 'ui/composer/font')
+panel_edit_message.connect('font-changed', on_textview_font_changed)
 frame_edit.set_shadow_type(gtk.SHADOW_IN)
 tb_comp_controls.set_icon_size(gtk.ICON_SIZE_MENU)
 tb_comp_controls.set_style(gtk.TOOLBAR_ICONS)

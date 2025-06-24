@@ -4,6 +4,7 @@ import gtk
 import glib
 from gemlv.constants import *
 import gobject
+import pango
 import re
 from pythonutils import coalesce
 
@@ -445,8 +446,42 @@ def connect_loopless_signal(gobject, signal_name, func, *user_data):
 	handler = gobject.connect(signal_name, _call_loopless_handler, func, data)
 	data['handler-id'] = handler
 
+class Font(object):
+	def __init__(self, fdsc):
+		self.string = fdsc.to_string().lower()
+		m = re.search('\s(\d+)(\s|$)', self.string)
+		if m: pt = int(m.group(1))
+		else: pt = 12
+		self.family = fdsc.get_family().lower()
+		self.size = pt
+		self.desc = fdsc
+	def __str__(self):
+		return self.string
+
 class TextView(gtk.TextView):
+	__gsignals__ = {
+		'font-changed': (gobject.SIGNAL_RUN_LAST, gobject.TYPE_BOOLEAN, (gobject.TYPE_PYOBJECT, gobject.TYPE_PYOBJECT,)),
+	}
+	
 	def cycle_wrap_mode(self, direction=+1, modes=[gtk.WRAP_WORD, gtk.WRAP_WORD_CHAR, gtk.WRAP_NONE]):
 		cur = self.get_wrap_mode()
 		newidx = ((modes.index(cur) + direction) % len(modes)) if cur in modes else 0
 		self.set_wrap_mode(modes[newidx])
+	
+	@property
+	def font(self):
+		pctx = self.get_pango_context()
+		fdsc = pctx.get_font_description()
+		return Font(fdsc)
+	
+	@font.setter
+	def font(self, newfont):
+		oldfont = self.font
+		if isinstance(newfont, Font):
+			f = Font.desc
+		elif isinstance(newfont, basestring):
+			f = pango.FontDescription(newfont)
+		else:
+			f = newfont
+		self.modify_font(f)
+		self.emit('font-changed', oldfont, Font(f))
