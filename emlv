@@ -77,7 +77,15 @@ def display_headers(eml, extra_headers=[]):
 	for hname_patt in headers:
 		for header in eml.headers.items:
 			if wildcardmatch(header.raw_name, hname_patt):
-				hval = header.value.decoded.strip().replace('\n', '\n\t')
+				hval = None
+				if header.raw_name in AddresslistHeaders:
+					try:
+						hval = ', '.join(al.realname + ' <' + al.email + '>' for al in getaddresslines([header.value.encoded]))
+					except Exception as e:
+						traceback.print_exc(e)
+				if hval is None:
+					hval = header.value.decoded
+				hval = hval.strip().replace('\n', '\n\t')
 				output_write(header.raw_name+': '+hval+'\n')
 
 class DecodeIfTTY(object):

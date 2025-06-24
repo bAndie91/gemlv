@@ -4663,9 +4663,6 @@ PartPrimary = None
 PartSecondary = None
 FileChooserLastFolder = os.getcwd()
 
-OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
-SenderHeaders = ['From', 'Reply-To', 'Organization']
-RecipientHeaders = ['To', 'Cc', 'Bcc']
 DateTimeHeaders = ['Date', 'Reply-By', 'Expires', 'Deliver-At-Date']
 PopularHeaders = [HDR_SUBJ]
 AdvancedHeaders = [

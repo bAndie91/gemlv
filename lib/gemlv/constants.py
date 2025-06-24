@@ -40,6 +40,12 @@ HDR_XSD = 'X-Sent-Date'
 HDR_XQID = 'X-Queue-ID'
 HDR_SUBJ = 'Subject'
 
+OriginatorHeaders = ['From', 'Sender', 'Return-Path', 'X-Sender', 'X-X-Sender', 'Reply-To']
+SenderAddressHeaders = ['From', 'Reply-To']
+SenderHeaders = SenderAddressHeaders + ['Organization']
+RecipientHeaders = ['To', 'Cc', 'Bcc']
+AddresslistHeaders = OriginatorHeaders + SenderAddressHeaders + RecipientHeaders
+
 CommonUserInterestedHeaders = [
 	"Return-Path",
 	"X-X-Sender",
