@@ -194,26 +194,37 @@ class cfgparser(object):
 class PropertyTree(dict):
 	def __init__(self, appname):
 		super(self.__class__, self).__init__()
-		self.savedprops = {}
-		self.write_delay = 1.2
+		self.prop_saved = {}
+		self.write_delay = 1.2  # seconds
 		self.APPNAME = appname
-	def _read(self, propname):
+	def _savefile(self, propname):
+		return os.path.join(xdg.BaseDirectory.save_config_path(self.APPNAME), 'prop', propname)
+	def _propfile(self, propname):
+		savefile = self._savefile(propname)
+		if os.path.isfile(savefile):
+			return savefile
+		propfile = None
+		for d in xdg.BaseDirectory.xdg_config_dirs:
+			path = os.path.join(d, self.APPNAME, 'prop', propname)
+			if os.path.exists(path):
+				propfile = path
+				break
+		if propfile is not None:
+			return propfile
+		else:
+			return savefile
+	def __getitem__(self, propname):
 		propvalue = super(self.__class__, self).get(propname)
 		if propvalue is None:
-			for d in xdg.BaseDirectory.xdg_config_dirs:
-				path = os.path.join(d, self.APPNAME, 'prop', propname)
-				if os.path.exists(path):
-					with open(path, 'r') as f:
-						propvalue = f.read()
-						if propname.endswith('.json'):
-							propvalue = json.loads(propvalue)
-					break
-		return propvalue
-	def __getitem__(self, propname):
-		propvalue = self._read(propname)
-		if propvalue is not None:
-			self.savedprops[propname] = propvalue
-			super(self.__class__, self).__setitem__(propname, propvalue)
+			try:
+				f = open(self._propfile(propname), 'r')
+			except (IOError, OSError) as e:
+				pass
+			else:
+				with f:
+					propvalue = f.read()
+					if propname.endswith('.json'):
+						propvalue = json.loads(propvalue)
 		return propvalue
 	def get(self, propname, default):
 		propvalue = self.__getitem__(propname)
@@ -221,18 +232,19 @@ class PropertyTree(dict):
 		return propvalue
 	def __setitem__(self, propname, propvalue):
 		super(self.__class__, self).__setitem__(propname, propvalue)
+		self.prop_saved[propname] = False
 		timer2_once(self.write_delay, self._write_all, reschedule=False)
 	def _write_all(self):
 		for propname, propvalue in self.iteritems():
-			if self.savedprops.get(propname) != propvalue:
-				propfile = os.path.join(xdg.BaseDirectory.save_config_path(self.APPNAME), 'prop', propname)
+			if self.prop_saved.get(propname) == False:
+				propfile = self._savefile(propname)
 				mkdir(os.path.dirname(propfile))
 				if propname.endswith('.json'):
 					propvalue_ondisk = json.dumps(propvalue)
 				else:
 					propvalue_ondisk = str(propvalue)
 				open(propfile, 'w').write(propvalue_ondisk)
-				self.savedprops[propname] = propvalue
+				self.prop_saved[propname] = True
 
 class pipereader(object):
 	def __init__(self, inputstr, cmd, args=[], exitdict=None):
@@ -563,7 +575,7 @@ def get_iterator_from_pos(treeview, x, y):
 
 def win_main_show(widget, event):
 	win_main.disconnect(start_evt)
-	saved_font = Props['ui/view/font']
+	saved_font = Props['ui/view/font-' + Props.get('ui/view/font-slot', 'primary')]
 	if saved_font is not None: panel_content.font = saved_font
 	if cliArgs.FILE:
 		load_file(cliArgs.FILE)
@@ -2868,34 +2880,37 @@ def act_view_source():
 		filt = ('', None, False)
 	load_part(get_part_by_itpath(), filt)
 
-def act_font_switch(tview):
-	propkey = tview.get_data('font-property-key')
-	if tview.font.fixed_width:
-		tview.font = Props[propkey+'-varwidth'] or 'sans 12'
-	else:
-		tview.font = Props[propkey+'-monospace'] or 'monospace 12'
-
 def act_font(tv):
 	dlg = gtk.FontSelectionDialog(_("Select Font"))
 	dlg.set_transient_for(gui_toolkits.get_current_window())
 	dlg.set_modal(True)
-	dlg.set_font_name(tv.font.string)
+	dlg.set_font_name(str(tv.font))
 	if dlg.run() == gtk.RESPONSE_OK:
 		tv.font = dlg.get_font_name()
 	dlg.destroy()
 
-def on_textview_font_changed(tview, oldfont, newfont):
-	propkey = tview.get_data('font-property-key')
-	for propkey in propkey, propkey + ('-monospace' if newfont.family == 'monospace' else '-varwidth'):
-		Props[propkey] = newfont.string
-
 def on_scroll_on_button_font(wdg, evt, textview, modmask):
 	if modmask is None or (evt.state & modmask) != 0:
 		delta = +1 if evt.direction == gtk.gdk.SCROLL_UP else -1
-		font = textview.font.desc
-		font.set_size(font.get_size() + delta * pango.SCALE)
+		font = textview.font
+		font.size_pt += delta
 		textview.font = font
 		return True
+
+def act_font_switch(tview):
+	propkey = tview.get_data('font-property-key')
+	cur_slot = Props[propkey+'-slot'] or 'primary'
+	if cur_slot == 'primary':
+		Props[propkey+'-slot'] = 'secondary'
+		tview.font = Props[propkey+'-secondary'] or 'monospace 12'
+	else:
+		Props[propkey+'-slot'] = 'primary'
+		tview.font = Props[propkey+'-primary'] or 'sans 12'
+
+def on_textview_font_changed(tview, oldfont, newfont):
+	propkey = tview.get_data('font-property-key')
+	cur_slot = Props[propkey+'-slot'] or 'primary'
+	Props[propkey+'-'+cur_slot] = str(newfont)
 
 def on_select_parts(selection):
 	itpaths = selection.get_selected_rows()[1]
