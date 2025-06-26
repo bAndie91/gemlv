@@ -113,9 +113,13 @@ def file_or_stdio(filepath, openmode, stdio):
 		return stdio
 	else:
 		return open(filepath, openmode)
-	
+
+Email_by_filepath = {}
+
 def load_email(filepath):
-	return gemlv.email.Email(email.message_from_file(file_or_stdio(filepath, 'r', sys.stdin)))
+	if filepath not in Email_by_filepath:
+		Email_by_filepath[filepath] = gemlv.email.Email(email.message_from_file(file_or_stdio(filepath, 'r', sys.stdin)))
+	return Email_by_filepath[filepath]
 
 def walk_mime_parts(eml, multipart_path=[]):
 	yield (multipart_path, eml)
@@ -148,6 +152,7 @@ argp_mxg1 = argparser.add_mutually_exclusive_group()
 argp_mxg1.add_argument('--list', '-l', action='store_true', help="List all MIME parts in email files given in FILE.")
 argp_mxg1.add_argument('--extract', '-x', action='append', metavar='INDEX', help="Extract MIME part specified by INDEX to stdout. See --list to get the indices of each part of a MIME-multipart file. This option may be repeated.")
 argp_mxg1.add_argument('--save', '-s', action='append', metavar='INDEX', help="Save MIME part specified by INDEX to file. The output file name is either the attachment's name if it's given, or \"attached-email-INDEX.eml\" if the attachment is itself an Email, or \"attachment-INDEX.dat\" otherwise. This option may be repeated.")
+argp_mxg1.add_argument('--save-type', '-S', action='append', metavar='WILDCARD', help="Save all parts with MIME part matching to WILDCARD, similarly to --save. Examples: image/jpeg, image/*. This option may be repeated.")
 argparser.add_argument('--plaintext', action='store_true', help="Always take the first text/plain part as content. Default is to fall back to text/html if no text/plain found.")
 argparser.add_argument('--html', action='store_true', help="Take the first text/html part as content, not text/plain. Option --body-filter is also recommended here.")
 argparser.add_argument('--header', '-H', action='append', default=[], metavar='HEADER', help="Extra headers to show in read-mode besides "+', '.join(CommonUserInterestedHeaders)+". Wildcards are supported.")
@@ -162,10 +167,10 @@ if option.header_filter == '-': option.header_filter = ''
 if option.body_filter == '-': option.body_filter = ''
 if option.attachments_filter == '-': option.attachments_filter = ''
 
-if option.save and option.body_filter:
+if (option.save or option.save_type) and option.body_filter:
 	raise Exception("Filter options can not be combined with --save.")
 
-if not option.list and not option.extract and not option.save:
+if not option.list and not option.extract and not option.save and not option.save_type:
 	# "read primary part" mode
 	read_mode = True
 else:
@@ -201,6 +206,15 @@ else:
 	
 	if option.save:
 		option.extract = option.save
+	
+	if option.save_type:
+		if not option.extract:
+			option.extract = []
+		for input_file_index, eml in enumerate(load_email(path) for path in option.FILE):
+			for multipart_path, part in walk_mime_parts(eml):
+				indices = "%d.%s" % (input_file_index, '.'.join(str(i) for i in multipart_path))
+				if indices not in option.extract and any(wildcardmatch(part.content_type, save_type) for save_type in option.save_type):
+					option.extract.append(indices)
 	
 	for idx in option.extract:
 		indices = idx.split('.')
@@ -247,7 +261,7 @@ else:
 			for part_idx in map(int, mime_part_indices):
 				part = part.parts[part_idx]
 			
-			if option.save:
+			if option.save or option.save_type:
 				attachment_filename = part.filename
 				output_filename = safe_filename(attachment_filename)
 				if not output_filename:
