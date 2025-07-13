@@ -21,7 +21,7 @@ install: install-libs install-locales install-desktop-files
 	cp -v --no-preserve=ownership mailto-progs/kmail /usr/libexec/gemlv/mailto-progs/
 	
 	mkdir -p /etc/gemlv
-	cp -v --no-preserve=ownership filters.conf /etc/gemlv/
+	cp -v --no-preserve=ownership filters.ini /etc/gemlv/
 	
 	cp -v --no-preserve=ownership emlv /usr/bin/
 	
@@ -95,7 +95,7 @@ uninstall:
 	rmdir -v /usr/libexec/gemlv || true
 	rm -v -r $(LIB_PREFIX)/gemlv/
 	
-	[ ! -e /etc/gemlv/filters.conf ] || rm -v /etc/gemlv/filters.conf
+	[ ! -e /etc/gemlv/filters.ini ] || rm -v /etc/gemlv/filters.ini
 	[ ! -e /etc/gemlv ] || rmdir -v /etc/gemlv
 	
 	[ ! -e /usr/bin/emlv ] || rm -v /usr/bin/emlv
@@ -114,7 +114,7 @@ install-for-user:
 	cp usr/share/applications/gemlv-compose.desktop ~/.local/share/applications/
 	update-desktop-database ~/.local/share/applications/
 	mkdir -p ~/.config/gemlv/
-	cp filters.conf ~/.config/gemlv/
+	cp filters.ini ~/.config/gemlv/
 
 
 .PHONY: uninstall-for-user
@@ -122,7 +122,7 @@ uninstall-for-user:
 	[ ! -e ~/.local/share/applications/gemlv-compose.desktop ] || rm ~/.local/share/applications/gemlv-compose.desktop
 	[ ! -e ~/.local/share/applications/gemlv.desktop ] || rm ~/.local/share/applications/gemlv.desktop
 	update-desktop-database ~/.local/share/applications/
-	[ ! -e ~/.config/gemlv/filters.conf ] || rm ~/.config/gemlv/filters.conf
+	[ ! -e ~/.config/gemlv/filters.ini ] || rm ~/.config/gemlv/filters.ini
 
 
 .PHONY: install-deps

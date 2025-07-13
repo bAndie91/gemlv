@@ -263,3 +263,9 @@ def configured_object(obj, configsteps):
 			method = getattr(obj, methodname)
 			method(*args)
 	return obj
+
+def first_yield(generatorinstance):
+	try:
+		return generatorinstance.next()
+	except StopIteration:
+		return None

@@ -12,6 +12,7 @@ import glib
 import pango
 import locale
 import gettext
+import ConfigParser
 from gemlv.sysutils import warnx
 try:
 	import better_exchook
@@ -115,6 +116,7 @@ from gemlv.pythonutils import merge_overlapping_ranges
 from gemlv.pythonutils import sorted_list_uniq
 from gemlv.pythonutils import filter_nones
 from gemlv.pythonutils import configured_object
+from gemlv.pythonutils import first_yield
 import gemlv.gui_toolkits as gui_toolkits
 from gemlv.gui_toolkits import TextView
 from gemlv.gui_toolkits import Toolbar
@@ -137,59 +139,6 @@ from gemlv.profilepicture import load_avatar_try_multiple_emails_then_fallback
 
 
 ### helper classes, functions ###
-
-
-
-class cfgparser(object):
-	def __init__(self, name, **kvargs):
-		self.var = {'regex': '^\s*([^;#].*)', 'split': [1],}
-		for k in 'regex', 'splitgroups':
-			if not self.var.has_key(k): self.var[k] = None
-			if kvargs.has_key(k): self.var[k] = kvargs[k]
-		suff = '.conf'
-		self.filehandlers = []
-		for t in (os.environ['HOME'], '.config', PROGNAME, name + suff), (os.path.sep, 'etc', PROGNAME, name + suff),:
-			n = os.path.join(*t)
-			try:
-				fh = open(n, 'r')
-				self.filehandlers.append(fh)
-			except IOError:
-				pass
-	
-	def __iter__(self):
-		return self
-	
-	def next(self):
-		if len(self.filehandlers) == 0:
-			raise StopIteration
-		else:
-			fh = self.filehandlers[0]
-			while True:
-				ln = fh.readline()
-				if ln == '':
-					fh.close()
-					self.filehandlers.reverse()
-					self.filehandlers.pop()
-					self.filehandlers.reverse()
-					if len(self.filehandlers) == 0:
-						raise StopIteration
-					fh = self.filehandlers[0]
-					continue
-				m = re.search(self.var['regex'], ln)
-				if m:
-					grps = []
-					for n, grp in enumerate(m.groups()):
-						if n+1 in self.var['splitgroups']:
-							if grp is None:
-								grp = []
-							else:
-								grp = re.split('\s+', grp)
-						grps.append(grp)
-					return grps
-	
-	def __del__(self):
-		for fh in self.filehandlers:
-			fh.close()
 
 class PropertyTree(dict):
 	def __init__(self, appname):
@@ -1135,7 +1084,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		lbl_content_location.hide()
 	
 	if filt is None:
-		filt = get_filter_by_mime(eml.content_type.main, eml.content_type.sub)
+		filt = first_yield(get_filters_by_mime(eml.content_type))
 	
 	if filt is None:
 		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
@@ -1181,19 +1130,18 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			
 			if load_content_ok:
 				spanel_content.hide()
-	else:
-		cmd, args, binary = filt[:]
+	else:  # filt is not None
 		try:
-			if binary:
-				content = get_content_any(eml)
-			else:
+			if filt.wants_text_input:
 				content = get_content_readably(eml)
+			else:
+				content = get_content_any(eml)
 		except Exception as e:
 			save_exception_traceback(e, traceback.extract_stack(), traceback.format_exc())
 			display_error(e)
 			raise
 		
-		if cmd == '':
+		if not filt.command:
 			panel_content.set_data('view-unfiltered', True)
 			try:
 				set_content_text(content)
@@ -1206,7 +1154,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			bufr = panel_content.get_buffer()
 			bufr.set_text('')
 			loaded_text = ''
-			for s in pipereader(content, cmd, args):
+			for s in pipereader(content, filt.command[0], *filt.command[1:]):
 				bufr.insert(bufr.get_end_iter(), s)
 				loaded_text += s
 			panel_content.set_sensitive(True)
@@ -1432,32 +1380,60 @@ def get_headers_markup(eml):
 		
 	return '\n'.join(display_lines)
 
-def get_filters_by_mime(main, sub, all=True):
-	filters = []
-	for m, s, marks, cmd, args in cfgparser('filters', regex='^\s*([^;#][^\s/]*)/(\S+)\s+([!\$]*)(\S+)\s*(.+)?', splitgroups=[5]):
-		if wildcardmatch(main, m) and wildcardmatch(sub, s):
-			isbin = marks.find('!')>-1
-			isshell = marks.find('$')>-1
-			e = None
-			if cmd == '-':
-				e = ('', None, isbin)
-			else:
-				if isshell:
-					e = ('sh', ['-c', ' '.join([cmd]+args)], isbin)
-				else:
-					if which(cmd):
-						e = (cmd, args, isbin)
-			if e is not None:
-				if all:
-					filters.append(e)
-				else:
-					return e
-	if all:
-		return filters
-	return None
+class ContentTypeFilter(object):
+	def __init__(self, name, command_raw, via_shell, wants_text_input):
+		self.name = name
+		self.wants_text_input = wants_text_input
+		if via_shell:
+			self.command = ['sh', '-c', command_raw]
+		else:
+			self.command = command_raw.split()
 
-def get_filter_by_mime(main, sub):
-	return get_filters_by_mime(main, sub, all=False)
+class IniFile(object):
+	def __init__(self, filepath):
+		self.cp = ConfigParser.ConfigParser()
+		self.cp.read(filter_config_file)
+	def __getitems__(self):
+		return dict([(section, IniFileSection(self, section)) for section in self.cp.sections()])
+
+class IniFileSection(object):
+	STRING = 0
+	BOOL = 1
+	INT = 2
+	FLOAT = 3
+	
+	def __init__(self, inifile, section):
+		self.inifile = inifile
+		self.section = section
+	def __getitems__(self):
+		return dict(self.inifile.cp.items(self.section))
+	def __getitem__(self, key, type=self.STRING):
+		if self.inifile.cp.has_option(self.section, key):
+			if type == self.BOOL:
+				return self.inifile.cp.getboolean(self.section, key)
+			elif type == self.INT:
+				return self.inifile.cp.getint(self.section, key)
+			elif type == self.FLOAT:
+				return self.inifile.cp.getfloat(self.section, key)
+			else:
+				return self.inifile.cp.get(self.section, key)
+		else:
+			raise KeyError(key)
+	def get(self, key, default=None, type=self.STRING):
+		try:
+			return self.__getitem__(key, type)
+		except KeyError:
+			return default
+
+def get_filters_by_mime(mimetype):
+	filter_config_file = xdg.BaseDirectory.load_first_config(PROGNAME, 'filters.ini')
+	for filter_label, _filter in IniFile(filter_config_file):
+		if any(wildcardmatch(mimetype, mimetype_pattern) for mimetype_pattern in _filter['mime'].split()):
+			via_shell = _filter.get('shell', type=IniFileSection.BOOL, default=False)
+			wants_text_input = _filter.get('text_input', type=IniFileSection.BOOL, default=False)
+			command_raw = _filter['command']
+			filter_obj = ContentTypeFilter(filter_label, command_raw, via_shell, wants_text_input)
+			yield filter_obj
 
 def sighandler(sign, frame):
 	if sign == signal.SIGTERM:
@@ -2991,16 +2967,10 @@ def populate_header_menu(label, menu):
 def populate_filters_menu(eml):
 	for mi in menu_filters.children():
 		menu_filters.remove(mi)
-	uniqfilt = {}
 	rmi_group = None
-	for filt in get_filters_by_mime(eml.content_type.main, eml.content_type.sub):
-		if filt[0] == '': continue
-		if uniqfilt.has_key(filt[0]) and uniqfilt[filt[0]] == filt[1]: continue
-		uniqfilt[filt[0]] = filt[1]
-		lbl = filt[0]
-		if lbl == 'sh':
-			lbl = ' '.join(re.findall('(^\S+|\d*[<>]+(?:&\d+|\s*\S+)|[;\|&]+\s*\S+)', filt[1][1]))
-		mi = gtk.RadioMenuItem(group=rmi_group, label=lbl, use_underline=False)
+	for filt in get_filters_by_mime(eml.content_type):
+		if not filt.command: continue
+		mi = gtk.RadioMenuItem(group=rmi_group, label=filt.name, use_underline=False)
 		if rmi_group is None: mi.set_active(True)  # check the first menu item on menu creation
 		mi.connect('activate', filters_menu_filter_selected, eml, filt)
 		menu_filters.append(mi)
