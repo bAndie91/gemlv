@@ -1154,7 +1154,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			bufr = panel_content.get_buffer()
 			bufr.set_text('')
 			loaded_text = ''
-			for s in pipereader(content, filt.command[0], *filt.command[1:]):
+			for s in pipereader(content, filt.command[0], filt.command[1:]):
 				bufr.insert(bufr.get_end_iter(), s)
 				loaded_text += s
 			panel_content.set_sensitive(True)
@@ -1388,15 +1388,22 @@ class ContentTypeFilter(object):
 			self.command = ['sh', '-c', command_raw]
 		else:
 			self.command = command_raw.split()
+	def __repr__(self):
+		return '<%s name=%s>' % (self.__class__.__name__, self.name)
 
-class IniFile(object):
+class IniFile(dict):
 	def __init__(self, filepath):
 		self.cp = ConfigParser.ConfigParser()
-		self.cp.read(filter_config_file)
-	def __getitems__(self):
-		return dict([(section, IniFileSection(self, section)) for section in self.cp.sections()])
+		try:
+			self.cp.read(filepath)
+		except:
+			# don't fail if file not found, just reflect emptiness.
+			pass
+	def __iter__(self):
+		for section in self.cp.sections():
+			yield (section, IniFileSection(self, section))
 
-class IniFileSection(object):
+class IniFileSection(dict):
 	STRING = 0
 	BOOL = 1
 	INT = 2
@@ -1405,9 +1412,10 @@ class IniFileSection(object):
 	def __init__(self, inifile, section):
 		self.inifile = inifile
 		self.section = section
-	def __getitems__(self):
-		return dict(self.inifile.cp.items(self.section))
-	def __getitem__(self, key, type=self.STRING):
+	def __iter__(self):
+		for item in self.inifile.cp.items(self.section):
+			yield item
+	def __getitem__(self, key, type=None):
 		if self.inifile.cp.has_option(self.section, key):
 			if type == self.BOOL:
 				return self.inifile.cp.getboolean(self.section, key)
@@ -1419,19 +1427,21 @@ class IniFileSection(object):
 				return self.inifile.cp.get(self.section, key)
 		else:
 			raise KeyError(key)
-	def get(self, key, default=None, type=self.STRING):
+	def get(self, key, default=None, type=None):
 		try:
 			return self.__getitem__(key, type)
 		except KeyError:
 			return default
+	def __repr__(self):
+		return '<%s section=%s>' % (self.__class__.__name__, self.section)
 
 def get_filters_by_mime(mimetype):
 	filter_config_file = xdg.BaseDirectory.load_first_config(PROGNAME, 'filters.ini')
-	for filter_label, _filter in IniFile(filter_config_file):
-		if any(wildcardmatch(mimetype, mimetype_pattern) for mimetype_pattern in _filter['mime'].split()):
-			via_shell = _filter.get('shell', type=IniFileSection.BOOL, default=False)
-			wants_text_input = _filter.get('text_input', type=IniFileSection.BOOL, default=False)
-			command_raw = _filter['command']
+	for filter_label, filter_sect in IniFile(filter_config_file):
+		if any(wildcardmatch(mimetype, mimetype_pattern) for mimetype_pattern in filter_sect['mime'].split()):
+			via_shell = filter_sect.get('via_shell', type=IniFileSection.BOOL, default=False)
+			wants_text_input = filter_sect.get('text_input', type=IniFileSection.BOOL, default=False)
+			command_raw = filter_sect['command']
 			filter_obj = ContentTypeFilter(filter_label, command_raw, via_shell, wants_text_input)
 			yield filter_obj
 
@@ -2853,7 +2863,7 @@ def act_view_source():
 	if panel_content.get_data('view-unfiltered'):
 		filt = None
 	else:
-		filt = ('', None, False)
+		filt = ContentTypeFilter(None, '', via_shell=False, wants_text_input=True)
 	load_part(get_part_by_itpath(), filt)
 
 def act_font(tv):
