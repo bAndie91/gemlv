@@ -22,6 +22,8 @@ class LazyLoad(object):
 		self.args = args
 		self.kwargs = kwargs
 		self.result = None
+	def __repr__(self):
+		return '<%s %s(*%s, **%s) = %s>' % (self.__class__.__name__, self.func.__name__, self.args, self.kwargs, repr(self.result))
 	def __str__(self):
 		if self.result is None:
 			self.result = self.func(*self.args, **self.kwargs)
