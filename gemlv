@@ -67,6 +67,7 @@ except ImportError:
 	fuzzywuzzy = None
 import uuid
 import xdg.BaseDirectory
+xdg.BaseDirectory.xdg_config_dirs.append('/etc')
 import gemlv.mimeinfo.applications  # will move up from under the gemlv namespace
 try:
 	import gemlv.imagerotation
