@@ -1088,7 +1088,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		filt = first_yield(get_filters_by_mime(eml.content_type))
 	
 	if filt is None:
-		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
+		if eml.is_multipart():
 			try:
 				text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 				set_content_text(text)
@@ -1102,7 +1102,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			if eml.content_type.main == 'image':
 				image_data = eml.payload_decoded
 				loader = gtk.gdk.PixbufLoader()
-				loader.connect('area-updated', on_content_image_loader_update, image_data)
+				loader.connect('closed', on_content_image_loader_update, image_data)
 				try:
 					loader.write(image_data)
 				except Exception as e:
@@ -1182,7 +1182,7 @@ def on_window_configure(widget, event):
 	for k, v in ('position/x', event.x), ('position/y', event.y), ('width', event.width), ('height', event.height):
 		Props['ui/%s/%s' % (winname, k)] = v
 
-def on_content_image_loader_update(loader, x, y, w, h, image_data):
+def on_content_image_loader_update(loader, image_data):
 	pxb = loader.get_pixbuf()
 	if 'gemlv.imagerotation' in sys.modules:
 		imagerotator = gemlv.imagerotation.Image(image_data)
