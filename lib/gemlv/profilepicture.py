@@ -7,6 +7,7 @@ import gtk.gdk
 from gemlv.sysutils import warnx
 import re
 from gemlv.pythonutils import uniq
+import traceback
 
 multi_url_host_delimiter = ' '
 
@@ -29,6 +30,9 @@ class LazyLoad(object):
 			self.result = self.func(*self.args, **self.kwargs)
 		return self.result
 
+class NoLibravatarServersFound(Exception):
+	pass
+
 def libravatar_servers(srv_name):
 	"""
 	returns the given SRV record's target domain and port number in TARGET:PORT format,
@@ -38,9 +42,13 @@ def libravatar_servers(srv_name):
 	import dns.exception
 	try:
 		answer = dns.resolver.query(srv_name, 'SRV')
-	except dns.exception.DNSException:
-		return ''
+	except dns.exception.DNSException as lower_exception:
+		exc = NoLibravatarServersFound(srv_name)
+		exc.lower_exception = lower_exception
+		raise exc
 	else:
+		if not answer.rrset.items:
+			raise NoLibravatarServersFound(srv_name)
 		return multi_url_host_delimiter.join(['%s:%d' % (item.target.to_text().rstrip('.'), item.port) for item in answer.rrset.items])
 
 class UnknownTemplateVariable(Exception):
@@ -130,7 +138,12 @@ def load_avatar(email_address, callback, url_templates=None, url_template_parame
 	callback('init')
 	
 	for url_template in url_templates:
-		multi_url = re.sub(r'\{(.+?)\}', lambda match: template_replacer(match.group(1), tmpl_vars), url_template)
+		try:
+			multi_url = re.sub(r'\{(.+?)\}', lambda match: template_replacer(match.group(1), tmpl_vars), url_template)
+		except Exception as e:
+			traceback.print_exc(e)
+			continue
+		
 		multi_url_parts = urllib2.urlparse.urlparse(multi_url)
 		hosts = multi_url_parts.netloc.split(multi_url_host_delimiter)
 		for host in hosts:

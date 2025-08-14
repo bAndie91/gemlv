@@ -12,6 +12,7 @@ import glib
 import pango
 import locale
 import gettext
+import json
 import ConfigParser
 from gemlv.sysutils import warnx
 try:
