@@ -325,5 +325,9 @@ optional arguments:
 1. clone the repo
 2. use [git-bug](https://github.com/git-bug/git-bug) to open a new ticket in this repo
 3. find one or more person in the commit history to make contact with, then either
-4.a. send your newly created `git-bug` ticket (or patch if you already propose a code change) via email, or
-4.b. send the URL of your git clone to a contributor (via email or other channel), and request them to pull (`git-bug` issues and/or branches as well) from you.
+
+   a. send the URL of your git clone to the other contributor(s), via E-mail or other channel, 
+   requesting them to pull (`git-bug` issues and/or branches as well) from you.
+   This is the preferred way, since it's easier to update your ticket, amend changes, and/or contibute later on.
+   
+   b. or, if you don't provide your repo's location, send your newly created `git-bug` ticket (or patch if you already propose a code change) via E-mail.
