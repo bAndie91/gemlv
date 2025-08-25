@@ -552,6 +552,26 @@ def email_from_file(filename):
 	eml = email.message_from_file(fh)
 	return gemlv.email.Email(eml), fh
 
+def add_email_to_gtk_recent_list(filepath, eml):
+	try:
+		add_file_to_gtk_recent_list(filepath, eml.header[HDR_SUBJ].decoded.encode('UTF-8'))
+	except Exception as e:
+		traceback.print_exc()
+
+def add_file_to_gtk_recent_list(path, display_name = None):
+	rmag = gtk.recent_manager_get_default()
+	metadata = {
+		'mime_type': MIMETYPE_EMAIL,
+		'app_name': PROGNAME,
+		'app_exec': "%s '%s'" % (PROGNAME, path),
+	}
+	if display_name is not None:
+		metadata['display_name'] = display_name
+	rmag.add_full(g_filename_to_uri(path), metadata)
+
+def g_filename_to_uri(filename):
+	return 'file://' + urllib2.quote(os.path.abspath(filename))
+
 def avatar_loader_callback(stage, result=None):
 	if stage == 'init':
 		panel_view_avatar.show_all()
@@ -571,7 +591,7 @@ def load_file(filename):
 	global LeafParts
 	TheEmail, fh = email_from_file(filename)
 	if TheEmail is None: return
-	TheEmail = gemlv.email.Email(TheEmail)
+	add_email_to_gtk_recent_list(filename, TheEmail)
 	win_main.set_data('email-file-handle', fh)
 	win_main.set_data('email-file', filename)
 	update_window_title(win_main, filename, TheEmail.header[HDR_SUBJ].decoded)
@@ -5204,6 +5224,8 @@ if cliArgs.compose:
 			fh.close()
 		except RuntimeError:
 			sys.exit(1)
+		else:
+			add_email_to_gtk_recent_list(cliArgs.FILE, edit_eml)
 		del fh
 		
 		# Import headers.
