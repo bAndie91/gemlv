@@ -2441,7 +2441,7 @@ def cb_addressbook_load_first_hit(current, userdata):
 def guess_my_addressline():
 	"guess what is the user's address line to which the currently opened email is sent"
 	if TheEmail is None: return AddressLine('')
-	possible_addressline = AddressLine(next(addr for addr in (TheEmail.header[hname].decoded for hname in ['To', 'Envelope-To', 'Delivered-To']) if addr is not None))
+	possible_addressline = AddressLine(next(addr for addr in (TheEmail.header_earliest[hname].decoded for hname in ['Delivered-To', 'Envelope-To', 'To']) if addr is not None))
 	realname = None
 	if possible_addressline.realname.strip():
 		realname = possible_addressline.realname
