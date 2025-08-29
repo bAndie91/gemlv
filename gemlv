@@ -2441,26 +2441,32 @@ def cb_addressbook_load_first_hit(current, userdata):
 def guess_my_addressline():
 	"guess what is the user's address line to which the currently opened email is sent"
 	if TheEmail is None: return AddressLine('')
-	addr = TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
+	possible_addressline = AddressLine(next(addr for addr in (TheEmail.header[hname].decoded for hname in ['To', 'Envelope-To', 'Delivered-To']) if addr is not None))
 	realname = None
-	# lookup addr email address in the current email and take the associated realname if any
-	for hname in RecipientHeaders + OriginatorHeaders:
-		for addrline in getaddresslines(TheEmail.headers[hname].encoded):
-			if addrline.email == addr and addrline.realname.strip():
-				realname = addrline.realname
+	if possible_addressline.realname.strip():
+		realname = possible_addressline.realname
+	else:
+		# lookup addr email address in the current email and take the associated realname if any
+		for hname in RecipientHeaders + OriginatorHeaders:
+			for addrline in getaddresslines(TheEmail.headers[hname].encoded):
+				if addrline.email.lower() == possible_addressline.email.lower() and addrline.realname.strip():
+					warnx("taking the user's real name from the current email's %s header" % (hname,))
+					realname = addrline.realname
+					break
+			if realname is not None:
 				break
-		if realname is not None:
-			break
-	# lookup addr email address in the user's addressbook and take realname from there
-	if realname is None:
-		abookdata = {'stop_at_email': addr}
-		gemlv.addressbook.load(callback = cb_addressbook_load_first_hit, userdata = abookdata, gettext = _)
-		if 'result' in abookdata:
-			realname = abookdata['result'].realname
-	# last resort: take realname from the system
-	if realname is None:
-		realname = gemlv.utils.get_gecos_name()
-	return AddressLine((MimeDecoded(realname), addr))
+		# lookup addr email address in the user's addressbook and take realname from there
+		if realname is None:
+			abookdata = {'stop_at_email': possible_addressline.email}
+			gemlv.addressbook.load(callback = cb_addressbook_load_first_hit, userdata = abookdata, gettext = _)
+			if 'result' in abookdata:
+				warnx("taking the user's real name from the addressbook")
+				realname = abookdata['result'].realname
+		# last resort: take realname from the system
+		if realname is None:
+			warnx("taking the user's real name from the system GECOS records")
+			realname = gemlv.utils.get_gecos_name()
+	return AddressLine((MimeDecoded(realname), possible_addressline.email))
 
 def guess_reply_addresslines():
 	if TheEmail is not None:
