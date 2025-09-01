@@ -1244,6 +1244,11 @@ def get_header_links(s, schemata):
 	 - comment (if any)
 	 - other fields (to, cc, bcc, subject, body, etc.) in case of "mailto:..." links
 	"""
+	
+	field_name_alias = {
+		'attachment': 'attach',  # take 'attachment' as an alias of 'attach', so 'attach' will be used as canonical within gemlv
+	}
+	
 	# RFC2369
 	links = []
 	linkdefs = re.findall('(?:\(([^)]+)\))?\s*<([^>]+)>\s*(?:\(([^)]+)\))?', s)
@@ -1266,6 +1271,8 @@ def get_header_links(s, schemata):
 				link['attach'] = []
 				for field_name, field_values in urlparse.parse_qs(uriparts.query).iteritems():
 					field_name = field_name.lower()
+					if field_name in field_name_alias:
+						field_name = field_name_alias[field_name]
 					if field_name in ['uri', 'scheme', 'comment']:
 						# ignore as these are reserved keys
 						# TODO: don't put user input data directly in link, but in eg. link['fields']
@@ -2396,7 +2403,7 @@ def add_composer_agent_headers():
 
 def add_composer_mailto(mailto, acceptablefields):
 	for field in acceptablefields:
-		if field in mailto:
+		if field in mailto and mailto[field]:
 			header = gemlv.email.Header(field).name
 			if field in MultiRecipientsMailtoFields:
 				composer_headers.add_multi(header, mailto[field])
@@ -2405,8 +2412,11 @@ def add_composer_mailto(mailto, acceptablefields):
 			elif field == 'body':
 				set_composer_text(mailto[field])
 			elif field == 'attach':
-				for uripath in mailto['attach']:
-					fspath = file_uri_to_path(uripath)
+				for path in mailto[field]:
+					if path.startswith('/'):
+						fspath = path
+					else:
+						fspath = file_uri_to_path(path)
 					attach_path(fspath, fspath)
 			else:
 				composer_headers.add(header, mailto[field])
@@ -4773,6 +4783,7 @@ argparser.add_argument('--subject', metavar='STRING', help=_("Subject"))
 argparser.add_argument('--message', '--body', metavar='STRING', help=_("Message body"))
 argparser.add_argument('--mailto', metavar='URL', help=_("Full 'mailto:' link"))
 argparser.add_argument('--attach', '--attachment', metavar='FILE', action='append', help=_("Attachment file's path, repeatable"))
+argparser.add_argument('--attachments', metavar='FILES', nargs='+', action='append', help=_("One or more attachment file paths"))
 argparser.add_argument('--opener', metavar='COMMAND', default='mimeopen-gui', help=_("File opener command"))
 argparser.add_argument('--header', metavar='STRING', action='append', help=_("Add custom header(s) to the new Email"))
 argparser.add_argument('FILE', nargs='?', help=_("Raw Email file for read or continue editing"))

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Send by Email (gemlv)
+Exec=gemlv --compose --attachments %F
+Icon=mail-message-new
+Terminal=false
+Type=Application
+Categories=Network;Communication;Email;
+MimeType=x-scheme-handler/mailto;
+StartupNotify=true

@@ -36,6 +36,7 @@ install: install-libs install-locales install-desktop-files
 DESKTOP_FILES = \
   usr/share/applications/gemlv.desktop \
   usr/share/applications/gemlv-compose.desktop \
+  usr/share/applications/gemlv-sendto.desktop \
   usr/share/xfce4/helpers/gemlv.desktop \
   usr/share/menu/gemlv
 DESKTOP_FILE_TARGETS = $(addprefix /,$(DESKTOP_FILES))
