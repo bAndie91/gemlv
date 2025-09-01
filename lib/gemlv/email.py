@@ -153,7 +153,7 @@ class HeaderValue(MimeTextValue):
 	
 	def _set_header_value_on_email(self, old, new):
 		if self._ll_email.__contains__(self._header.name):
-			# if there are multiple headers with the same name, replce that one
+			# if there are multiple headers with the same name, replace that one
 			# which this HeaderValue represents
 			for index, header_tuple in enumerate(self._ll_email._headers):
 				hname, hval = header_tuple
@@ -310,11 +310,24 @@ class HeaderAccessor(object):
 		self._ll_email = self._hl_email._ll_email
 
 class SingularHeaderAccessor(HeaderAccessor):
+	def __init__(self, email_obj, duplicate_header_index=0):
+		super(self.__class__, self).__init__(email_obj)
+		self.duplicate_header_index = duplicate_header_index
+	
 	def __getitem__(self, headername):
-		encoded_value = self._ll_email.get(headername, '')
+		headers = self._ll_email.get_all(headername, [])
+		idx = self.duplicate_header_index
+		if idx < 0: idx += len(headers)
+		if 0 <= idx < len(headers):
+			encoded_value = headers[self.duplicate_header_index]
+		else:
+			encoded_value = ''
 		return Header(headername, encoded_value, self._hl_email)
 	
 	def __setitem__(self, headername, value):
+		"""when there are more than 1 header with the same name,
+		__setitem__ removes all other headers, so there will remain
+		only 1 with this name"""
 		assert isinstance(value, HeaderValue)
 		self._ll_email.__delitem__(headername)
 		self[headername].value = value
@@ -418,6 +431,18 @@ class Email(object):
 	@property
 	def header(self):
 		return SingularHeaderAccessor(self)
+	
+	@property
+	def header_latest(self):
+		# for headers with the same name, conventionally the one more to the start of the file
+		# is the one added later
+		return SingularHeaderAccessor(self, duplicate_header_index=0)
+	
+	@property
+	def header_earliest(self):
+		# for headers with the same name, conventionally the one more to the end of the file
+		# is the one added earlier
+		return SingularHeaderAccessor(self, duplicate_header_index=-1)
 	
 	@property
 	def headers(self):

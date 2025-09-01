@@ -12,6 +12,7 @@ import glib
 import pango
 import locale
 import gettext
+import json
 import ConfigParser
 from gemlv.sysutils import warnx
 try:
@@ -551,6 +552,26 @@ def email_from_file(filename):
 	eml = email.message_from_file(fh)
 	return gemlv.email.Email(eml), fh
 
+def add_email_to_gtk_recent_list(filepath, eml):
+	try:
+		add_file_to_gtk_recent_list(filepath, eml.header[HDR_SUBJ].decoded.encode('UTF-8'))
+	except Exception as e:
+		traceback.print_exc()
+
+def add_file_to_gtk_recent_list(path, display_name = None):
+	rmag = gtk.recent_manager_get_default()
+	metadata = {
+		'mime_type': MIMETYPE_EMAIL,
+		'app_name': PROGNAME,
+		'app_exec': "%s '%s'" % (PROGNAME, path),
+	}
+	if display_name is not None:
+		metadata['display_name'] = display_name
+	rmag.add_full(g_filename_to_uri(path), metadata)
+
+def g_filename_to_uri(filename):
+	return 'file://' + urllib2.quote(os.path.abspath(filename))
+
 def avatar_loader_callback(stage, result=None):
 	if stage == 'init':
 		panel_view_avatar.show_all()
@@ -570,7 +591,7 @@ def load_file(filename):
 	global LeafParts
 	TheEmail, fh = email_from_file(filename)
 	if TheEmail is None: return
-	TheEmail = gemlv.email.Email(TheEmail)
+	add_email_to_gtk_recent_list(filename, TheEmail)
 	win_main.set_data('email-file-handle', fh)
 	win_main.set_data('email-file', filename)
 	update_window_title(win_main, filename, TheEmail.header[HDR_SUBJ].decoded)
@@ -1088,7 +1109,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 		filt = first_yield(get_filters_by_mime(eml.content_type))
 	
 	if filt is None:
-		if eml.is_multipart() and all(x not in [None, ''] for x in [eml.preamble, eml.epilogue]):
+		if eml.is_multipart():
 			try:
 				text = decode_readably('\n'.join([eml.preamble or '', eml.epilogue or '']), eml)
 				set_content_text(text)
@@ -1102,7 +1123,7 @@ def load_part(eml, filt=None, bypass_signature_verify=False):
 			if eml.content_type.main == 'image':
 				image_data = eml.payload_decoded
 				loader = gtk.gdk.PixbufLoader()
-				loader.connect('area-updated', on_content_image_loader_update, image_data)
+				loader.connect('closed', on_content_image_loader_update, image_data)
 				try:
 					loader.write(image_data)
 				except Exception as e:
@@ -1182,7 +1203,7 @@ def on_window_configure(widget, event):
 	for k, v in ('position/x', event.x), ('position/y', event.y), ('width', event.width), ('height', event.height):
 		Props['ui/%s/%s' % (winname, k)] = v
 
-def on_content_image_loader_update(loader, x, y, w, h, image_data):
+def on_content_image_loader_update(loader, image_data):
 	pxb = loader.get_pixbuf()
 	if 'gemlv.imagerotation' in sys.modules:
 		imagerotator = gemlv.imagerotation.Image(image_data)
@@ -2430,26 +2451,32 @@ def cb_addressbook_load_first_hit(current, userdata):
 def guess_my_addressline():
 	"guess what is the user's address line to which the currently opened email is sent"
 	if TheEmail is None: return AddressLine('')
-	addr = TheEmail.header['Envelope-To'].decoded or TheEmail.header['Delivered-To'].decoded
+	possible_addressline = AddressLine(next(addr for addr in (TheEmail.header_earliest[hname].decoded for hname in ['Delivered-To', 'Envelope-To', 'To']) if addr is not None))
 	realname = None
-	# lookup addr email address in the current email and take the associated realname if any
-	for hname in RecipientHeaders + OriginatorHeaders:
-		for addrline in getaddresslines(TheEmail.headers[hname].encoded):
-			if addrline.email == addr and addrline.realname.strip():
-				realname = addrline.realname
+	if possible_addressline.realname.strip():
+		realname = possible_addressline.realname
+	else:
+		# lookup addr email address in the current email and take the associated realname if any
+		for hname in RecipientHeaders + OriginatorHeaders:
+			for addrline in getaddresslines(TheEmail.headers[hname].encoded):
+				if addrline.email.lower() == possible_addressline.email.lower() and addrline.realname.strip():
+					warnx("taking the user's real name from the current email's %s header" % (hname,))
+					realname = addrline.realname
+					break
+			if realname is not None:
 				break
-		if realname is not None:
-			break
-	# lookup addr email address in the user's addressbook and take realname from there
-	if realname is None:
-		abookdata = {'stop_at_email': addr}
-		gemlv.addressbook.load(callback = cb_addressbook_load_first_hit, userdata = abookdata, gettext = _)
-		if 'result' in abookdata:
-			realname = abookdata['result'].realname
-	# last resort: take realname from the system
-	if realname is None:
-		realname = gemlv.utils.get_gecos_name()
-	return AddressLine((MimeDecoded(realname), addr))
+		# lookup addr email address in the user's addressbook and take realname from there
+		if realname is None:
+			abookdata = {'stop_at_email': possible_addressline.email}
+			gemlv.addressbook.load(callback = cb_addressbook_load_first_hit, userdata = abookdata, gettext = _)
+			if 'result' in abookdata:
+				warnx("taking the user's real name from the addressbook")
+				realname = abookdata['result'].realname
+		# last resort: take realname from the system
+		if realname is None:
+			warnx("taking the user's real name from the system GECOS records")
+			realname = gemlv.utils.get_gecos_name()
+	return AddressLine((MimeDecoded(realname), possible_addressline.email))
 
 def guess_reply_addresslines():
 	if TheEmail is not None:
@@ -5214,6 +5241,8 @@ if cliArgs.compose:
 			fh.close()
 		except RuntimeError:
 			sys.exit(1)
+		else:
+			add_email_to_gtk_recent_list(cliArgs.FILE, edit_eml)
 		del fh
 		
 		# Import headers.

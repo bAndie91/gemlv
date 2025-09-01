@@ -4,12 +4,15 @@ use warnings;
 
 open $fh, '+<', "README.md" or die $!;
 
-LOOP:
+SCAN_SECTION:
 while(<$fh>)
 {
-	if($_ eq '## CLI options'."\n")
+	if(/^#+ CLI options \((.+?)\)/)
 	{
-		$insert_pos = undef;
+		my $prog = $1;
+		warn "insert $prog usage help ...\n";
+		my $insert_pos = undef;
+		SCAN_CODEBLOCK:
 		while(<$fh>)
 		{
 			if($_ eq '```'."\n")
@@ -22,16 +25,19 @@ while(<$fh>)
 				{
 					$/ = undef;
 					$document_rest = $_ . <$fh>;
+					$/ = "\n";
 					
 					seek $fh, $insert_pos, 0 or die $!;
 					
 					$ENV{'LANGUAGE'} = 'C';
-					open $ph, '-|', "./gemlv", "--help" or die $!;
+					open $ph, '-|', "./".$prog, "--help" or die $!;
 					print {$fh} <$ph>;
+					my $continue_pos = tell $fh;
 					
 					print {$fh} $document_rest;
-					
-					last LOOP;
+					truncate $fh, tell $fh;
+					seek $fh, $continue_pos, 0 or die $!;
+					last SCAN_CODEBLOCK;
 				}
 			}
 		}

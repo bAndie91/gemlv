@@ -162,13 +162,13 @@ Email viewer and composer for email files, in GTK
 - [ ] uid decorative: UID in key data is only used for decorative purposes, and in particular not for looking up keys for an e-mail address.
 
 
-## CLI options
+## CLI options (gemlv)
 
 ```
 usage: gemlv [-h] [--compose] [--from ADDRESS] [--to ADDRESS] [--cc ADDRESS]
              [--bcc ADDRESS] [--subject STRING] [--message STRING]
-             [--mailto URL] [--attach FILE] [--localedir DIR]
-             [--opener COMMAND] [--header STRING]
+             [--mailto URL] [--attach FILE] [--opener COMMAND]
+             [--header STRING]
              [FILE]
 
 positional arguments:
@@ -184,11 +184,11 @@ optional arguments:
   --bcc ADDRESS         Blind Carbon Copy Recipients, repeatable (default:
                         None)
   --subject STRING      Subject (default: None)
-  --message STRING      Message body (default: None)
+  --message STRING, --body STRING
+                        Message body (default: None)
   --mailto URL          Full 'mailto:' link (default: None)
   --attach FILE, --attachment FILE
                         Attachment file's path, repeatable (default: None)
-  --localedir DIR       L10n base directory (default: None)
   --opener COMMAND      File opener command (default: mimeopen-gui)
   --header STRING       Add custom header(s) to the new Email (default: None)
 ```
@@ -267,11 +267,12 @@ Many UI parts are inspired by Sylpheed/Claws-mail.
 
 Email viewer for console/terminal
 
-## CLI options
+## CLI options (emlv)
 
 ```
-usage: emlv [-h] [--list | --extract INDEX | --save INDEX] [--plaintext]
-            [--html] [--header HEADER] [--header-filter COMMAND]
+usage: emlv [-h]
+            [--list | --extract INDEX | --save INDEX | --save-type WILDCARD]
+            [--plaintext] [--html] [--header HEADER] [--header-filter COMMAND]
             [--body-filter COMMAND] [--attachments-filter COMMAND]
             [FILE [FILE ...]]
 
@@ -295,9 +296,16 @@ optional arguments:
   --save INDEX, -s INDEX
                         Save MIME part specified by INDEX to file. The output
                         file name is either the attachment's name if it's
-                        given, or "attached-email-INDEX.eml" if the attachment
-                        is itself an Email, or "attachment-INDEX.dat"
-                        otherwise. This option may be repeated.
+                        given, or "attached-email-<INDEX>.eml" if the
+                        attachment is itself an Email, or
+                        "attachment-<INDEX>.dat" otherwise. The target file is
+                        OVERWITTEN if it already exists. This option may be
+                        repeated.
+  --save-type WILDCARD, -S WILDCARD
+                        Save all parts (attachments) with MIME type matching
+                        to WILDCARD, similarly to --save. This option may be
+                        repeated. Example: --save-type application/pdf --save-
+                        type image/*
   --plaintext           Always take the first text/plain part as content.
                         Default is to fall back to text/html if no text/plain
                         found.
@@ -325,5 +333,9 @@ optional arguments:
 1. clone the repo
 2. use [git-bug](https://github.com/git-bug/git-bug) to open a new ticket in this repo
 3. find one or more person in the commit history to make contact with, then either
-4.a. send your newly created `git-bug` ticket (or patch if you already propose a code change) via email, or
-4.b. send the URL of your git clone to a contributor (via email or other channel), and request them to pull (`git-bug` issues and/or branches as well) from you.
+
+   a. send the URL of your git clone to the other contributor(s), via E-mail or other channel, 
+   requesting them to pull (`git-bug` issues and/or branches as well) from you.
+   This is the preferred way, since it's easier to update your ticket, amend changes, and/or contibute later on.
+   
+   b. or, if you don't provide your repo's location, send your newly created `git-bug` ticket (or patch if you already propose a code change) via E-mail.
