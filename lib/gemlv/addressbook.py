@@ -3,6 +3,8 @@
 import os
 import gemlv.utils
 from gemlv.sysutils import mkdir
+from gemlv.textutils import laxsplit, Regexp
+
 
 def get_singlefile_path():
 	return os.path.join(os.environ['HOME'], 'Mail', '.addressbook')
@@ -23,6 +25,18 @@ def get_paths():
 	os.path.walk(get_directory_path(), file_found, files)
 	return files
 
+class StringWithMetadata(str):
+	def __new__(klass, s, md=None):
+		self = str.__new__(klass, s)
+		self._metadata = md
+		return self
+	@property
+	def metadata(self):
+		return self._metadata
+	@metadata.setter
+	def metadata(self, x):
+		self._metadata = x
+
 def load(callback, userdata = None, error_handler = None, gettext = str):
 	"""
 	callback is a function.
@@ -41,7 +55,8 @@ def load(callback, userdata = None, error_handler = None, gettext = str):
 		for abook_path in abook_files:
 			try:
 				for ln in open(abook_path, 'r'):
-					cb_resp = callback(ln.strip(), userdata)
+					abook_entry, metadata = laxsplit(ln.strip(), Regexp(r'\t+'), 2)
+					cb_resp = callback(StringWithMetadata(abook_entry, metadata), userdata)
 					if cb_resp is True:
 						stop = True
 						break

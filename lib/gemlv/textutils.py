@@ -42,3 +42,13 @@ def noaccent(s):
 	# Nonspacing_Mark = 'Mn'
 	# ... if unicodedata.category(c) != Nonspacing_Mark
 	return ''.join([c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c)])
+
+class Regexp(str):
+	pass
+
+def laxsplit(inpt, delimiter, output_count):
+	if isinstance(delimiter, Regexp):
+		chunks = re.split(delimiter, inpt, output_count-1)
+	else:
+		chunks = inpt.split(delimiter, output_count-1)
+	return (chunks + [None]*output_count)[:output_count]

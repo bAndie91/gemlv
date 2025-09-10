@@ -563,7 +563,7 @@ def add_file_to_gtk_recent_list(path, display_name = None):
 	metadata = {
 		'mime_type': MIMETYPE_EMAIL,
 		'app_name': PROGNAME,
-		'app_exec': "%s '%s'" % (PROGNAME, path),
+		'app_exec': "%s '%%f'" % (PROGNAME,),
 	}
 	if display_name is not None:
 		metadata['display_name'] = display_name
