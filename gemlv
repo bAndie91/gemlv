@@ -554,7 +554,8 @@ def email_from_file(filename):
 
 def add_email_to_gtk_recent_list(filepath, eml):
 	try:
-		add_file_to_gtk_recent_list(filepath, eml.header[HDR_SUBJ].decoded.encode('UTF-8'))
+		label = '%s ✉ From: %s ✉ To: %s' % tuple([eml.header[h].decoded.encode('UTF-8') for h in HDR_SUBJ, 'From', 'To'])
+		add_file_to_gtk_recent_list(filepath, label)
 	except Exception as e:
 		traceback.print_exc()
 
