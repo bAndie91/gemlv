@@ -4996,7 +4996,7 @@ toolbar.append_items([
 		actions=((on_click_button, (act_reply, COMPOSE_REPLY_LIST)), None)),
 		'menubutton_replytolist'),
 	ActionStockToolButton(label=_("Forward"), iconname='mail-forward', tooltip=_("Forward envelope")+'\n'+_("Right click:")+' '+_("Forward letter"),
-		actions=((on_click_button, (act_reply, COMPOSE_FORWARD_MSG)), (on_press_button, act_reply, COMPOSE_FORWARD_BODY))),
+		actions=((on_click_button, (act_reply, COMPOSE_FORWARD_MSG)), (on_press_button, (act_reply, COMPOSE_FORWARD_BODY)))),
 	SeparatorToolItem(),
 	GlobalNamedObject(ActionStockToolButton(label=_("Unsubscribe"), iconname='stop',
 		actions=((on_click_button, act_unsubscribe), None)),
