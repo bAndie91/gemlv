@@ -4059,7 +4059,7 @@ def attach_path(original_path, root_attachment_path, parent_iter=None, check_uni
 			if not isalink:
 				# record the POSIX permission bits including the SUID/SGID octet, if the recipient party
 				# deems this octet unsafe to set on a file, may she ignore it.
-				content_disposition_params['posix_mode'] = '%05o' % (s.st_mode & 07777,)
+				content_disposition_params['posix_mode'] = '%05o' % (s.st_mode & 0o7777,)
 	except OSError as e:
 		display_error(e)
 		return False
