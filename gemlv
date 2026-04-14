@@ -830,9 +830,9 @@ def on_hyperlink_event(tag, tview, event, itr):
 	if event.type == gtk.gdk.BUTTON_PRESS:
 		# find which hyperlink did the user click
 		link = None
-		click_charpos = itr.get_offset()
+		click_charpos = TextBufferOffset(tview.get_buffer(), itr)
 		for l in tview.get_buffer().get_data('hyperlinks'):
-			if l['pos_start'] <= click_charpos and click_charpos <= l['pos_end']:
+			if l['pos_start'] <= click_charpos.python_offset and click_charpos.python_offset <= l['pos_end']:
 				link = l
 				break
 
@@ -904,9 +904,9 @@ def track_mouse_over_textview(tview, event):
 	tview.get_window(gtk.TEXT_WINDOW_TEXT).set_cursor(gtk.gdk.Cursor(gtk.gdk.HAND2) if is_over_link else None)
 	tbuf.remove_tags_from_range('hyperlink-onhover')
 	if is_over_link:
-		charpos = itr.get_offset()
+		charpos = TextBufferOffset(tview.get_buffer(), itr)
 		for link in tview.get_buffer().get_data('hyperlinks'):
-			if link['pos_start'] <= charpos and charpos <= link['pos_end']:
+			if link['pos_start'] <= charpos.python_offset and charpos.python_offset <= link['pos_end']:
 				tbuf.apply_tag_to_range('hyperlink-onhover', link['pos_start'], link['pos_end'])
 				show_onhover_hyperlink(link.uri)
 				break
@@ -3031,6 +3031,25 @@ def filters_menu_filter_selected(mi_selected, eml, filt):
 	if mi_selected.get_active():
 		load_part(eml, filt)
 
+class TextBufferOffset(int):
+	def __new__(klass, textbuffer, loc):
+		if isinstance(loc, gtk.TextIter):
+			offset = loc.get_offset()
+		else:
+			assert isinstance(loc, int)
+			offset = loc
+		obj = super(TextBufferOffset, klass).__new__(klass, offset)
+		obj.offset = offset
+		return obj
+	def __init__(self, textbuffer, loc):
+		self._textbuffer = textbuffer
+		slc = self._textbuffer.get_slice(self._textbuffer.get_start_iter(), self.iter)
+		self.python_offset = len(slc.decode('utf-8'))
+		super(TextBufferOffset, self).__init__()
+	@property
+	def iter(self):
+		return self._textbuffer.get_iter_at_offset(self.offset)
+
 class TextBuffer(gtk.TextBuffer):
 	class TextBufferNamedRangeError(Exception):
 		pass
@@ -3131,11 +3150,11 @@ class TextBuffer(gtk.TextBuffer):
 				offs += 1
 				break
 			offs -= 1
-		return offs
+		return TextBufferOffset(self, offs)
 	def apply_tag_to_range(self, tagname, pos_start, pos_end):
-		pos_start_tb = self.python_offset_to_textbuffer_offset(pos_start)
-		pos_end_tb = self.python_offset_to_textbuffer_offset(pos_end)
-		self.apply_tag_by_name(tagname, self.get_iter_at_offset(pos_start_tb), self.get_iter_at_offset(pos_end_tb))
+		iter_start_tb = self.python_offset_to_textbuffer_offset(pos_start).iter
+		iter_end_tb = self.python_offset_to_textbuffer_offset(pos_end).iter
+		self.apply_tag_by_name(tagname, iter_start_tb, iter_end_tb)
 	def remove_tags_from_range(self, tagname, pos_start=None, pos_end=None):
 		"""remove the named tags from the given range.
 		if either of start or end positions is None, the start and end positions are considered respectively.
