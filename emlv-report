@@ -138,3 +138,5 @@ do
 		;;
 	esac
 done
+
+exit $errorlevel
