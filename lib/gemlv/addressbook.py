@@ -26,8 +26,8 @@ def get_paths():
 	return files
 
 class StringWithMetadata(str):
-	def __new__(klass, s, md=None):
-		self = str.__new__(klass, s)
+	def __new__(cls, s, md=None):
+		self = str.__new__(cls, s)
 		self._metadata = md
 		return self
 	@property

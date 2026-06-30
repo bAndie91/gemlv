@@ -3153,7 +3153,8 @@ class TextBuffer(gtk.TextBuffer):
 		else:
 			return self.get_text(self.get_start_iter(), self.get_end_iter(), include_hidden_chars=True)
 	def python_offset_to_textbuffer_offset(self, pos):
-		if pos == 0: return 0
+		if pos == 0:
+			return TextBufferOffset(self, 0)
 		offs = pos
 		while True:
 			slc = self.get_slice( self.get_start_iter(), self.get_iter_at_offset(offs) )
