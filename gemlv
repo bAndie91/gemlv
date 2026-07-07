@@ -759,6 +759,10 @@ def set_content_text(s):
 	return True
 
 RE_HYPERLINK = r'([a-z+-]+:\/\/[^\s<>"\'`\[\]]+|mailto:[^\s@]+@[a-z0-9_.-]+|tel:[0-9+().-]+)(?<![.,;:!?(])'
+# footer-note reference in the body
+RE_BODY_LINK_REF = r'\[(\d+)\]'
+# footer-note prefix
+RE_FOOTER_REF_PREFIX = r'^\s*(\d+)[\.:]\s+(?:|[^\n]+\n\s*)'
 
 def postprocess_found_hyperlink(link):
 	# remove extra closing parenthesis(-es) from the end of the link
@@ -775,11 +779,11 @@ def highlight_hyperlinks(tview):
 	bufr.set_data('hyperlinks', [])
 	
 	html_renderer_numbered_links = {}
-	for match in re.finditer(r'^\s*(\d+)\.\s+(?:|[^\n]+\n\s*)' + RE_HYPERLINK, text, re.I | re.U | re.M):
+	for match in re.finditer(RE_FOOTER_REF_PREFIX + RE_HYPERLINK, text, re.I | re.U | re.M):
 		link_number = match.group(1)
 		link_itself = postprocess_found_hyperlink(match.group(2))
 		html_renderer_numbered_links[link_number] = link_itself
-	for match in re.finditer(r'\[(\d+)\]', text, re.I):
+	for match in re.finditer(RE_BODY_LINK_REF, text, re.I):
 		link_number = match.group(1)
 		if link_number in html_renderer_numbered_links:
 			pos_start = match.start(0)
@@ -835,7 +839,7 @@ def setup_textview_for_hyperlinks(tview):
 	tagtable = tbuf.get_tag_table()
 	tag_link = tagtable.lookup('hyperlink')
 	tag_link.connect('event', on_hyperlink_event)
-	tview.add_events(gtk.gdk.POINTER_MOTION_MASK)  # TODO block it if the content is not HTML
+	tview.add_events(gtk.gdk.POINTER_MOTION_MASK)  # TODO block it if the content does not contain hyperlinks
 	tview.connect("motion_notify_event", track_mouse_over_textview)
 
 def on_hyperlink_event(tag, tview, event, itr):
