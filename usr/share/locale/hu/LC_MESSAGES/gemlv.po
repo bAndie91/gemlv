@@ -232,6 +232,9 @@ msgstr "Digitális aláírás"
 msgid "Unimportant"
 msgstr "Sokadlagos"
 
+msgid "Low importance"
+msgstr "Sokadlagos"
+
 msgid "Important"
 msgstr "Fontos"
 

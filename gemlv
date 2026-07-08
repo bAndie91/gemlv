@@ -5071,7 +5071,7 @@ manipulate_menubutton_mdn_label()
 setup_treeview__icon_label(panel_parts)
 
 tb_controls.append_items([
-	GlobalNamedObject(StockToolIcon(iconname='emblem-generic', tooltiptext=_("Unimportant")), 'stck_unimp'),
+	GlobalNamedObject(StockToolIcon(iconname='emblem-generic', tooltiptext=_("Low importance")), 'stck_unimp'),
 	GlobalNamedObject(StockToolIcon(iconname='emblem-important', tooltiptext=_("Important")), 'stck_imp'),
 	GlobalNamedObject(StockToolIcon(iconname='mail-reply-sender', tooltiptext=_("Replied")), 'stck_repl'),
 	GlobalNamedObject(StockToolIcon(iconname='mail-forward', tooltiptext=_("Forwarded")), 'stck_fwd'),
@@ -5265,7 +5265,7 @@ tb_comp_controls.append_items([
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='mail-mark-read', tooltip=_("Ask Disposition Notification"),
 		actions=((on_click_button, act_req_dispos_notif), None, (on_toggled,))), 'toggle_rqdn'),
 	SeparatorToolItem(),
-	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-generic', label=_("Unimportant"),
+	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-generic', label=_("Low importance"),
 		actions=((on_click_button, act_importance), None, (on_toggled,))), 'toggle_unimportant'),
 	GlobalNamedObject(ActionStockToggleToolButton(iconname='emblem-important', label=_("Important"),
 		actions=((on_click_button, act_importance), None, (on_toggled,))), 'toggle_important'),
